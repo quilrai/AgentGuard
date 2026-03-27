@@ -13,6 +13,7 @@ mod dlp_pattern_config;
 mod pattern_utils;
 mod proxy;
 mod requestresponsemetadata;
+mod token_saving;
 
 use database::get_port_from_db;
 use dlp_pattern_config::DEFAULT_PORT;

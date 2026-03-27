@@ -6,6 +6,22 @@ use serde::{Deserialize, Serialize};
 use crate::backends::Backend;
 use crate::requestresponsemetadata::{RequestMetadata, ResponseMetadata};
 
+/// Token saving settings with sub-category features
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct TokenSavingSettings {
+    /// Context trimming: remove redundant context from conversation history
+    #[serde(default)]
+    pub context_trimming: bool,
+    // Future features can be added here as new bool fields
+}
+
+impl TokenSavingSettings {
+    /// Returns true if any token saving feature is enabled
+    pub fn any_enabled(&self) -> bool {
+        self.context_trimming
+    }
+}
+
 /// Settings for a custom backend
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CustomBackendSettings {
@@ -24,6 +40,9 @@ pub struct CustomBackendSettings {
     /// Action to take when max tokens is exceeded: "block" or "notify" (default: "block")
     #[serde(default = "default_block")]
     pub action_for_max_tokens_in_a_request: String,
+    /// Token saving settings with sub-category features
+    #[serde(default)]
+    pub token_saving: TokenSavingSettings,
 }
 
 fn default_true() -> bool {
@@ -219,5 +238,9 @@ impl Backend for CustomBackend {
 
     fn get_max_tokens_limit(&self) -> (u32, String) {
         (self.settings.max_tokens_in_a_request, self.settings.action_for_max_tokens_in_a_request.clone())
+    }
+
+    fn get_token_saving_settings(&self) -> TokenSavingSettings {
+        self.settings.token_saving.clone()
     }
 }

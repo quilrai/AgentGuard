@@ -304,6 +304,17 @@
                 </div>
                 <p class="form-hint">Set to 0 to disable token limit. Block will reject the request, Notify will log only.</p>
               </div>
+
+              <div class="form-group">
+                <label>Token Saving</label>
+                <div class="token-saving-features">
+                  <label class="checkbox-label">
+                    <input type="checkbox" id="backend-ts-context-trimming" />
+                    <span>Context Trimming</span>
+                  </label>
+                </div>
+                <p class="form-hint">Enable token saving features to reduce token usage. Each feature can be toggled independently.</p>
+              </div>
             </div>
             <div class="modal-footer">
               <button class="btn btn-secondary" id="cancel-backend-btn">Cancel</button>
@@ -371,6 +382,17 @@
                   <span class="rate-label">if exceeded</span>
                 </div>
                 <p class="form-hint">Set to 0 to disable token limit.</p>
+              </div>
+
+              <div class="form-group" id="predefined-backend-ts-group">
+                <label>Token Saving</label>
+                <div class="token-saving-features">
+                  <label class="checkbox-label">
+                    <input type="checkbox" id="predefined-backend-ts-context-trimming" />
+                    <span>Context Trimming</span>
+                  </label>
+                </div>
+                <p class="form-hint">Enable token saving features to reduce token usage.</p>
               </div>
             </div>
             <div class="modal-footer">

@@ -179,6 +179,8 @@ pub struct MessageLog {
     request_headers: Option<String>,
     response_headers: Option<String>,
     dlp_action: i64, // DLP_ACTION_PASSED=0, DLP_ACTION_REDACTED=1, DLP_ACTION_BLOCKED=2
+    tokens_saved: i64,
+    token_saving_meta: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -508,7 +510,8 @@ pub fn get_message_logs(
         .prepare(&format!(
             "SELECT id, timestamp, backend, COALESCE(model, 'unknown'),
                     input_tokens, output_tokens, latency_ms, request_body, response_body,
-                    request_headers, response_headers, COALESCE(dlp_action, 0)
+                    request_headers, response_headers, COALESCE(dlp_action, 0),
+                    COALESCE(tokens_saved, 0), token_saving_meta
              FROM requests
              WHERE timestamp >= ?1{}
              ORDER BY id DESC
@@ -532,6 +535,8 @@ pub fn get_message_logs(
                 request_headers: row.get(9)?,
                 response_headers: row.get(10)?,
                 dlp_action: row.get(11)?,
+                tokens_saved: row.get(12)?,
+                token_saving_meta: row.get(13)?,
             })
         })
         .map_err(|e| e.to_string())?
@@ -553,6 +558,8 @@ pub struct ExportLog {
     pub request_body: Option<String>,
     pub response_body: Option<String>,
     pub dlp_action: i64,
+    pub tokens_saved: i64,
+    pub token_saving_meta: Option<String>,
 }
 
 #[tauri::command]
@@ -605,7 +612,7 @@ pub fn export_message_logs(
         .prepare(&format!(
             "SELECT id, timestamp, backend, COALESCE(model, 'unknown'),
                     input_tokens, output_tokens, latency_ms, request_body, response_body,
-                    COALESCE(dlp_action, 0)
+                    COALESCE(dlp_action, 0), COALESCE(tokens_saved, 0), token_saving_meta
              FROM requests
              WHERE timestamp >= ?1{}
              ORDER BY id DESC",
@@ -626,6 +633,8 @@ pub fn export_message_logs(
                 request_body: row.get(7)?,
                 response_body: row.get(8)?,
                 dlp_action: row.get(9)?,
+                tokens_saved: row.get(10)?,
+                token_saving_meta: row.get(11)?,
             })
         })
         .map_err(|e| e.to_string())?

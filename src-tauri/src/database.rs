@@ -68,6 +68,11 @@ impl Database {
             println!("[DB] auto_vacuum migration complete");
         }
 
+        // Migration: If zstd compression was already enabled, `requests` is a VIEW and
+        // ALTER TABLE silently fails. Detect if underlying _requests_zstd is missing new columns
+        // and rebuild the requests storage from scratch (discards old logs, keeps settings).
+        Self::migrate_compressed_schema_if_needed(&conn);
+
         // Create requests table
         conn.execute(
             "CREATE TABLE IF NOT EXISTS requests (
@@ -95,7 +100,10 @@ impl Database {
                 response_body TEXT,
                 extra_metadata TEXT,
                 request_headers TEXT,
-                response_headers TEXT
+                response_headers TEXT,
+                dlp_action INTEGER DEFAULT 0,
+                tokens_saved INTEGER DEFAULT 0,
+                token_saving_meta TEXT
             )",
             [],
         )?;
@@ -122,6 +130,16 @@ impl Database {
         // Uses DLP_ACTION_PASSED (0), DLP_ACTION_REDACTED (1), DLP_ACTION_BLOCKED (2)
         let _ = conn.execute(
             "ALTER TABLE requests ADD COLUMN dlp_action INTEGER DEFAULT 0",
+            [],
+        );
+
+        // Migration: Add token saving columns if they don't exist
+        let _ = conn.execute(
+            "ALTER TABLE requests ADD COLUMN tokens_saved INTEGER DEFAULT 0",
+            [],
+        );
+        let _ = conn.execute(
+            "ALTER TABLE requests ADD COLUMN token_saving_meta TEXT",
             [],
         );
 
@@ -239,6 +257,57 @@ impl Database {
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
         })
+    }
+
+    /// Detect if the compressed _requests_zstd table exists but is missing new columns.
+    /// If so, drop all log-related tables and let the init flow recreate them.
+    /// Settings, DLP patterns, and custom backends are preserved.
+    fn migrate_compressed_schema_if_needed(conn: &Connection) {
+        // Check if _requests_zstd exists (compression was previously enabled)
+        let has_compressed: bool = conn
+            .query_row(
+                "SELECT COUNT(*) > 0 FROM sqlite_master WHERE type='table' AND name='_requests_zstd'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(false);
+
+        if !has_compressed {
+            return; // Fresh DB or uncompressed - normal migrations will work fine
+        }
+
+        // Check if _requests_zstd has the tokens_saved column
+        let has_column: bool = conn
+            .query_row(
+                "SELECT COUNT(*) > 0 FROM pragma_table_info('_requests_zstd') WHERE name = 'tokens_saved'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(false);
+
+        if has_column {
+            return; // Schema is up to date
+        }
+
+        println!("[DB] Compressed schema missing new columns - rebuilding requests storage (old logs will be discarded)...");
+
+        // Drop everything related to requests logs (order matters for dependencies)
+        let _ = conn.execute_batch("
+            DROP TABLE IF EXISTS dlp_detections;
+            DROP TABLE IF EXISTS tool_calls;
+            DROP VIEW IF EXISTS requests;
+            DROP TABLE IF EXISTS _requests_zstd;
+            DROP TABLE IF EXISTS _requests_zstd_dicts;
+            DROP TABLE IF EXISTS _requests_zstd_configs;
+        ");
+
+        // Reset the tool_calls backfill flag so it doesn't try to backfill non-existent data
+        let _ = conn.execute(
+            "DELETE FROM settings WHERE key = 'tool_calls_backfill_done'",
+            [],
+        );
+
+        println!("[DB] Requests storage cleared. Will be recreated with new schema.");
     }
 
     /// One-time backfill of tool_calls from existing response bodies
@@ -706,6 +775,8 @@ impl Database {
         request_headers: Option<&str>,
         response_headers: Option<&str>,
         dlp_action: i32,
+        tokens_saved: i32,
+        token_saving_meta: Option<&str>,
     ) -> Result<i64, rusqlite::Error> {
         let conn = self.conn.lock().unwrap();
         let timestamp = chrono::Utc::now().to_rfc3339();
@@ -717,8 +788,8 @@ impl Database {
                 latency_ms, has_system_prompt, has_tools, has_thinking, stop_reason,
                 user_message_count, assistant_message_count,
                 response_status, is_streaming, request_body, response_body, extra_metadata,
-                request_headers, response_headers, dlp_action
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25)",
+                request_headers, response_headers, dlp_action, tokens_saved, token_saving_meta
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27)",
             rusqlite::params![
                 timestamp,
                 backend,
@@ -745,6 +816,8 @@ impl Database {
                 request_headers,
                 response_headers,
                 dlp_action,
+                tokens_saved,
+                token_saving_meta,
             ],
         )?;
 

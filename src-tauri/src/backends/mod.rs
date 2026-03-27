@@ -5,6 +5,7 @@ pub mod codex;
 pub mod custom;
 
 use axum::http::HeaderMap;
+use crate::backends::custom::TokenSavingSettings;
 use crate::requestresponsemetadata::{RequestMetadata, ResponseMetadata};
 
 /// Trait for API backend implementations
@@ -55,6 +56,12 @@ pub trait Backend: Send + Sync {
     /// Returns (0, "block") by default which means no token limit
     fn get_max_tokens_limit(&self) -> (u32, String) {
         (0, "block".to_string())
+    }
+
+    /// Get token saving settings
+    /// Returns default (all disabled) by default
+    fn get_token_saving_settings(&self) -> TokenSavingSettings {
+        TokenSavingSettings::default()
     }
 }
 

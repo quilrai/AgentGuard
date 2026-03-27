@@ -3,7 +3,7 @@
 use axum::http::HeaderMap;
 use serde_json::json;
 
-use crate::backends::custom::CustomBackendSettings;
+use crate::backends::custom::{CustomBackendSettings, TokenSavingSettings};
 use crate::backends::Backend;
 use crate::requestresponsemetadata::{RequestMetadata, ResponseMetadata, ToolCall};
 use std::collections::HashMap;
@@ -316,5 +316,9 @@ impl Backend for CodexBackend {
 
     fn get_max_tokens_limit(&self) -> (u32, String) {
         (self.settings.max_tokens_in_a_request, self.settings.action_for_max_tokens_in_a_request.clone())
+    }
+
+    fn get_token_saving_settings(&self) -> TokenSavingSettings {
+        self.settings.token_saving.clone()
     }
 }

@@ -7,6 +7,7 @@ use crate::database::{get_dlp_action_from_db, get_last_notification_time, set_la
 use crate::dlp::{apply_dlp_redaction, apply_dlp_unredaction, DlpDetection};
 use crate::dlp_pattern_config::get_db_path;
 use crate::requestresponsemetadata::ResponseMetadata;
+use crate::token_saving::apply_token_saving;
 use crate::{PROXY_PORT, PROXY_STATUS, RESTART_SENDER, ProxyStatus};
 use tauri::{AppHandle, Emitter};
 
@@ -232,6 +233,8 @@ async fn proxy_handler(State(state): State<ProxyState>, req: Request) -> impl In
                 Some(&request_headers_json),
                 None,
                 DLP_ACTION_RATELIMITED,
+                0,
+                None,
             );
         }
 
@@ -280,6 +283,8 @@ async fn proxy_handler(State(state): State<ProxyState>, req: Request) -> impl In
                     Some(&request_headers_json),
                     None,
                     DLP_ACTION_RATELIMITED,
+                    0,
+                    None,
                 );
 
                 return Response::builder()
@@ -369,6 +374,8 @@ async fn proxy_handler(State(state): State<ProxyState>, req: Request) -> impl In
                 Some(&request_headers_json),
                 None,
                 DLP_ACTION_BLOCKED,
+                0,
+                None,
             ) {
                 let _ = db.log_dlp_detections(request_id, &dlp_result.detections);
             }
@@ -379,6 +386,28 @@ async fn proxy_handler(State(state): State<ProxyState>, req: Request) -> impl In
             .header("Content-Type", "application/json")
             .body(Body::from(error_body))
             .unwrap();
+    }
+
+    // Apply token saving transformations (after DLP, before forwarding)
+    let token_saving_settings = backend.get_token_saving_settings();
+    let token_saving_result = apply_token_saving(&redacted_body, &token_saving_settings);
+    let body_to_send = token_saving_result.body.clone();
+    let tokens_saved = token_saving_result.total_tokens_saved;
+    let token_saving_meta = token_saving_result.meta_json();
+
+    // Use the post-token-saving body as canonical for logging and metadata
+    let logged_request_body = body_to_send.clone();
+    let req_meta = if tokens_saved > 0 {
+        backend.parse_request_metadata(&logged_request_body)
+    } else {
+        req_meta
+    };
+
+    if tokens_saved > 0 {
+        println!(
+            "[PROXY] Token saving for backend '{}': {} tokens saved",
+            backend.name(), tokens_saved
+        );
     }
 
     let mut reqwest_req = match method.clone() {
@@ -404,9 +433,9 @@ async fn proxy_handler(State(state): State<ProxyState>, req: Request) -> impl In
         }
     }
 
-    // Use redacted body for the request
+    // Use token-saving-transformed body for the request
     if !body_bytes.is_empty() {
-        reqwest_req = reqwest_req.body(redacted_body.clone().into_bytes());
+        reqwest_req = reqwest_req.body(body_to_send.into_bytes());
     }
 
     let is_streaming = body_bytes
@@ -460,7 +489,7 @@ async fn proxy_handler(State(state): State<ProxyState>, req: Request) -> impl In
         let db_clone = db.clone();
         let backend_clone = state.backend.clone();
         let path_clone = full_path.clone();
-        let req_body_clone = request_body_str.clone();
+        let req_body_clone = logged_request_body.clone();
         let status_code = status.as_u16();
         let req_meta_clone = req_meta.clone();
         let dlp_replacements_clone = dlp_replacements.clone();
@@ -469,6 +498,8 @@ async fn proxy_handler(State(state): State<ProxyState>, req: Request) -> impl In
         let request_headers_json = headers_to_json(&headers);
         let response_headers_json = reqwest_headers_to_json(&resp_headers);
         let notify_ratelimit_clone = notify_ratelimit;
+        let tokens_saved_clone = tokens_saved;
+        let token_saving_meta_clone = token_saving_meta.clone();
 
         let collected_chunks: Arc<std::sync::Mutex<Vec<String>>> =
             Arc::new(std::sync::Mutex::new(Vec::new()));
@@ -539,6 +570,8 @@ async fn proxy_handler(State(state): State<ProxyState>, req: Request) -> impl In
                     Some(&request_headers_json),
                     Some(&response_headers_json),
                     dlp_action_value,
+                    tokens_saved_clone,
+                    token_saving_meta_clone.as_deref(),
                 ) {
                     // Log DLP detections if any
                     if !dlp_detections_clone.is_empty() {
@@ -596,7 +629,7 @@ async fn proxy_handler(State(state): State<ProxyState>, req: Request) -> impl In
         if backend.should_log(&request_body_str) {
             // Extract extra metadata
             let extra_meta = backend.extract_extra_metadata(
-                &request_body_str,
+                &logged_request_body,
                 &unredacted_response,
                 &headers,
             );
@@ -620,7 +653,7 @@ async fn proxy_handler(State(state): State<ProxyState>, req: Request) -> impl In
                 &method_str,
                 &full_path,
                 &full_path,  // Use actual path as endpoint name
-                &request_body_str,
+                &logged_request_body,
                 &unredacted_response,
                 status.as_u16(),
                 false,
@@ -631,6 +664,8 @@ async fn proxy_handler(State(state): State<ProxyState>, req: Request) -> impl In
                 Some(&request_headers_json),
                 Some(&response_headers_json),
                 dlp_action_value,
+                tokens_saved,
+                token_saving_meta.as_deref(),
             ) {
                 // Log DLP detections if any
                 if !dlp_result.detections.is_empty() {

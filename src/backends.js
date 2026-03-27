@@ -8,26 +8,31 @@ let predefinedBackends = [];
 function parseSettings(settingsJson) {
   try {
     const settings = JSON.parse(settingsJson || '{}');
+    const tokenSaving = settings.token_saving || {};
     return {
       dlp_enabled: settings.dlp_enabled !== false, // default true
       rate_limit_requests: settings.rate_limit_requests || 0,
       rate_limit_minutes: settings.rate_limit_minutes || 1,
       max_tokens_in_a_request: settings.max_tokens_in_a_request || 0,
-      action_for_max_tokens_in_a_request: settings.action_for_max_tokens_in_a_request || 'block'
+      action_for_max_tokens_in_a_request: settings.action_for_max_tokens_in_a_request || 'block',
+      token_saving: {
+        context_trimming: tokenSaving.context_trimming || false,
+      }
     };
   } catch {
-    return { dlp_enabled: true, rate_limit_requests: 0, rate_limit_minutes: 1, max_tokens_in_a_request: 0, action_for_max_tokens_in_a_request: 'block' };
+    return { dlp_enabled: true, rate_limit_requests: 0, rate_limit_minutes: 1, max_tokens_in_a_request: 0, action_for_max_tokens_in_a_request: 'block', token_saving: { context_trimming: false } };
   }
 }
 
 // Build settings JSON from form values
-function buildSettingsJson(dlpEnabled, rateRequests, rateMinutes, maxTokens, maxTokensAction) {
+function buildSettingsJson(dlpEnabled, rateRequests, rateMinutes, maxTokens, maxTokensAction, tokenSaving) {
   return JSON.stringify({
     dlp_enabled: dlpEnabled,
     rate_limit_requests: rateRequests,
     rate_limit_minutes: rateMinutes,
     max_tokens_in_a_request: maxTokens,
-    action_for_max_tokens_in_a_request: maxTokensAction
+    action_for_max_tokens_in_a_request: maxTokensAction,
+    token_saving: tokenSaving
   });
 }
 
@@ -99,6 +104,10 @@ function renderBackends(backends) {
     const tokenBadge = settings.max_tokens_in_a_request > 0
       ? `<span class="backend-setting-badge token-limit">${settings.max_tokens_in_a_request} tokens (${settings.action_for_max_tokens_in_a_request})</span>`
       : '<span class="backend-setting-badge no-token-limit">No Token Limit</span>';
+    const tsFeatures = Object.entries(settings.token_saving).filter(([, v]) => v).map(([k]) => k.replace(/_/g, ' '));
+    const tokenSavingBadge = tsFeatures.length > 0
+      ? `<span class="backend-setting-badge token-saving-on">Saving: ${tsFeatures.join(', ')}</span>`
+      : '';
 
     return `
     <div class="backend-item ${backend.enabled ? '' : 'disabled'}" data-id="${backend.id}">
@@ -122,6 +131,7 @@ function renderBackends(backends) {
           ${dlpBadge}
           ${rateBadge}
           ${tokenBadge}
+          ${tokenSavingBadge}
         </div>
       </div>
       <div class="backend-actions">
@@ -205,7 +215,7 @@ function showBackendModal(backend = null) {
   title.textContent = backend ? 'Edit Backend' : 'Add Backend';
 
   // Parse existing settings or use defaults
-  const settings = backend ? parseSettings(backend.settings) : { dlp_enabled: true, rate_limit_requests: 0, rate_limit_minutes: 1, max_tokens_in_a_request: 0, action_for_max_tokens_in_a_request: 'block' };
+  const settings = backend ? parseSettings(backend.settings) : { dlp_enabled: true, rate_limit_requests: 0, rate_limit_minutes: 1, max_tokens_in_a_request: 0, action_for_max_tokens_in_a_request: 'block', token_saving: { context_trimming: false } };
 
   // Reset/populate form
   document.getElementById('backend-id').value = backend ? backend.id : '';
@@ -216,6 +226,9 @@ function showBackendModal(backend = null) {
   rateMinutesInput.value = settings.rate_limit_minutes;
   maxTokensInput.value = settings.max_tokens_in_a_request;
   maxTokensActionInput.value = settings.action_for_max_tokens_in_a_request;
+
+  // Token saving settings
+  document.getElementById('backend-ts-context-trimming').checked = settings.token_saving.context_trimming;
 
   // If editing, disable name field (changing name not allowed)
   nameInput.disabled = !!backend;
@@ -249,9 +262,12 @@ async function saveBackend() {
   const rateMinutes = parseInt(document.getElementById('backend-rate-minutes').value) || 1;
   const maxTokens = parseInt(document.getElementById('backend-max-tokens').value) || 0;
   const maxTokensAction = document.getElementById('backend-max-tokens-action').value || 'block';
+  const tokenSaving = {
+    context_trimming: document.getElementById('backend-ts-context-trimming').checked,
+  };
 
   // Build settings JSON
-  const settings = buildSettingsJson(dlpEnabled, rateRequests, Math.max(1, rateMinutes), maxTokens, maxTokensAction);
+  const settings = buildSettingsJson(dlpEnabled, rateRequests, Math.max(1, rateMinutes), maxTokens, maxTokensAction, tokenSaving);
 
   // Validation
   if (!name) {
@@ -334,6 +350,10 @@ function renderPredefinedBackends(backends) {
     const tokenBadge = settings.max_tokens_in_a_request > 0
       ? `<span class="backend-setting-badge token-limit">${settings.max_tokens_in_a_request} tokens (${settings.action_for_max_tokens_in_a_request})</span>`
       : '<span class="backend-setting-badge no-token-limit">No Token Limit</span>';
+    const predTsFeatures = Object.entries(settings.token_saving).filter(([, v]) => v).map(([k]) => k.replace(/_/g, ' '));
+    const predTokenSavingBadge = predTsFeatures.length > 0
+      ? `<span class="backend-setting-badge token-saving-on">Saving: ${predTsFeatures.join(', ')}</span>`
+      : '';
 
     // cursor-hooks doesn't have a proxy URL
     const proxyUrlHtml = backend.name === 'cursor-hooks'
@@ -361,6 +381,7 @@ function renderPredefinedBackends(backends) {
           ${dlpBadge}
           ${rateBadge}
           ${tokenBadge}
+          ${predTokenSavingBadge}
         </div>
       </div>
       <div class="backend-actions">
@@ -411,6 +432,15 @@ function showPredefinedBackendModal(backend) {
   maxTokensInput.value = settings.max_tokens_in_a_request;
   maxTokensActionInput.value = settings.action_for_max_tokens_in_a_request;
 
+  // Token saving settings - hide for cursor-hooks since it doesn't use them
+  const predefinedTsGroup = document.getElementById('predefined-backend-ts-group');
+  if (backend.name === 'cursor-hooks') {
+    predefinedTsGroup.style.display = 'none';
+  } else {
+    predefinedTsGroup.style.display = '';
+    document.getElementById('predefined-backend-ts-context-trimming').checked = settings.token_saving.context_trimming;
+  }
+
   modal.classList.add('show');
 }
 
@@ -428,8 +458,11 @@ async function savePredefinedBackend() {
   const rateMinutes = parseInt(document.getElementById('predefined-backend-rate-minutes').value) || 1;
   const maxTokens = parseInt(document.getElementById('predefined-backend-max-tokens').value) || 0;
   const maxTokensAction = document.getElementById('predefined-backend-max-tokens-action').value || 'block';
+  const tokenSaving = {
+    context_trimming: document.getElementById('predefined-backend-ts-context-trimming').checked,
+  };
 
-  const settings = buildSettingsJson(dlpEnabled, rateRequests, Math.max(1, rateMinutes), maxTokens, maxTokensAction);
+  const settings = buildSettingsJson(dlpEnabled, rateRequests, Math.max(1, rateMinutes), maxTokens, maxTokensAction, tokenSaving);
 
   const saveBtn = document.getElementById('save-predefined-backend-btn');
   saveBtn.disabled = true;

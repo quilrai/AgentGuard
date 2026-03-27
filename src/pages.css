@@ -195,6 +195,14 @@
   font-weight: 600;
 }
 
+.log-card-stats .stat.token-saved {
+  color: #16a34a;
+}
+
+.log-card-stats .stat.token-saved strong {
+  color: #15803d;
+}
+
 /* Card Tabs (Data/Headers) */
 .log-card-tabs {
   display: flex;
@@ -1120,6 +1128,26 @@
 .backend-setting-badge.no-token-limit {
   background: #f3f4f6;
   color: #6b7280;
+}
+
+.backend-setting-badge.token-saving-on {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.token-saving-features {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.token-saving-features .checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  cursor: pointer;
 }
 
 /* Backend Modal Form Elements */

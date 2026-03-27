@@ -169,6 +169,14 @@
     color: #e8e8e8;
   }
 
+  .log-card-stats .stat.token-saved {
+    color: #4ade80;
+  }
+
+  .log-card-stats .stat.token-saved strong {
+    color: #22c55e;
+  }
+
   .log-card-tabs {
     border-bottom-color: #2a2a3e;
   }
@@ -731,6 +739,11 @@
   .backend-setting-badge.no-token-limit {
     background: #2a2a3e;
     color: #888;
+  }
+
+  .backend-setting-badge.token-saving-on {
+    background: #052e16;
+    color: #4ade80;
   }
 
   .form-divider {

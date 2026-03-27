@@ -78,6 +78,7 @@ function renderLogCard(log, index, cardNum, total) {
         <span class="stat"><strong>Latency:</strong> ${formatLatency(log.latency_ms)}</span>
         <span class="stat"><strong>In:</strong> ${formatNumber(log.input_tokens)}</span>
         <span class="stat"><strong>Out:</strong> ${formatNumber(log.output_tokens)}</span>
+        ${log.tokens_saved > 0 ? `<span class="stat token-saved"><strong>Saved:</strong> ${formatNumber(log.tokens_saved)}</span>` : ''}
       </div>
       <div class="log-card-tabs">
         <button class="log-tab active" data-tab="data" data-index="${index}">Data</button>
@@ -493,6 +494,10 @@ export async function exportLogs() {
         if (responseBody) responseBody = JSON.parse(responseBody);
       } catch {}
 
+      let tokenSavingMeta = null;
+      if (log.token_saving_meta) {
+        try { tokenSavingMeta = JSON.parse(log.token_saving_meta); } catch { tokenSavingMeta = log.token_saving_meta; }
+      }
       return JSON.stringify({
         id: log.id,
         timestamp: log.timestamp,
@@ -502,6 +507,8 @@ export async function exportLogs() {
         output_tokens: log.output_tokens,
         latency_ms: log.latency_ms,
         dlp_action: log.dlp_action,
+        tokens_saved: log.tokens_saved || 0,
+        token_saving_meta: tokenSavingMeta,
         request: requestBody,
         response: responseBody
       });
