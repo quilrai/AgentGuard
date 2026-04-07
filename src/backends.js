@@ -41,7 +41,8 @@ function showBackendsStatus(message, type) {
   // Create or find status element
   let status = document.getElementById('backends-status');
   if (!status) {
-    const cardBody = document.querySelector('#backends-tab .card-body');
+    // Backend config now lives inside the Guardian Agent page
+    const cardBody = document.querySelector('#guardian-tab .card-body');
     if (cardBody) {
       status = document.createElement('div');
       status.id = 'backends-status';

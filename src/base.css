@@ -47,23 +47,123 @@
 
 .app-container {
   display: flex;
+  flex-direction: column;
   height: 100vh;
   overflow: hidden;
 }
 
-/* ============ Sidebar ============ */
+/* ============ Top Bar ============ */
 
-.sidebar {
-  width: 220px;
-  background: linear-gradient(180deg, #191C1D 0%, #1A1D1E 100%);
-  color: #e8e8e8;
+.topbar {
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  height: 56px;
   flex-shrink: 0;
-  height: 100vh;
-  overflow: visible;
+  padding: 0 24px;
+  background: #16191A;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   position: relative;
   z-index: 100;
+}
+
+.topbar-left {
+  flex: 0 0 auto;
+}
+
+.topbar-logo {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #fff;
+  letter-spacing: -0.005em;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.topbar-byline {
+  font-size: 0.7rem;
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.topbar-byline .made-by {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.topbar-byline a {
+  color: #71D083;
+  text-decoration: none;
+  font-weight: 500;
+  margin-left: 2px;
+  transition: color 0.2s;
+}
+
+.topbar-byline a:hover {
+  color: #7DD38D;
+}
+
+.topbar-nav {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+}
+
+.topbar-nav-item {
+  position: relative;
+  padding: 8px 18px;
+  background: transparent;
+  border: none;
+  color: #888;
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: color 0.2s, background 0.2s;
+}
+
+.topbar-nav-item:hover {
+  color: #e8e8e8;
+}
+
+.topbar-nav-item.active {
+  color: #71D083;
+}
+
+.topbar-nav-item.active::after {
+  content: '';
+  position: absolute;
+  left: 18px;
+  right: 18px;
+  bottom: 2px;
+  height: 2px;
+  background: #71D083;
+  border-radius: 1px;
+  box-shadow: 0 0 8px rgba(113, 208, 131, 0.5);
+}
+
+.topbar-right {
+  flex: 0 0 auto;
+}
+
+.topbar .proxy-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.75rem;
+  color: #888;
+  padding: 6px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 999px;
+}
+
+/* ============ Sidebar (legacy — unused after topbar redesign) ============ */
+
+.sidebar {
+  display: none;
 }
 
 .sidebar-header {
@@ -298,10 +398,10 @@
 
 .content {
   flex: 1;
-  padding: 24px 32px;
+  padding: 32px 40px;
   overflow-y: auto;
   background: #1D2021;
-  height: 100vh;
+  min-height: 0;
 }
 
 .tab-content {

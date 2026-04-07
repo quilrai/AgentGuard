@@ -1578,3 +1578,177 @@ pub fn remove_claude_code_settings() -> Result<String, String> {
 
     Ok(format!("ANTHROPIC_BASE_URL removed from ~/.claude/settings.json"))
 }
+
+// ========================================================================
+// Home Screen — facts pool + last-request-by-backend + token-saver stats
+// ========================================================================
+
+#[derive(Serialize)]
+pub struct LastRequestEntry {
+    pub backend: String,
+    pub timestamp: String,
+}
+
+#[derive(Serialize)]
+pub struct TopToolEntry {
+    pub tool_name: String,
+    pub count: i64,
+}
+
+#[derive(Serialize)]
+pub struct HomeFacts {
+    pub requests_last_hour: i64,
+    pub requests_last_day: i64,
+    pub total_requests: i64,
+    pub last_request_by_backend: Vec<LastRequestEntry>,
+    pub top_model_week: Option<String>,
+    pub detections_week: i64,
+    pub tokens_saved_today: i64,
+    pub avg_latency_ms_day: f64,
+    pub cache_hit_pct_day: f64,
+    pub top_tool_week: Option<TopToolEntry>,
+    pub enabled_pattern_count: i64,
+}
+
+#[tauri::command]
+pub fn get_home_facts() -> Result<HomeFacts, String> {
+    let conn = open_connection().map_err(|e| e.to_string())?;
+
+    let hour_cutoff = get_cutoff_timestamp(1);
+    let day_cutoff = get_cutoff_timestamp(24);
+    let week_cutoff = get_cutoff_timestamp(24 * 7);
+
+    let requests_last_hour: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM requests WHERE timestamp >= ?1",
+            [&hour_cutoff],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+
+    let requests_last_day: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM requests WHERE timestamp >= ?1",
+            [&day_cutoff],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+
+    let total_requests: i64 = conn
+        .query_row("SELECT COUNT(*) FROM requests", [], |row| row.get(0))
+        .unwrap_or(0);
+
+    let last_request_by_backend: Vec<LastRequestEntry> = {
+        let mut stmt = conn
+            .prepare("SELECT backend, MAX(timestamp) FROM requests GROUP BY backend")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(LastRequestEntry {
+                    backend: row.get(0)?,
+                    timestamp: row.get(1)?,
+                })
+            })
+            .map_err(|e| e.to_string())?;
+        rows.filter_map(|r| r.ok()).collect()
+    };
+
+    let top_model_week: Option<String> = conn
+        .query_row(
+            "SELECT model FROM requests
+             WHERE timestamp >= ?1 AND model IS NOT NULL
+             GROUP BY model
+             ORDER BY COUNT(*) DESC LIMIT 1",
+            [&week_cutoff],
+            |row| row.get(0),
+        )
+        .ok();
+
+    let detections_week: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM dlp_detections WHERE timestamp >= ?1",
+            [&week_cutoff],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+
+    let tokens_saved_today: i64 = conn
+        .query_row(
+            "SELECT COALESCE(SUM(tokens_saved), 0) FROM requests WHERE timestamp >= ?1",
+            [&day_cutoff],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+
+    let avg_latency_ms_day: f64 = conn
+        .query_row(
+            "SELECT COALESCE(AVG(latency_ms), 0) FROM requests
+             WHERE latency_ms > 0 AND timestamp >= ?1",
+            [&day_cutoff],
+            |row| row.get(0),
+        )
+        .unwrap_or(0.0);
+
+    let day_total: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM requests WHERE timestamp >= ?1",
+            [&day_cutoff],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+
+    let day_with_cache: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM requests WHERE timestamp >= ?1 AND cache_read_tokens > 0",
+            [&day_cutoff],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+
+    let cache_hit_pct_day: f64 = if day_total > 0 {
+        (day_with_cache as f64 / day_total as f64) * 100.0
+    } else {
+        0.0
+    };
+
+    let top_tool_week: Option<TopToolEntry> = conn
+        .query_row(
+            "SELECT tc.tool_name, COUNT(*) as cnt
+             FROM tool_calls tc
+             JOIN requests r ON tc.request_id = r.id
+             WHERE r.timestamp >= ?1
+             GROUP BY tc.tool_name
+             ORDER BY cnt DESC
+             LIMIT 1",
+            [&week_cutoff],
+            |row| {
+                Ok(TopToolEntry {
+                    tool_name: row.get(0)?,
+                    count: row.get(1)?,
+                })
+            },
+        )
+        .ok();
+
+    let enabled_pattern_count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM dlp_patterns WHERE enabled = 1",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+
+    Ok(HomeFacts {
+        requests_last_hour,
+        requests_last_day,
+        total_requests,
+        last_request_by_backend,
+        top_model_week,
+        detections_week,
+        tokens_saved_today,
+        avg_latency_ms_day,
+        cache_hit_pct_day,
+        top_tool_week,
+        enabled_pattern_count,
+    })
+}

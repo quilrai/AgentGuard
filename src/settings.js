@@ -32,16 +32,14 @@ function updateProxyStatusDisplay(port, isRestarting = false, isError = false) {
       const link = document.getElementById('change-port-link');
       if (link) {
         link.addEventListener('click', () => {
-          // Switch to settings tab
-          document.querySelectorAll('.nav-item').forEach(nav => nav.classList.remove('active'));
-          document.querySelector('[data-tab="settings"]').classList.add('active');
-          document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
-          document.getElementById('settings-tab').classList.add('active');
+          // Navigate to Guardian Agent (where the port setting now lives)
+          if (window.__navigateTo) window.__navigateTo('guardian');
           // Focus on port input
           const portInput = document.getElementById('port-input');
           if (portInput) {
             portInput.focus();
             portInput.select();
+            portInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
           }
         });
       }

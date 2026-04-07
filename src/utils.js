@@ -142,64 +142,67 @@ export function formatRelativeTime(ts) {
   return `${diffDays}d ago`;
 }
 
-// ============ Tab Switching ============
+// ============ Router ============
+//
+// Routes map 1:1 to <div id="{route}-tab"> elements in index.html.
+// Top-bar nav items expose `home`, `analytics`, `logs`. The drill-down pages
+// `guardian` and `token-saver` are reached from home cards (no top-bar entry).
 
-export function initTabs() {
-  const navItems = document.querySelectorAll('.nav-item');
-  navItems.forEach(item => {
-    item.addEventListener('click', (e) => {
-      // Don't switch tabs if clicking on info icon
-      if (e.target.closest('.nav-info')) return;
+const ROUTES = ['home', 'guardian', 'token-saver', 'analytics', 'logs'];
+const TOPBAR_ROUTES = new Set(['home', 'analytics', 'logs']);
 
-      const tabId = item.dataset.tab;
-      navItems.forEach(nav => nav.classList.remove('active'));
-      item.classList.add('active');
-      document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
-      document.getElementById(`${tabId}-tab`).classList.add('active');
-    });
-  });
+let currentRoute = 'home';
+const routeListeners = new Set();
 
-  // Initialize info tooltips
-  initNavInfoTooltips();
+export function getCurrentRoute() {
+  return currentRoute;
 }
 
-// ============ Nav Info Tooltips ============
+export function onRouteChange(fn) {
+  routeListeners.add(fn);
+  return () => routeListeners.delete(fn);
+}
 
-function initNavInfoTooltips() {
-  const infoIcons = document.querySelectorAll('.nav-info');
-  let activeTooltip = null;
+export function navigateTo(route) {
+  if (!ROUTES.includes(route)) return;
+  if (route === currentRoute) return;
 
-  infoIcons.forEach(icon => {
-    icon.addEventListener('click', (e) => {
-      e.stopPropagation();
+  const prev = currentRoute;
+  currentRoute = route;
 
-      // Remove any existing tooltip
-      if (activeTooltip) {
-        activeTooltip.remove();
-        activeTooltip = null;
-      }
+  // Toggle tab-content visibility
+  document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+  const target = document.getElementById(`${route}-tab`);
+  if (target) target.classList.add('active');
 
-      // Create and show tooltip
-      const tooltipText = icon.dataset.tooltip;
-      const tooltip = document.createElement('div');
-      tooltip.className = 'nav-info-tooltip';
-      tooltip.textContent = tooltipText;
-      icon.appendChild(tooltip);
-
-      // Trigger reflow and show
-      requestAnimationFrame(() => {
-        tooltip.classList.add('show');
-      });
-
-      activeTooltip = tooltip;
-    });
+  // Topbar nav active state — only for routes that live in the topbar
+  document.querySelectorAll('.topbar-nav-item').forEach(btn => {
+    const r = btn.dataset.route;
+    btn.classList.toggle('active', TOPBAR_ROUTES.has(route) && r === route);
   });
 
-  // Close tooltip when clicking elsewhere
-  document.addEventListener('click', () => {
-    if (activeTooltip) {
-      activeTooltip.remove();
-      activeTooltip = null;
-    }
+  // Scroll content area to top so the new page lands at the top
+  const content = document.querySelector('.content');
+  if (content) content.scrollTop = 0;
+
+  // Notify listeners (so modules can lazy-load on entry)
+  routeListeners.forEach(fn => {
+    try { fn(route, prev); } catch (e) { console.error(e); }
+  });
+}
+
+export function initRouter() {
+  // Topbar nav
+  document.querySelectorAll('.topbar-nav-item').forEach(btn => {
+    btn.addEventListener('click', () => navigateTo(btn.dataset.route));
+  });
+
+  // Any element with [data-route] (home cards, back links, etc.)
+  document.addEventListener('click', (e) => {
+    const el = e.target.closest('[data-route]');
+    if (!el) return;
+    if (el.classList.contains('topbar-nav-item')) return; // already handled
+    e.preventDefault();
+    navigateTo(el.dataset.route);
   });
 }

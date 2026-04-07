@@ -1,6 +1,6 @@
 // Main entry point - imports and initializes all modules
 
-import { initTabs } from './utils.js';
+import { initRouter, onRouteChange, getCurrentRoute } from './utils.js';
 import { loadDashboard, loadBackends, initBackendFilter, initTimeFilter } from './dashboard.js';
 import {
   loadMessageLogs,
@@ -14,9 +14,10 @@ import {
   initLogsExport
 } from './logs.js';
 import { initSettings } from './settings.js';
-import { initBackends } from './backends.js';
-import { initTokenSaving } from './token-saving.js';
+import { initBackends, loadCustomBackends, loadPredefinedBackends } from './backends.js';
+import { initTokenSaving, refreshTokenSaver } from './token-saving.js';
 import { initHowTo } from './howto.js';
+import { initHome, loadHome, suspendHome, resumeHome } from './home.js';
 
 const { openUrl } = window.__TAURI__.opener;
 
@@ -25,10 +26,14 @@ window.addEventListener('DOMContentLoaded', () => {
   // Initialize Lucide icons
   lucide.createIcons();
 
-  // Initialize navigation
-  initTabs();
+  // Initialize router
+  initRouter();
 
-  // Initialize dashboard
+  // Initialize home (status cards + rotating fact)
+  initHome();
+  loadHome();
+
+  // Initialize analytics (formerly Dashboard)
   initTimeFilter();
   initBackendFilter();
   loadBackends();
@@ -44,39 +49,69 @@ window.addEventListener('DOMContentLoaded', () => {
   loadLogsBackends();
   loadLogsModels();
 
-  // Initialize settings
+  // Initialize Guardian Agent sub-modules (settings, backends, howto)
   initSettings();
-
-  // Initialize custom backends
   initBackends();
-
-  // Initialize token saving
-  initTokenSaving();
-
-  // Initialize how-to
   initHowTo();
 
-  // Refresh buttons - also refresh backends list
-  document.getElementById('refresh-btn').addEventListener('click', () => {
-    loadBackends();
-    loadDashboard();
-  });
-  document.getElementById('logs-refresh-btn').addEventListener('click', () => {
-    loadLogsBackends();
-    loadMessageLogs();
+  // Initialize Token Saver
+  initTokenSaving();
+
+  // Refresh buttons
+  const refreshBtn = document.getElementById('refresh-btn');
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', () => {
+      loadBackends();
+      loadDashboard();
+    });
+  }
+  const logsRefreshBtn = document.getElementById('logs-refresh-btn');
+  if (logsRefreshBtn) {
+    logsRefreshBtn.addEventListener('click', () => {
+      loadLogsBackends();
+      loadMessageLogs();
+    });
+  }
+
+  // Refresh data on route entry where it makes sense
+  onRouteChange((route) => {
+    if (route === 'home') {
+      loadHome();
+      resumeHome();
+    } else {
+      suspendHome();
+    }
+
+    if (route === 'logs') {
+      loadMessageLogs();
+      loadLogsModels();
+    }
+
+    if (route === 'guardian') {
+      loadPredefinedBackends();
+      loadCustomBackends();
+    }
+
+    if (route === 'token-saver') {
+      refreshTokenSaver();
+    }
+
+    if (route === 'analytics') {
+      loadBackends();
+      loadDashboard();
+    }
   });
 
-  // Load logs when tab is clicked
-  document.querySelector('[data-tab="logs"]').addEventListener('click', () => {
-    loadMessageLogs();
-    loadLogsModels();
-  });
+  // Footer links
+  const star = document.getElementById('starGithub');
+  if (star) star.addEventListener('click', () => openUrl('https://github.com/quilrai/LLMWatcher'));
+  const report = document.getElementById('reportIssue');
+  if (report) report.addEventListener('click', () => openUrl('https://github.com/quilrai/LLMWatcher/issues'));
 
-  // GitHub links
-  document.getElementById('starGithub').addEventListener('click', () => {
-    openUrl('https://github.com/quilrai/LLMWatcher');
-  });
-  document.getElementById('reportIssue').addEventListener('click', () => {
-    openUrl('https://github.com/quilrai/LLMWatcher/issues');
-  });
+  // Re-run lucide once after dynamic icons are added
+  setTimeout(() => lucide.createIcons(), 100);
 });
+
+// Expose navigateTo for legacy callers (e.g., proxy-failed change-port-link)
+import { navigateTo } from './utils.js';
+window.__navigateTo = navigateTo;

@@ -15,69 +15,278 @@
 
   <body>
     <div class="app-container">
-      <!-- Sidebar -->
-      <nav class="sidebar">
-        <div class="sidebar-header">
-          <h2>LLMwatcher <span class="header-branding"><span class="made-by">by</span> <a href="https://quilr.ai" target="_blank">QuilrAI</a></span></h2>
+      <!-- Top Bar -->
+      <header class="topbar">
+        <div class="topbar-left">
+          <h2 class="topbar-logo">
+            LLMwatcher
+            <span class="topbar-byline"><span class="made-by">by</span> <a href="https://quilr.ai" target="_blank">QuilrAI</a></span>
+          </h2>
         </div>
-        <ul class="nav-tabs">
-          <li class="nav-item active" data-tab="home">
-            <span class="nav-icon"><i data-lucide="layout-dashboard"></i></span>
-            <span class="nav-text">Dashboard</span>
-            <span class="nav-info" data-tooltip="Overview of stats for requests that went through"><i data-lucide="info"></i></span>
-          </li>
-          <li class="nav-item" data-tab="logs">
-            <span class="nav-icon"><i data-lucide="file-text"></i></span>
-            <span class="nav-text">Message Logs</span>
-            <span class="nav-info" data-tooltip="Full logs of requests and responses"><i data-lucide="info"></i></span>
-          </li>
-          <li class="nav-item" data-tab="settings">
-            <span class="nav-icon"><i data-lucide="settings"></i></span>
-            <span class="nav-text">Settings</span>
-            <span class="nav-info" data-tooltip="Categories to be blocked, rate limits and other settings"><i data-lucide="info"></i></span>
-          </li>
-          <li class="nav-item" data-tab="backends">
-            <span class="nav-icon"><i data-lucide="server"></i></span>
-            <span class="nav-text">LLM Gateway</span>
-            <span class="nav-info" data-tooltip="Pass through gateway for your LLMs"><i data-lucide="info"></i></span>
-          </li>
-          <li class="nav-item" data-tab="token-saving">
-            <span class="nav-icon"><i data-lucide="piggy-bank"></i></span>
-            <span class="nav-text">Token Saving</span>
-            <span class="nav-info" data-tooltip="Reduce token usage with context trimming and other features"><i data-lucide="info"></i></span>
-          </li>
-          <li class="nav-item" data-tab="howto">
-            <span class="nav-icon"><i data-lucide="plug"></i></span>
-            <span class="nav-text">Use with your agent</span>
-            <span class="nav-info" data-tooltip="Configure Claude Code, Codex, Cursor to use the gateway"><i data-lucide="info"></i></span>
-          </li>
-        </ul>
-        <div class="sidebar-links">
-          <a class="sidebar-link" id="starGithub" title="Star on GitHub">
-            <i data-lucide="star"></i>
-            <span>Star on GitHub</span>
-          </a>
-          <a class="sidebar-link" id="reportIssue" title="Report Issue">
-            <i data-lucide="message-circle"></i>
-            <span>Report Issue</span>
-          </a>
-        </div>
-        <div class="sidebar-footer">
+        <nav class="topbar-nav">
+          <button class="topbar-nav-item active" data-route="home">Home</button>
+          <button class="topbar-nav-item" data-route="analytics">Analytics</button>
+          <button class="topbar-nav-item" data-route="logs">Logs</button>
+        </nav>
+        <div class="topbar-right">
           <div class="proxy-status">
             <span class="status-dot starting" id="proxy-status-dot"></span>
             <span id="proxy-status-text">Starting gateway...</span>
           </div>
-          <div class="sidebar-branding">
-            <span class="made-by">made by</span> <a href="https://quilr.ai" target="_blank">Quilr.ai</a>
-          </div>
         </div>
-      </nav>
+      </header>
 
       <!-- Main Content -->
       <main class="content">
-        <!-- Dashboard Tab -->
+
+        <!-- ============ HOME ============ -->
         <div id="home-tab" class="tab-content active">
+          <div class="home-meta-bar">
+            <a class="footer-link" id="starGithub" title="Star on GitHub">
+              <i data-lucide="star"></i><span>Star on GitHub</span>
+            </a>
+            <span class="footer-sep">·</span>
+            <a class="footer-link" id="reportIssue" title="Report Issue">
+              <i data-lucide="message-circle"></i><span>Report an issue</span>
+            </a>
+            <span class="footer-sep">·</span>
+            <span class="footer-branding"><span class="made-by">made by</span> <a href="https://quilr.ai" target="_blank">Quilr.ai</a></span>
+          </div>
+          <div class="home-wrap">
+            <div class="home-cards">
+
+              <button class="home-card" id="guardian-card" data-route="guardian" type="button">
+                <span class="home-card-accent"></span>
+                <div class="home-card-head">
+                  <div class="home-card-icon home-card-icon--guardian">
+                    <i data-lucide="shield-check"></i>
+                  </div>
+                  <div class="home-card-pill">
+                    <span class="status-dot" id="guardian-status-dot"></span>
+                    <span id="guardian-status-text">Loading…</span>
+                  </div>
+                </div>
+                <div class="home-card-title">Guardian Agent</div>
+                <div class="home-card-sub">Detects and stops sensitive data leaving your machine.</div>
+                <div class="home-card-stats" id="guardian-card-stats">
+                  <div class="home-card-stat-line">&nbsp;</div>
+                  <div class="home-card-stat-line">&nbsp;</div>
+                </div>
+                <div class="home-card-foot">
+                  <span class="home-card-cta">Configure</span>
+                  <span class="home-card-arrow"><i data-lucide="arrow-right"></i></span>
+                </div>
+              </button>
+
+              <button class="home-card" id="token-saver-card" data-route="token-saver" type="button">
+                <span class="home-card-accent"></span>
+                <div class="home-card-head">
+                  <div class="home-card-icon home-card-icon--saver">
+                    <i data-lucide="piggy-bank"></i>
+                  </div>
+                  <div class="home-card-pill">
+                    <span class="status-dot" id="token-saver-status-dot"></span>
+                    <span id="token-saver-status-text">Loading…</span>
+                  </div>
+                </div>
+                <div class="home-card-title">Token Saver</div>
+                <div class="home-card-sub">Compresses verbose shell output before it hits your context.</div>
+                <div class="home-card-stats" id="token-saver-card-stats">
+                  <div class="home-card-stat-line">&nbsp;</div>
+                  <div class="home-card-stat-line">&nbsp;</div>
+                </div>
+                <div class="home-card-foot">
+                  <span class="home-card-cta">Configure</span>
+                  <span class="home-card-arrow"><i data-lucide="arrow-right"></i></span>
+                </div>
+              </button>
+
+            </div>
+
+            <div class="home-divider">
+              <span class="home-divider-mark"></span>
+            </div>
+
+            <div class="home-fact-wrap" id="home-fact-wrap">
+              <div class="home-fact" id="home-fact">&nbsp;</div>
+              <div class="home-fact-dots" id="home-fact-dots"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ============ GUARDIAN AGENT ============ -->
+        <div id="guardian-tab" class="tab-content">
+          <div class="page-back-header">
+            <button class="back-link" data-route="home" type="button">
+              <i data-lucide="arrow-left"></i> Back
+            </button>
+            <h1 class="page-title">Guardian Agent</h1>
+            <p class="page-lede">Stop sensitive data leaving your machine. Per-backend protection, custom rules, and gateway setup all live here.</p>
+          </div>
+
+          <!-- Backends -->
+          <section class="settings-section">
+            <h2 class="section-heading">Backends</h2>
+            <p class="section-subtitle">Toggle protection, rate limits, and per-request token caps for each LLM backend.</p>
+            <div class="card">
+              <div class="card-header"><span>Pre-defined backends</span></div>
+              <div class="card-body">
+                <div id="predefined-backends-list" class="backends-list">
+                  <p class="empty-text">Loading backends...</p>
+                </div>
+              </div>
+            </div>
+            <div class="card" style="margin-top:16px;">
+              <div class="card-header">
+                <span>Custom backends</span>
+                <button id="add-backend-btn" class="btn btn-primary btn-sm">
+                  <i data-lucide="plus"></i> Add backend
+                </button>
+              </div>
+              <div class="card-body">
+                <div id="backends-list" class="backends-list">
+                  <p class="empty-text">Loading backends...</p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- Detection Action -->
+          <section class="settings-section">
+            <h2 class="section-heading">Detection action</h2>
+            <p class="section-subtitle">Choose how the guardian responds when sensitive data is found.</p>
+            <div class="card">
+              <div class="card-body">
+                <div class="setting-row" style="margin-bottom: 20px;">
+                  <div class="setting-info">
+                    <label class="setting-label">When sensitive data is detected</label>
+                    <p class="setting-description" id="dlp-action-description">Sensitive data is redacted before sending to LLM and restored in the response seamlessly. No manual action needed.</p>
+                    <p class="setting-note">Cursor supports blocking only.</p>
+                  </div>
+                  <div class="setting-control">
+                    <div class="toggle-switch-container">
+                      <span class="toggle-label" id="dlp-action-label-redact">Redact</span>
+                      <label class="toggle-switch">
+                        <input type="checkbox" id="dlp-action-toggle" />
+                        <span class="toggle-slider"></span>
+                      </label>
+                      <span class="toggle-label" id="dlp-action-label-block">Block</span>
+                    </div>
+                  </div>
+                </div>
+                <div id="dlp-action-status" class="settings-status"></div>
+              </div>
+            </div>
+          </section>
+
+          <!-- Detection Rules -->
+          <section class="settings-section">
+            <h2 class="section-heading">Detection rules</h2>
+            <p class="section-subtitle">Patterns the guardian uses to find sensitive data inside prompts and file reads.</p>
+            <div class="card">
+              <div class="card-body">
+                <div class="dlp-section">
+                  <div class="dlp-section-header">
+                    <h4 class="dlp-section-title">Patterns</h4>
+                    <button id="add-pattern-btn" class="btn btn-secondary btn-sm">
+                      <i data-lucide="plus"></i> Add pattern
+                    </button>
+                  </div>
+                  <div class="dlp-pattern-list" id="dlp-patterns">
+                    <p class="empty-text">Loading patterns...</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- Setup -->
+          <section class="settings-section">
+            <h2 class="section-heading">Setup</h2>
+            <p class="section-subtitle">Connect your coding agent so its requests pass through the gateway.</p>
+            <div class="howto-tools">
+              <button class="howto-tool-btn" data-tool="claude-code">Claude Code CLI</button>
+              <button class="howto-tool-btn" data-tool="cursor">Cursor</button>
+              <button class="howto-tool-btn" data-tool="codex">Codex CLI</button>
+            </div>
+            <div id="howto-instructions" class="howto-instructions">
+              <p class="empty-text">Select a tool above to see instructions.</p>
+            </div>
+          </section>
+
+          <!-- Advanced -->
+          <section class="settings-section">
+            <h2 class="section-heading">Advanced</h2>
+            <div class="card">
+              <div class="card-body">
+                <div class="setting-row">
+                  <div class="setting-info">
+                    <label for="port-input" class="setting-label">Gateway port</label>
+                    <p class="setting-description">Default: 8008. Use with ANTHROPIC_BASE_URL or OPENAI_BASE_URL.</p>
+                  </div>
+                  <div class="setting-control">
+                    <input type="number" id="port-input" class="port-input" min="1024" max="65535" value="8008" />
+                    <button id="save-port-btn" class="btn btn-primary">Save</button>
+                  </div>
+                </div>
+                <div id="settings-status" class="settings-status"></div>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <!-- ============ TOKEN SAVER ============ -->
+        <div id="token-saver-tab" class="tab-content">
+          <div class="page-back-header">
+            <button class="back-link" data-route="home" type="button">
+              <i data-lucide="arrow-left"></i> Back
+            </button>
+            <h1 class="page-title">Token Saver</h1>
+            <p class="page-lede">Compress shell output before it reaches your agent's context window. Saves 60–90% of tokens from verbose tool output.</p>
+          </div>
+
+          <section class="settings-section">
+            <h2 class="section-heading">Per-backend</h2>
+            <p class="section-subtitle">Enable shell output compression for each backend that supports it.</p>
+            <div class="card">
+              <div class="card-body">
+                <div id="token-saving-backends-list" class="backends-list">
+                  <p class="empty-text">Loading backends...</p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="settings-section">
+            <h2 class="section-heading">Agent hooks</h2>
+            <p class="section-subtitle">Install hooks so your agents automatically use the compressor for shell tool output.</p>
+            <div class="card">
+              <div class="card-body">
+                <div class="sc-hooks-list">
+                  <div class="sc-hook-row">
+                    <div class="sc-hook-info">
+                      <span class="sc-hook-name">Claude Code</span>
+                      <span class="sc-hook-status" id="sc-claude-status">Checking...</span>
+                    </div>
+                    <button class="btn btn-sm" id="sc-claude-btn" disabled>Install</button>
+                  </div>
+                  <div class="sc-hook-row">
+                    <div class="sc-hook-info">
+                      <span class="sc-hook-name">Codex</span>
+                      <span class="sc-hook-status" id="sc-codex-status">Checking...</span>
+                    </div>
+                    <button class="btn btn-sm" id="sc-codex-btn" disabled>Install</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <!-- ============ ANALYTICS ============ -->
+        <div id="analytics-tab" class="tab-content">
           <div class="page-header">
+            <h1 class="page-title">Analytics</h1>
             <div class="header-filters">
               <select id="backend-select" class="filter-select">
                 <option value="all">All Backends</option>
@@ -99,9 +308,10 @@
           </div>
         </div>
 
-        <!-- Message Logs Tab -->
+        <!-- ============ LOGS ============ -->
         <div id="logs-tab" class="tab-content">
           <div class="page-header">
+            <h1 class="page-title">Logs</h1>
             <div class="header-filters">
               <select id="logs-backend-select" class="filter-select">
                 <option value="all">All Backends</option>
@@ -147,144 +357,7 @@
           </div>
         </div>
 
-        <!-- Settings Tab -->
-        <div id="settings-tab" class="tab-content">
-          <h1>Settings</h1>
-
-          <div class="settings-section">
-            <div class="card">
-              <div class="card-header">Passthrough Server</div>
-              <div class="card-body">
-                <div class="setting-row">
-                  <div class="setting-info">
-                    <label for="port-input" class="setting-label">Port Number</label>
-                    <p class="setting-description">Default: 8008. Use with ANTHROPIC_BASE_URL or OPENAI_BASE_URL.</p>
-                  </div>
-                  <div class="setting-control">
-                    <input type="number" id="port-input" class="port-input" min="1024" max="65535" value="8008" />
-                    <button id="save-port-btn" class="btn btn-primary">Save</button>
-                  </div>
-                </div>
-                <div id="settings-status" class="settings-status"></div>
-              </div>
-            </div>
-          </div>
-
-          <div class="settings-section">
-            <div class="card">
-              <div class="card-header">Sensitive Data Settings</div>
-              <div class="card-body">
-                <div class="setting-row" style="margin-bottom: 20px;">
-                  <div class="setting-info">
-                    <label class="setting-label">Detection Action</label>
-                    <p class="setting-description" id="dlp-action-description">Sensitive data is redacted before sending to LLM and restored in the response seamlessly. No manual action needed.</p>
-                    <p class="setting-note">Cursor supports blocking only.</p>
-                  </div>
-                  <div class="setting-control">
-                    <div class="toggle-switch-container">
-                      <span class="toggle-label" id="dlp-action-label-redact">Redact</span>
-                      <label class="toggle-switch">
-                        <input type="checkbox" id="dlp-action-toggle" />
-                        <span class="toggle-slider"></span>
-                      </label>
-                      <span class="toggle-label" id="dlp-action-label-block">Block</span>
-                    </div>
-                  </div>
-                </div>
-                <div id="dlp-action-status" class="settings-status"></div>
-
-                <div class="dlp-section">
-                  <div class="dlp-section-header">
-                    <h4 class="dlp-section-title">Detection Patterns</h4>
-                    <button id="add-pattern-btn" class="btn btn-secondary btn-sm">
-                      <i data-lucide="plus"></i>
-                      Add Pattern
-                    </button>
-                  </div>
-                  <div class="dlp-pattern-list" id="dlp-patterns">
-                    <p class="empty-text">Loading patterns...</p>
-                  </div>
-                </div>
-
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- LLM Gateway Tab -->
-        <div id="backends-tab" class="tab-content">
-          <h1>LLM Gateway</h1>
-          <p class="page-subtitle">Configure data protection, rate limits, and token limits for your LLM backends. Restart the proxy to apply changes.</p>
-
-          <div class="settings-section">
-            <div class="card">
-              <div class="card-header">
-                <span>Pre-defined Backends</span>
-              </div>
-              <div class="card-body">
-                <div id="predefined-backends-list" class="backends-list">
-                  <p class="empty-text">Loading backends...</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="settings-section">
-            <div class="card">
-              <div class="card-header">
-                <span>Custom Backends</span>
-                <button id="add-backend-btn" class="btn btn-primary btn-sm">
-                  <i data-lucide="plus"></i>
-                  Add Backend
-                </button>
-              </div>
-              <div class="card-body">
-                <div id="backends-list" class="backends-list">
-                  <p class="empty-text">Loading backends...</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Token Saving Tab -->
-        <div id="token-saving-tab" class="tab-content">
-          <h1>Token Saving</h1>
-          <p class="page-subtitle">Enable token saving features per backend to reduce token usage.</p>
-
-          <div class="settings-section">
-            <div class="card">
-              <div class="card-header">
-                <span>Shell Output Compression</span>
-              </div>
-              <div class="card-body">
-                <p class="setting-description" style="margin-bottom: 16px;">Compress shell command output (git, cargo, docker, npm, kubectl, and 40+ tools) before it reaches your agent's context window. Saves 60-90% of tokens from verbose command output. Toggle per backend below.</p>
-                <div id="token-saving-backends-list" class="backends-list">
-                  <p class="empty-text">Loading backends...</p>
-                </div>
-                <div id="sc-hooks-section" style="margin-top: 20px;">
-                  <p class="setting-description" style="margin-bottom: 12px;">Install hooks to automatically compress shell output for your agents:</p>
-                  <div class="sc-hooks-list">
-                    <div class="sc-hook-row">
-                      <div class="sc-hook-info">
-                        <span class="sc-hook-name">Claude Code</span>
-                        <span class="sc-hook-status" id="sc-claude-status">Checking...</span>
-                      </div>
-                      <button class="btn btn-sm" id="sc-claude-btn" disabled>Install</button>
-                    </div>
-                    <div class="sc-hook-row">
-                      <div class="sc-hook-info">
-                        <span class="sc-hook-name">Codex</span>
-                        <span class="sc-hook-status" id="sc-codex-status">Checking...</span>
-                      </div>
-                      <button class="btn btn-sm" id="sc-codex-btn" disabled>Install</button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+        <!-- ============ MODALS ============ -->
 
         <!-- Add/Edit Backend Modal -->
         <div id="backend-modal" class="modal">
@@ -424,22 +497,6 @@
               <button class="btn btn-secondary" id="cancel-predefined-backend-btn">Cancel</button>
               <button class="btn btn-primary" id="save-predefined-backend-btn">Save and Restart Gateway</button>
             </div>
-          </div>
-        </div>
-
-        <!-- Use with your agent Tab -->
-        <div id="howto-tab" class="tab-content">
-          <h1>Use with your agent</h1>
-          <p class="howto-subtitle">Select a tool to see setup instructions for using it with this proxy.</p>
-
-          <div class="howto-tools">
-            <button class="howto-tool-btn" data-tool="claude-code">Claude Code CLI</button>
-            <button class="howto-tool-btn" data-tool="cursor">Cursor</button>
-            <button class="howto-tool-btn" data-tool="codex">Codex CLI</button>
-          </div>
-
-          <div id="howto-instructions" class="howto-instructions">
-            <p class="empty-text">Select a tool above to see instructions.</p>
           </div>
         </div>
 

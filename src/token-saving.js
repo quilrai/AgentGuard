@@ -177,11 +177,12 @@ export function initTokenSaving() {
   // Setup hook buttons
   setupHookButtons();
 
-  document.querySelector('[data-tab="token-saving"]')?.addEventListener('click', () => {
-    checkAllHookStatuses();
-    loadAllBackends();
-  });
+  checkAllHookStatuses();
+  loadAllBackends();
+}
 
+// Refresh helper called by the router on route entry
+export function refreshTokenSaver() {
   checkAllHookStatuses();
   loadAllBackends();
 }

@@ -233,6 +233,8 @@ pub fn run() {
             commands::install_compression_hook_codex,
             commands::uninstall_compression_hook_codex,
             commands::check_compression_hook_codex,
+            // Home screen
+            commands::get_home_facts,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
