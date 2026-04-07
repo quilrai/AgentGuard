@@ -15,6 +15,7 @@ import {
 } from './logs.js';
 import { initSettings } from './settings.js';
 import { initBackends } from './backends.js';
+import { initTokenSaving } from './token-saving.js';
 import { initHowTo } from './howto.js';
 
 const { openUrl } = window.__TAURI__.opener;
@@ -48,6 +49,9 @@ window.addEventListener('DOMContentLoaded', () => {
 
   // Initialize custom backends
   initBackends();
+
+  // Initialize token saving
+  initTokenSaving();
 
   // Initialize how-to
   initHowTo();

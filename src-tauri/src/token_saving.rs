@@ -1,8 +1,10 @@
 // Token Saving Module
 //
 // Applies optional token-saving transformations to request bodies before forwarding.
-// Each feature is independently toggleable. Currently a dummy implementation that
-// returns the input unchanged, but tracks what would be saved per-feature.
+// Each feature is independently toggleable via per-backend TokenSavingSettings.
+//
+// Note: shell_compression is handled separately by the /cli_compression endpoint,
+// not through this module. This module handles request-body transformations only.
 
 use crate::backends::custom::TokenSavingSettings;
 use serde::{Deserialize, Serialize};
@@ -39,39 +41,12 @@ impl TokenSavingResult {
 
 /// Apply all enabled token-saving transformations to a request body.
 /// Returns the transformed body along with savings metadata.
-pub fn apply_token_saving(body: &str, settings: &TokenSavingSettings) -> TokenSavingResult {
-    if !settings.any_enabled() {
-        return TokenSavingResult::none(body.to_string());
-    }
-
-    let mut result_body = body.to_string();
-    let mut total_saved = 0i32;
-    let mut feature_savings = HashMap::new();
-
-    // Feature: context_trimming
-    if settings.context_trimming {
-        let (transformed, saved) = apply_context_trimming(&result_body);
-        result_body = transformed;
-        if saved > 0 {
-            total_saved += saved;
-            feature_savings.insert("context_trimming".to_string(), saved);
-        }
-    }
-
-    // Future features go here following the same pattern
-
-    TokenSavingResult {
-        body: result_body,
-        total_tokens_saved: total_saved,
-        feature_savings,
-    }
-}
-
-/// Dummy implementation of context trimming.
-/// Currently returns the input unchanged with 0 tokens saved.
-/// Will be replaced with actual trimming logic later.
-fn apply_context_trimming(body: &str) -> (String, i32) {
-    // TODO: Implement actual context trimming logic
-    // For now, return input unchanged
-    (body.to_string(), 0)
+///
+/// Note: shell_compression is not handled here — it uses a separate endpoint.
+/// Future request-body features will be added here.
+pub fn apply_token_saving(body: &str, _settings: &TokenSavingSettings) -> TokenSavingResult {
+    // Currently no request-body transformations are implemented.
+    // shell_compression is handled by the /cli_compression endpoint.
+    // Future features (e.g., context trimming) would be applied here.
+    TokenSavingResult::none(body.to_string())
 }

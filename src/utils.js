@@ -84,12 +84,12 @@ export function setCurrentPort(port) {
 // ============ Color Palette ============
 
 export const colors = {
-  primary: '#6366f1',
-  secondary: '#22c55e',
+  primary: '#71D083',
+  secondary: '#1FD8A4',
   warning: '#f59e0b',
   pink: '#ec4899',
-  blue: '#3b82f6',
-  purple: '#8b5cf6',
+  blue: '#7DD38D',
+  purple: '#71D083',
 };
 
 // ============ Utility Functions ============

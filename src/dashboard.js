@@ -426,7 +426,7 @@ function createFullscreenTokenChart(canvas, requests) {
       },
       scales: {
         x: { stacked: true, grid: { display: false }, ticks: { font: { size: 12 } } },
-        y: { stacked: true, grid: { color: '#f0f0f0' }, ticks: { font: { size: 12 }, callback: v => formatNumber(v) } }
+        y: { stacked: true, grid: { color: 'rgba(113, 208, 131, 0.08)' }, ticks: { font: { size: 12 }, callback: v => formatNumber(v) } }
       }
     }
   });
@@ -445,7 +445,7 @@ function createFullscreenLatencyChart(canvas, latencyPoints) {
         label: 'Latency (ms)',
         data: values,
         borderColor: colors.primary,
-        backgroundColor: 'rgba(99, 102, 241, 0.1)',
+        backgroundColor: 'rgba(113, 208, 131, 0.1)',
         fill: true,
         tension: 0.3,
         pointRadius: 3,
@@ -458,7 +458,7 @@ function createFullscreenLatencyChart(canvas, latencyPoints) {
       plugins: { legend: { display: false } },
       scales: {
         x: { grid: { display: false }, ticks: { font: { size: 12 } } },
-        y: { grid: { color: '#f0f0f0' }, ticks: { font: { size: 12 }, callback: v => formatLatency(v) } }
+        y: { grid: { color: 'rgba(113, 208, 131, 0.08)' }, ticks: { font: { size: 12 }, callback: v => formatLatency(v) } }
       }
     }
   });
@@ -527,7 +527,7 @@ function createFullscreenToolInsightsChart(canvas, insights) {
           } else if (maxChars <= 3) return;
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          ctx.fillStyle = '#fff';
+          ctx.fillStyle = '#e8e8e8';
           ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
           ctx.shadowBlur = 3;
           ctx.fillText(label, labelX, labelY);
@@ -541,8 +541,8 @@ function createFullscreenToolInsightsChart(canvas, insights) {
     type: 'doughnut',
     data: {
       datasets: [
-        { label: 'Targets', data: outerValues, backgroundColor: outerColors, borderWidth: 1, borderColor: '#fff' },
-        { label: 'Tools', data: innerValues, backgroundColor: innerColors, borderWidth: 2, borderColor: '#fff' }
+        { label: 'Targets', data: outerValues, backgroundColor: outerColors, borderWidth: 1, borderColor: '#1D2021' },
+        { label: 'Tools', data: innerValues, backgroundColor: innerColors, borderWidth: 2, borderColor: '#1D2021' }
       ]
     },
     options: {
@@ -557,12 +557,12 @@ function createFullscreenToolInsightsChart(canvas, insights) {
             boxWidth: 14,
             padding: 12,
             font: { size: 13 },
-            color: '#e0e0e0',
+            color: '#aaa',
             generateLabels: () => tools.map((tool, i) => ({
               text: `${tool.tool_name} (${tool.count})`,
               fillStyle: dlpColors[i % dlpColors.length],
-              strokeStyle: '#fff',
-              fontColor: '#e0e0e0',
+              strokeStyle: '#1D2021',
+              fontColor: '#aaa',
               lineWidth: 1,
               index: i
             }))
@@ -592,7 +592,7 @@ function createFullscreenDlpChart(canvas, detectionsByPattern) {
     type: 'doughnut',
     data: {
       labels,
-      datasets: [{ data: values, backgroundColor: backgroundColors, borderWidth: 2, borderColor: '#fff' }]
+      datasets: [{ data: values, backgroundColor: backgroundColors, borderWidth: 2, borderColor: '#1D2021' }]
     },
     options: {
       responsive: true,
@@ -607,7 +607,7 @@ function createFullscreenDlpChart(canvas, detectionsByPattern) {
             generateLabels: (chart) => chart.data.labels.map((label, i) => ({
               text: `${label} (${chart.data.datasets[0].data[i]})`,
               fillStyle: chart.data.datasets[0].backgroundColor[i],
-              strokeStyle: '#fff',
+              strokeStyle: '#1D2021',
               lineWidth: 2,
               index: i
             }))

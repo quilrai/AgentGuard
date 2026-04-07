@@ -14,7 +14,7 @@
 
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: #1a1a2e;
+      background: #1D2021;
       color: #e0e0e0;
       font-size: 12px;
       overflow: hidden;
@@ -50,7 +50,7 @@
       font-size: 10px;
       color: #666;
       padding-bottom: 4px;
-      border-bottom: 1px solid #2d2d44;
+      border-bottom: 1px solid rgba(113, 208, 131, 0.08);
     }
 
     .stats-header.right {
@@ -62,7 +62,7 @@
     }
 
     .backend-name {
-      color: #a8d8ea;
+      color: #71D083;
       font-weight: 500;
       white-space: nowrap;
       overflow: hidden;
@@ -77,19 +77,19 @@
     }
 
     .stat-value.requests {
-      color: #82ca9d;
+      color: #71D083;
     }
 
     .stat-value.input {
-      color: #8884d8;
+      color: #7DD38D;
     }
 
     .stat-value.output {
-      color: #ffc658;
+      color: #1FD8A4;
     }
 
     .stat-value.cache {
-      color: #ff7c7c;
+      color: #f59e0b;
     }
 
     .empty-state {
@@ -104,7 +104,7 @@
       gap: 8px;
       padding-bottom: 12px;
       margin-bottom: 12px;
-      border-bottom: 1px solid #2d2d44;
+      border-bottom: 1px solid rgba(113, 208, 131, 0.08);
     }
 
     .btn {
@@ -119,21 +119,22 @@
     }
 
     .btn-primary {
-      background: #4a9eff;
-      color: white;
+      background: rgba(113, 208, 131, 0.14);
+      color: #71D083;
+      border: 1px solid rgba(113, 208, 131, 0.3);
     }
 
     .btn-primary:hover {
-      background: #3d8ae6;
+      background: rgba(113, 208, 131, 0.22);
     }
 
     .btn-secondary {
-      background: #3d3d5c;
+      background: #25292C;
       color: #ccc;
     }
 
     .btn-secondary:hover {
-      background: #4d4d6c;
+      background: #2e3235;
     }
 
     .loading {
@@ -145,8 +146,8 @@
     .loading-spinner {
       width: 20px;
       height: 20px;
-      border: 2px solid #3d3d5c;
-      border-top-color: #4a9eff;
+      border: 2px solid #25292C;
+      border-top-color: #61E87B;
       border-radius: 50%;
       animation: spin 0.8s linear infinite;
       margin: 0 auto 8px;
@@ -159,7 +160,7 @@
     .chart-section {
       margin-bottom: 12px;
       padding-bottom: 12px;
-      border-bottom: 1px solid #2d2d44;
+      border-bottom: 1px solid rgba(113, 208, 131, 0.08);
     }
 
     .chart-container {
@@ -179,7 +180,7 @@
       gap: 8px;
       padding-top: 12px;
       margin-top: 12px;
-      border-top: 1px solid #2d2d44;
+      border-top: 1px solid rgba(113, 208, 131, 0.08);
     }
 
     .btn-link {
@@ -191,12 +192,12 @@
       font-weight: 500;
       cursor: pointer;
       transition: all 0.15s ease;
-      background: #2d2d44;
+      background: #25292C;
       color: #aaa;
     }
 
     .btn-link:hover {
-      background: #3d3d5c;
+      background: #2e3235;
       color: #ccc;
     }
   </style>
@@ -296,12 +297,12 @@
 
     // Colors for different backends
     const backendColors = [
-      { border: '#8884d8', bg: 'rgba(136, 132, 216, 0.2)' },  // Purple
-      { border: '#82ca9d', bg: 'rgba(130, 202, 157, 0.2)' },  // Green
-      { border: '#ffc658', bg: 'rgba(255, 198, 88, 0.2)' },   // Yellow
-      { border: '#ff7c7c', bg: 'rgba(255, 124, 124, 0.2)' },  // Red
-      { border: '#4a9eff', bg: 'rgba(74, 158, 255, 0.2)' },   // Blue
-      { border: '#a8d8ea', bg: 'rgba(168, 216, 234, 0.2)' },  // Cyan
+      { border: '#71D083', bg: 'rgba(113, 208, 131, 0.2)' },  // Primary Green
+      { border: '#1FD8A4', bg: 'rgba(31, 216, 164, 0.2)' },   // Teal
+      { border: '#7DD38D', bg: 'rgba(125, 211, 141, 0.2)' },  // Light Green
+      { border: '#f59e0b', bg: 'rgba(245, 158, 11, 0.2)' },   // Warning
+      { border: '#ec4899', bg: 'rgba(236, 72, 153, 0.2)' },   // Pink
+      { border: '#61E87B', bg: 'rgba(97, 232, 123, 0.2)' },   // Bright Green
     ];
 
     async function loadTokenChart() {
@@ -386,7 +387,7 @@
                 display: false,
               },
               y: {
-                grid: { color: '#2d2d44' },
+                grid: { color: 'rgba(113, 208, 131, 0.08)' },
                 ticks: {
                   font: { size: 9 },
                   color: '#888',

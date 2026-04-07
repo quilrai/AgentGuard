@@ -41,6 +41,11 @@
             <span class="nav-text">LLM Gateway</span>
             <span class="nav-info" data-tooltip="Pass through gateway for your LLMs"><i data-lucide="info"></i></span>
           </li>
+          <li class="nav-item" data-tab="token-saving">
+            <span class="nav-icon"><i data-lucide="piggy-bank"></i></span>
+            <span class="nav-text">Token Saving</span>
+            <span class="nav-info" data-tooltip="Reduce token usage with context trimming and other features"><i data-lucide="info"></i></span>
+          </li>
           <li class="nav-item" data-tab="howto">
             <span class="nav-icon"><i data-lucide="plug"></i></span>
             <span class="nav-text">Use with your agent</span>
@@ -242,6 +247,45 @@
           </div>
         </div>
 
+        <!-- Token Saving Tab -->
+        <div id="token-saving-tab" class="tab-content">
+          <h1>Token Saving</h1>
+          <p class="page-subtitle">Enable token saving features per backend to reduce token usage.</p>
+
+          <div class="settings-section">
+            <div class="card">
+              <div class="card-header">
+                <span>Shell Output Compression</span>
+              </div>
+              <div class="card-body">
+                <p class="setting-description" style="margin-bottom: 16px;">Compress shell command output (git, cargo, docker, npm, kubectl, and 40+ tools) before it reaches your agent's context window. Saves 60-90% of tokens from verbose command output. Toggle per backend below.</p>
+                <div id="token-saving-backends-list" class="backends-list">
+                  <p class="empty-text">Loading backends...</p>
+                </div>
+                <div id="sc-hooks-section" style="margin-top: 20px;">
+                  <p class="setting-description" style="margin-bottom: 12px;">Install hooks to automatically compress shell output for your agents:</p>
+                  <div class="sc-hooks-list">
+                    <div class="sc-hook-row">
+                      <div class="sc-hook-info">
+                        <span class="sc-hook-name">Claude Code</span>
+                        <span class="sc-hook-status" id="sc-claude-status">Checking...</span>
+                      </div>
+                      <button class="btn btn-sm" id="sc-claude-btn" disabled>Install</button>
+                    </div>
+                    <div class="sc-hook-row">
+                      <div class="sc-hook-info">
+                        <span class="sc-hook-name">Codex</span>
+                        <span class="sc-hook-status" id="sc-codex-status">Checking...</span>
+                      </div>
+                      <button class="btn btn-sm" id="sc-codex-btn" disabled>Install</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- Add/Edit Backend Modal -->
         <div id="backend-modal" class="modal">
           <div class="modal-content">
@@ -305,16 +349,6 @@
                 <p class="form-hint">Set to 0 to disable token limit. Block will reject the request, Notify will log only.</p>
               </div>
 
-              <div class="form-group">
-                <label>Token Saving</label>
-                <div class="token-saving-features">
-                  <label class="checkbox-label">
-                    <input type="checkbox" id="backend-ts-context-trimming" />
-                    <span>Context Trimming</span>
-                  </label>
-                </div>
-                <p class="form-hint">Enable token saving features to reduce token usage. Each feature can be toggled independently.</p>
-              </div>
             </div>
             <div class="modal-footer">
               <button class="btn btn-secondary" id="cancel-backend-btn">Cancel</button>
@@ -384,16 +418,6 @@
                 <p class="form-hint">Set to 0 to disable token limit.</p>
               </div>
 
-              <div class="form-group" id="predefined-backend-ts-group">
-                <label>Token Saving</label>
-                <div class="token-saving-features">
-                  <label class="checkbox-label">
-                    <input type="checkbox" id="predefined-backend-ts-context-trimming" />
-                    <span>Context Trimming</span>
-                  </label>
-                </div>
-                <p class="form-hint">Enable token saving features to reduce token usage.</p>
-              </div>
             </div>
             <div class="modal-footer">
               <button class="btn btn-secondary" id="reset-predefined-backend-btn">Reset and Restart Gateway</button>

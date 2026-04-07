@@ -13,6 +13,7 @@ mod dlp_pattern_config;
 mod pattern_utils;
 mod proxy;
 mod requestresponsemetadata;
+mod shell_compression;
 mod token_saving;
 
 use database::get_port_from_db;
@@ -100,7 +101,13 @@ pub fn run() {
             // Spawn reverse proxy server with app handle for events
             let app_handle = app.handle().clone();
             std::thread::spawn(move || {
-                let rt = tokio::runtime::Runtime::new().unwrap();
+                let rt = match tokio::runtime::Runtime::new() {
+                    Ok(rt) => rt,
+                    Err(e) => {
+                        eprintln!("[PROXY] Failed to create tokio runtime: {}", e);
+                        return;
+                    }
+                };
                 rt.block_on(proxy::start_proxy_server(app_handle));
             });
 
@@ -216,6 +223,16 @@ pub fn run() {
             commands::get_predefined_backends,
             commands::update_predefined_backend,
             commands::reset_predefined_backend,
+            // Shell compression commands
+            commands::install_compression_hook_claude,
+            commands::uninstall_compression_hook_claude,
+            commands::check_compression_hook_claude,
+            commands::install_compression_hook_cursor,
+            commands::uninstall_compression_hook_cursor,
+            commands::check_compression_hook_cursor,
+            commands::install_compression_hook_codex,
+            commands::uninstall_compression_hook_codex,
+            commands::check_compression_hook_codex,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

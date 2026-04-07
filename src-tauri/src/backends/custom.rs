@@ -9,16 +9,16 @@ use crate::requestresponsemetadata::{RequestMetadata, ResponseMetadata};
 /// Token saving settings with sub-category features
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct TokenSavingSettings {
-    /// Context trimming: remove redundant context from conversation history
+    /// Shell compression: compress shell command output before it reaches the agent
     #[serde(default)]
-    pub context_trimming: bool,
+    pub shell_compression: bool,
     // Future features can be added here as new bool fields
 }
 
 impl TokenSavingSettings {
     /// Returns true if any token saving feature is enabled
     pub fn any_enabled(&self) -> bool {
-        self.context_trimming
+        self.shell_compression
     }
 }
 

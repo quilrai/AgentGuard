@@ -50,3 +50,6 @@ hex = "0.4"
 # DLP regex matching
 regex = "1"
 
+# Token counting for shell compression
+tiktoken-rs = "0.6"
+

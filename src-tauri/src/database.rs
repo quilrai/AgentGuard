@@ -53,6 +53,9 @@ impl Database {
             PRAGMA busy_timeout = 5000;
         ")?;
 
+        // Drop old logs if compressed schema is stale (must happen before VACUUM)
+        Self::drop_stale_logs_if_needed(&conn);
+
         // Check and migrate auto_vacuum mode if needed (one-time migration)
         // auto_vacuum can only be changed on empty DB or by running VACUUM after setting it
         let auto_vacuum_mode: i32 = conn
@@ -67,11 +70,6 @@ impl Database {
             ")?;
             println!("[DB] auto_vacuum migration complete");
         }
-
-        // Migration: If zstd compression was already enabled, `requests` is a VIEW and
-        // ALTER TABLE silently fails. Detect if underlying _requests_zstd is missing new columns
-        // and rebuild the requests storage from scratch (discards old logs, keeps settings).
-        Self::migrate_compressed_schema_if_needed(&conn);
 
         // Create requests table
         conn.execute(
@@ -259,11 +257,10 @@ impl Database {
         })
     }
 
-    /// Detect if the compressed _requests_zstd table exists but is missing new columns.
-    /// If so, drop all log-related tables and let the init flow recreate them.
+    /// If the compressed requests table exists but lacks new columns, drop all logs.
     /// Settings, DLP patterns, and custom backends are preserved.
-    fn migrate_compressed_schema_if_needed(conn: &Connection) {
-        // Check if _requests_zstd exists (compression was previously enabled)
+    fn drop_stale_logs_if_needed(conn: &Connection) {
+        // First check if _requests_zstd table exists at all (compression was previously enabled)
         let has_compressed: bool = conn
             .query_row(
                 "SELECT COUNT(*) > 0 FROM sqlite_master WHERE type='table' AND name='_requests_zstd'",
@@ -273,7 +270,7 @@ impl Database {
             .unwrap_or(false);
 
         if !has_compressed {
-            return; // Fresh DB or uncompressed - normal migrations will work fine
+            return; // Fresh DB or uncompressed — nothing to migrate
         }
 
         // Check if _requests_zstd has the tokens_saved column
@@ -289,9 +286,7 @@ impl Database {
             return; // Schema is up to date
         }
 
-        println!("[DB] Compressed schema missing new columns - rebuilding requests storage (old logs will be discarded)...");
-
-        // Drop everything related to requests logs (order matters for dependencies)
+        println!("[DB] Schema outdated — dropping old logs...");
         let _ = conn.execute_batch("
             DROP TABLE IF EXISTS dlp_detections;
             DROP TABLE IF EXISTS tool_calls;
@@ -300,14 +295,8 @@ impl Database {
             DROP TABLE IF EXISTS _requests_zstd_dicts;
             DROP TABLE IF EXISTS _requests_zstd_configs;
         ");
-
-        // Reset the tool_calls backfill flag so it doesn't try to backfill non-existent data
-        let _ = conn.execute(
-            "DELETE FROM settings WHERE key = 'tool_calls_backfill_done'",
-            [],
-        );
-
-        println!("[DB] Requests storage cleared. Will be recreated with new schema.");
+        let _ = conn.execute("DELETE FROM settings WHERE key = 'tool_calls_backfill_done'", []);
+        println!("[DB] Done. Logs will be recreated.");
     }
 
     /// One-time backfill of tool_calls from existing response bodies
@@ -1138,6 +1127,21 @@ impl Database {
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(backends)
+    }
+
+    /// Get settings JSON for a custom backend by name
+    pub fn get_custom_backend_settings_by_name(&self, name: &str) -> Result<Option<String>, rusqlite::Error> {
+        let conn = self.conn.lock().unwrap();
+        let result = conn.query_row(
+            "SELECT settings FROM custom_backends WHERE name = ?1",
+            rusqlite::params![name],
+            |row| row.get::<_, String>(0),
+        );
+        match result {
+            Ok(settings) => Ok(Some(settings)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e),
+        }
     }
 
     /// Add a new custom backend

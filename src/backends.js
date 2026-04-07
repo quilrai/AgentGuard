@@ -5,7 +5,7 @@ let customBackends = [];
 let predefinedBackends = [];
 
 // Parse settings JSON with defaults
-function parseSettings(settingsJson) {
+export function parseSettings(settingsJson) {
   try {
     const settings = JSON.parse(settingsJson || '{}');
     const tokenSaving = settings.token_saving || {};
@@ -16,16 +16,16 @@ function parseSettings(settingsJson) {
       max_tokens_in_a_request: settings.max_tokens_in_a_request || 0,
       action_for_max_tokens_in_a_request: settings.action_for_max_tokens_in_a_request || 'block',
       token_saving: {
-        context_trimming: tokenSaving.context_trimming || false,
+        shell_compression: tokenSaving.shell_compression || false,
       }
     };
   } catch {
-    return { dlp_enabled: true, rate_limit_requests: 0, rate_limit_minutes: 1, max_tokens_in_a_request: 0, action_for_max_tokens_in_a_request: 'block', token_saving: { context_trimming: false } };
+    return { dlp_enabled: true, rate_limit_requests: 0, rate_limit_minutes: 1, max_tokens_in_a_request: 0, action_for_max_tokens_in_a_request: 'block', token_saving: { shell_compression: false } };
   }
 }
 
 // Build settings JSON from form values
-function buildSettingsJson(dlpEnabled, rateRequests, rateMinutes, maxTokens, maxTokensAction, tokenSaving) {
+export function buildSettingsJson(dlpEnabled, rateRequests, rateMinutes, maxTokens, maxTokensAction, tokenSaving) {
   return JSON.stringify({
     dlp_enabled: dlpEnabled,
     rate_limit_requests: rateRequests,
@@ -215,7 +215,7 @@ function showBackendModal(backend = null) {
   title.textContent = backend ? 'Edit Backend' : 'Add Backend';
 
   // Parse existing settings or use defaults
-  const settings = backend ? parseSettings(backend.settings) : { dlp_enabled: true, rate_limit_requests: 0, rate_limit_minutes: 1, max_tokens_in_a_request: 0, action_for_max_tokens_in_a_request: 'block', token_saving: { context_trimming: false } };
+  const settings = backend ? parseSettings(backend.settings) : { dlp_enabled: true, rate_limit_requests: 0, rate_limit_minutes: 1, max_tokens_in_a_request: 0, action_for_max_tokens_in_a_request: 'block', token_saving: { shell_compression: false } };
 
   // Reset/populate form
   document.getElementById('backend-id').value = backend ? backend.id : '';
@@ -226,9 +226,6 @@ function showBackendModal(backend = null) {
   rateMinutesInput.value = settings.rate_limit_minutes;
   maxTokensInput.value = settings.max_tokens_in_a_request;
   maxTokensActionInput.value = settings.action_for_max_tokens_in_a_request;
-
-  // Token saving settings
-  document.getElementById('backend-ts-context-trimming').checked = settings.token_saving.context_trimming;
 
   // If editing, disable name field (changing name not allowed)
   nameInput.disabled = !!backend;
@@ -262,9 +259,11 @@ async function saveBackend() {
   const rateMinutes = parseInt(document.getElementById('backend-rate-minutes').value) || 1;
   const maxTokens = parseInt(document.getElementById('backend-max-tokens').value) || 0;
   const maxTokensAction = document.getElementById('backend-max-tokens-action').value || 'block';
-  const tokenSaving = {
-    context_trimming: document.getElementById('backend-ts-context-trimming').checked,
-  };
+
+  // Preserve existing token saving settings
+  const existingBackend = customBackends.find(b => b.id === parseInt(id));
+  const existingSettings = existingBackend ? parseSettings(existingBackend.settings) : { token_saving: { shell_compression: false } };
+  const tokenSaving = existingSettings.token_saving;
 
   // Build settings JSON
   const settings = buildSettingsJson(dlpEnabled, rateRequests, Math.max(1, rateMinutes), maxTokens, maxTokensAction, tokenSaving);
@@ -432,15 +431,6 @@ function showPredefinedBackendModal(backend) {
   maxTokensInput.value = settings.max_tokens_in_a_request;
   maxTokensActionInput.value = settings.action_for_max_tokens_in_a_request;
 
-  // Token saving settings - hide for cursor-hooks since it doesn't use them
-  const predefinedTsGroup = document.getElementById('predefined-backend-ts-group');
-  if (backend.name === 'cursor-hooks') {
-    predefinedTsGroup.style.display = 'none';
-  } else {
-    predefinedTsGroup.style.display = '';
-    document.getElementById('predefined-backend-ts-context-trimming').checked = settings.token_saving.context_trimming;
-  }
-
   modal.classList.add('show');
 }
 
@@ -458,9 +448,11 @@ async function savePredefinedBackend() {
   const rateMinutes = parseInt(document.getElementById('predefined-backend-rate-minutes').value) || 1;
   const maxTokens = parseInt(document.getElementById('predefined-backend-max-tokens').value) || 0;
   const maxTokensAction = document.getElementById('predefined-backend-max-tokens-action').value || 'block';
-  const tokenSaving = {
-    context_trimming: document.getElementById('predefined-backend-ts-context-trimming').checked,
-  };
+
+  // Preserve existing token saving settings
+  const existingBackend = predefinedBackends.find(b => b.name === name);
+  const existingSettings = existingBackend ? parseSettings(existingBackend.settings) : { token_saving: { shell_compression: false } };
+  const tokenSaving = existingSettings.token_saving;
 
   const settings = buildSettingsJson(dlpEnabled, rateRequests, Math.max(1, rateMinutes), maxTokens, maxTokensAction, tokenSaving);
 

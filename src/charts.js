@@ -119,9 +119,10 @@ export function createTokenChart(container, requests) {
         },
         y: {
           stacked: true,
-          grid: { color: '#f0f0f0' },
+          grid: { color: 'rgba(113, 208, 131, 0.08)' },
           ticks: {
             font: { size: 10 },
+            color: '#888',
             callback: v => formatNumber(v)
           }
         }
@@ -150,7 +151,7 @@ export function createLatencyChart(container, latencyPoints) {
         label: 'Latency (ms)',
         data: values,
         borderColor: colors.primary,
-        backgroundColor: 'rgba(99, 102, 241, 0.1)',
+        backgroundColor: 'rgba(113, 208, 131, 0.1)',
         fill: true,
         tension: 0.3,
         pointRadius: 2,
@@ -168,9 +169,10 @@ export function createLatencyChart(container, latencyPoints) {
           display: false,
         },
         y: {
-          grid: { color: '#f0f0f0' },
+          grid: { color: 'rgba(113, 208, 131, 0.08)' },
           ticks: {
             font: { size: 10 },
+            color: '#888',
             callback: v => formatLatency(v)
           }
         }
@@ -350,7 +352,7 @@ export function createToolInsightsChart(container, insights) {
           data: outerValues,
           backgroundColor: outerColors,
           borderWidth: 1,
-          borderColor: '#fff',
+          borderColor: '#1D2021',
         },
         {
           // Inner ring - tools (smaller circle)
@@ -358,7 +360,7 @@ export function createToolInsightsChart(container, insights) {
           data: innerValues,
           backgroundColor: innerColors,
           borderWidth: 2,
-          borderColor: '#fff',
+          borderColor: '#1D2021',
         }
       ]
     },
@@ -374,14 +376,14 @@ export function createToolInsightsChart(container, insights) {
             boxWidth: 12,
             padding: 8,
             font: { size: 11 },
-            color: '#e0e0e0',
+            color: '#aaa',
             generateLabels: () => {
               // Only show tools in legend
               return tools.map((tool, i) => ({
                 text: `${tool.tool_name} (${tool.count})`,
                 fillStyle: dlpColors[i % dlpColors.length],
-                strokeStyle: '#fff',
-                fontColor: '#e0e0e0',
+                strokeStyle: '#1D2021',
+                fontColor: '#aaa',
                 lineWidth: 1,
                 index: i
               }));
@@ -429,7 +431,7 @@ export function createDlpChart(container, detectionsByPattern) {
         data: values,
         backgroundColor: backgroundColors,
         borderWidth: 2,
-        borderColor: '#fff',
+        borderColor: '#1D2021',
       }]
     },
     options: {
@@ -447,7 +449,7 @@ export function createDlpChart(container, detectionsByPattern) {
               return data.labels.map((label, i) => ({
                 text: `${label} (${data.datasets[0].data[i]})`,
                 fillStyle: data.datasets[0].backgroundColor[i],
-                strokeStyle: '#fff',
+                strokeStyle: '#1D2021',
                 lineWidth: 2,
                 index: i
               }));
