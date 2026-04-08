@@ -16,7 +16,7 @@ import {
 import { initSettings } from './settings.js';
 import { initBackends, loadPredefinedBackends } from './backends.js';
 import { initTokenSaving, refreshTokenSaver } from './token-saving.js';
-import { initHowTo } from './howto.js';
+import { initHowTo, refreshGuardianHooks } from './howto.js';
 import { initHome, loadHome, suspendHome, resumeHome } from './home.js';
 
 const { openUrl } = window.__TAURI__.opener;
@@ -89,6 +89,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
     if (route === 'guardian') {
       loadPredefinedBackends();
+      refreshGuardianHooks();
     }
 
     if (route === 'token-saver') {

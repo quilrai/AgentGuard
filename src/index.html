@@ -129,7 +129,6 @@
             <h2 class="section-heading">Backends</h2>
             <p class="section-subtitle">Toggle protection, rate limits, and per-request token caps for each LLM backend.</p>
             <div class="card">
-              <div class="card-header"><span>Pre-defined backends</span></div>
               <div class="card-body">
                 <div id="predefined-backends-list" class="backends-list">
                   <p class="empty-text">Loading backends...</p>
@@ -163,13 +162,32 @@
           <section class="settings-section">
             <h2 class="section-heading">Setup</h2>
             <p class="section-subtitle">Install hooks in your coding agent so its activity is monitored.</p>
-            <div class="howto-tools">
-              <button class="howto-tool-btn" data-tool="claude-code">Claude Code CLI</button>
-              <button class="howto-tool-btn" data-tool="cursor">Cursor</button>
-              <button class="howto-tool-btn" data-tool="codex">Codex CLI</button>
-            </div>
-            <div id="howto-instructions" class="howto-instructions">
-              <p class="empty-text">Select a tool above to see instructions.</p>
+            <div class="card">
+              <div class="card-body">
+                <div class="sc-hooks-list">
+                  <div class="sc-hook-row">
+                    <div class="sc-hook-info">
+                      <span class="sc-hook-name">Claude Code</span>
+                      <span class="sc-hook-status" id="guardian-claude-status">Checking...</span>
+                    </div>
+                    <button class="btn btn-sm" id="guardian-claude-btn" disabled>Install</button>
+                  </div>
+                  <div class="sc-hook-row">
+                    <div class="sc-hook-info">
+                      <span class="sc-hook-name">Codex CLI</span>
+                      <span class="sc-hook-status" id="guardian-codex-status">Checking...</span>
+                    </div>
+                    <button class="btn btn-sm" id="guardian-codex-btn" disabled>Install</button>
+                  </div>
+                  <div class="sc-hook-row">
+                    <div class="sc-hook-info">
+                      <span class="sc-hook-name">Cursor</span>
+                      <span class="sc-hook-status" id="guardian-cursor-status">Checking...</span>
+                    </div>
+                    <button class="btn btn-sm" id="guardian-cursor-btn" disabled>Install</button>
+                  </div>
+                </div>
+              </div>
             </div>
           </section>
 
