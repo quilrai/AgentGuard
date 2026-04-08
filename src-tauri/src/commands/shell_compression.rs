@@ -1,4 +1,4 @@
-use crate::PROXY_PORT;
+use crate::SERVER_PORT;
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
@@ -229,7 +229,7 @@ fn write_claude_settings(settings: &serde_json::Value) -> Result<(), String> {
 
 #[tauri::command]
 pub fn install_compression_hook_claude() -> Result<String, String> {
-    let port = *PROXY_PORT.lock().unwrap();
+    let port = *SERVER_PORT.lock().unwrap();
 
     // Ensure hooks directory exists
     let hooks_dir = get_claude_hooks_dir()?;
@@ -405,7 +405,7 @@ struct CursorHookEntry {
 
 #[tauri::command]
 pub fn install_compression_hook_cursor() -> Result<String, String> {
-    let port = *PROXY_PORT.lock().unwrap();
+    let port = *SERVER_PORT.lock().unwrap();
 
     // Ensure cursor directory exists
     let cursor_dir = get_cursor_hooks_dir()?;
@@ -560,7 +560,7 @@ This is especially useful for commands that produce long output like `git log`, 
 
 #[tauri::command]
 pub fn install_compression_hook_codex() -> Result<String, String> {
-    let port = *PROXY_PORT.lock().unwrap();
+    let port = *SERVER_PORT.lock().unwrap();
 
     let codex_dir = get_codex_dir()?;
     if !codex_dir.exists() {

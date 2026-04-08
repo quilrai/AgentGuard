@@ -124,7 +124,7 @@ function renderLogsCards(logs, total) {
     return `
       <div class="empty-state">
         <h3>No logs yet</h3>
-        <p>Make some API requests through the proxy to see logs here.</p>
+        <p>Install hooks for one of your agents to start collecting logs.</p>
       </div>
     `;
   }

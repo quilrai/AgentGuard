@@ -1,6 +1,6 @@
 // Cursor Hooks Installation Commands
 
-use crate::PROXY_PORT;
+use crate::SERVER_PORT;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -124,7 +124,7 @@ const QUILR_HOOKS: &[&str] = &[
 
 #[tauri::command]
 pub fn install_cursor_hooks() -> Result<String, String> {
-    let port = *PROXY_PORT.lock().unwrap();
+    let port = *SERVER_PORT.lock().unwrap();
 
     // Ensure ~/.cursor directory exists
     let cursor_dir = get_cursor_dir()?;

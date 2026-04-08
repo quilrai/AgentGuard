@@ -1,9 +1,10 @@
 // DLP Demo App - Main Library
 //
-// A Tauri app that proxies LLM API requests with DLP (Data Loss Prevention) capabilities.
-// Currently supports Claude (Anthropic), with plans for OpenAI, Gemini, etc.
+// A Tauri app that hosts a local HTTP server for hook receivers (Cursor IDE
+// hooks today; Claude Code and Codex hook receivers planned) with DLP
+// (Data Loss Prevention) detection. Logs, analytics, and detection results
+// flow in via hooks installed in the agent CLIs/IDEs.
 
-mod backends;
 mod builtin_patterns;
 mod commands;
 mod cursor_hooks;
@@ -11,8 +12,9 @@ mod database;
 mod dlp;
 mod dlp_pattern_config;
 mod pattern_utils;
-mod proxy;
+mod predefined_backend_settings;
 mod requestresponsemetadata;
+mod server;
 mod shell_compression;
 mod token_saving;
 
@@ -59,25 +61,25 @@ fn quit_app(app: AppHandle) {
     app.exit(0);
 }
 
-// Proxy status enum
+// Server status enum
 #[derive(Clone, Debug)]
-pub enum ProxyStatus {
+pub enum ServerStatus {
     Starting,
     Running(u16),        // port
     Failed(u16, String), // port, error message
 }
 
-// Global state for reverse proxy control
-pub static PROXY_PORT: std::sync::LazyLock<Arc<Mutex<u16>>> =
+// Global state for HTTP server control
+pub static SERVER_PORT: std::sync::LazyLock<Arc<Mutex<u16>>> =
     std::sync::LazyLock::new(|| Arc::new(Mutex::new(DEFAULT_PORT)));
 pub static RESTART_SENDER: std::sync::LazyLock<Arc<Mutex<Option<watch::Sender<bool>>>>> =
     std::sync::LazyLock::new(|| Arc::new(Mutex::new(None)));
-pub static PROXY_STATUS: std::sync::LazyLock<Arc<Mutex<ProxyStatus>>> =
-    std::sync::LazyLock::new(|| Arc::new(Mutex::new(ProxyStatus::Starting)));
+pub static SERVER_STATUS: std::sync::LazyLock<Arc<Mutex<ServerStatus>>> =
+    std::sync::LazyLock::new(|| Arc::new(Mutex::new(ServerStatus::Starting)));
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // Initialize reverse proxy port from environment variable or database
+    // Initialize HTTP server port from environment variable or database
     {
         let port = std::env::var("QPORT")
             .ok()
@@ -85,10 +87,10 @@ pub fn run() {
             .unwrap_or_else(get_port_from_db);
 
         if std::env::var("QPORT").is_ok() {
-            println!("[PROXY] Using port {} from QPORT environment variable", port);
+            println!("[SERVER] Using port {} from QPORT environment variable", port);
         }
 
-        let mut current_port = PROXY_PORT.lock().unwrap();
+        let mut current_port = SERVER_PORT.lock().unwrap();
         *current_port = port;
     }
 
@@ -98,17 +100,17 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {
-            // Spawn reverse proxy server with app handle for events
+            // Spawn HTTP server with app handle for events
             let app_handle = app.handle().clone();
             std::thread::spawn(move || {
                 let rt = match tokio::runtime::Runtime::new() {
                     Ok(rt) => rt,
                     Err(e) => {
-                        eprintln!("[PROXY] Failed to create tokio runtime: {}", e);
+                        eprintln!("[SERVER] Failed to create tokio runtime: {}", e);
                         return;
                     }
                 };
-                rt.block_on(proxy::start_proxy_server(app_handle));
+                rt.block_on(server::start_server(app_handle));
             });
 
             // Build tray icon with click handler to toggle popup
@@ -186,9 +188,9 @@ pub fn run() {
             commands::get_message_logs,
             commands::export_message_logs,
             commands::get_port_setting,
-            commands::get_proxy_status,
+            commands::get_server_status,
             commands::save_port_setting,
-            commands::restart_proxy,
+            commands::restart_server,
             commands::get_dlp_settings,
             commands::add_dlp_pattern,
             commands::update_dlp_pattern,
@@ -196,29 +198,14 @@ pub fn run() {
             commands::delete_dlp_pattern,
             commands::get_dlp_detection_stats,
             commands::get_dlp_detections_for_request,
-            commands::get_dlp_action_setting,
-            commands::save_dlp_action_setting,
             commands::test_dlp_pattern,
             // Tool call commands
             commands::get_tool_calls_for_request,
             commands::get_tool_call_stats,
             commands::get_tool_call_insights,
-            commands::set_shell_env,
-            commands::check_shell_env,
-            commands::remove_shell_env,
             commands::install_cursor_hooks,
             commands::uninstall_cursor_hooks,
             commands::check_cursor_hooks_installed,
-            // Claude Code settings commands
-            commands::check_claude_code_settings,
-            commands::set_claude_code_settings,
-            commands::remove_claude_code_settings,
-            // Custom backends commands
-            commands::get_custom_backends,
-            commands::add_custom_backend,
-            commands::update_custom_backend,
-            commands::toggle_custom_backend,
-            commands::delete_custom_backend,
             // Predefined backends commands
             commands::get_predefined_backends,
             commands::update_predefined_backend,

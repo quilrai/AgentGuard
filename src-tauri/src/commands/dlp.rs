@@ -1,6 +1,6 @@
 // DLP Settings Tauri Commands
 
-use crate::database::{get_dlp_action_from_db, open_connection, save_dlp_action_to_db};
+use crate::database::open_connection;
 use crate::pattern_utils::{
     collect_matches_with_negative_context, compile_pattern_set, filter_by_min_occurrences,
 };
@@ -407,16 +407,6 @@ pub fn get_dlp_detections_for_request(request_id: i64) -> Result<Vec<DlpDetectio
         .collect();
 
     Ok(detections)
-}
-
-#[tauri::command]
-pub fn get_dlp_action_setting() -> String {
-    get_dlp_action_from_db()
-}
-
-#[tauri::command]
-pub fn save_dlp_action_setting(action: String) -> Result<(), String> {
-    save_dlp_action_to_db(&action)
 }
 
 #[derive(Serialize)]

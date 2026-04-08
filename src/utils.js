@@ -70,7 +70,7 @@ export function setCurrentLogs(logs) {
   currentLogs = logs;
 }
 
-// Current proxy port
+// Current server port
 let currentPort = 8008;
 
 export function getCurrentPort() {

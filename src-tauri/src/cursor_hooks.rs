@@ -5,10 +5,10 @@
 //        beforeShellExecution, beforeMCPExecution,
 //        afterAgentResponse, afterAgentThought, afterTabFileEdit
 
-use crate::backends::custom::CustomBackendSettings;
 use crate::database::{Database, DLP_ACTION_BLOCKED, DLP_ACTION_PASSED, DLP_ACTION_RATELIMITED};
 use crate::dlp::{check_dlp_patterns, DlpDetection};
-use crate::proxy::RateLimiter;
+use crate::predefined_backend_settings::CustomBackendSettings;
+use crate::server::RateLimiter;
 use axum::{
     extract::State,
     http::StatusCode,

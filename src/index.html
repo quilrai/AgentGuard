@@ -31,7 +31,7 @@
         <div class="topbar-right">
           <div class="proxy-status">
             <span class="status-dot starting" id="proxy-status-dot"></span>
-            <span id="proxy-status-text">Starting gateway...</span>
+            <span id="proxy-status-text">Starting server...</span>
           </div>
         </div>
       </header>
@@ -121,7 +121,7 @@
               <i data-lucide="arrow-left"></i> Back
             </button>
             <h1 class="page-title">Guardian Agent</h1>
-            <p class="page-lede">Stop sensitive data leaving your machine. Per-backend protection, custom rules, and gateway setup all live here.</p>
+            <p class="page-lede">Stop sensitive data leaving your machine. Per-backend protection, custom rules, and setup all live here.</p>
           </div>
 
           <!-- Backends -->
@@ -134,47 +134,6 @@
                 <div id="predefined-backends-list" class="backends-list">
                   <p class="empty-text">Loading backends...</p>
                 </div>
-              </div>
-            </div>
-            <div class="card" style="margin-top:16px;">
-              <div class="card-header">
-                <span>Custom backends</span>
-                <button id="add-backend-btn" class="btn btn-primary btn-sm">
-                  <i data-lucide="plus"></i> Add backend
-                </button>
-              </div>
-              <div class="card-body">
-                <div id="backends-list" class="backends-list">
-                  <p class="empty-text">Loading backends...</p>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <!-- Detection Action -->
-          <section class="settings-section">
-            <h2 class="section-heading">Detection action</h2>
-            <p class="section-subtitle">Choose how the guardian responds when sensitive data is found.</p>
-            <div class="card">
-              <div class="card-body">
-                <div class="setting-row" style="margin-bottom: 20px;">
-                  <div class="setting-info">
-                    <label class="setting-label">When sensitive data is detected</label>
-                    <p class="setting-description" id="dlp-action-description">Sensitive data is redacted before sending to LLM and restored in the response seamlessly. No manual action needed.</p>
-                    <p class="setting-note">Cursor supports blocking only.</p>
-                  </div>
-                  <div class="setting-control">
-                    <div class="toggle-switch-container">
-                      <span class="toggle-label" id="dlp-action-label-redact">Redact</span>
-                      <label class="toggle-switch">
-                        <input type="checkbox" id="dlp-action-toggle" />
-                        <span class="toggle-slider"></span>
-                      </label>
-                      <span class="toggle-label" id="dlp-action-label-block">Block</span>
-                    </div>
-                  </div>
-                </div>
-                <div id="dlp-action-status" class="settings-status"></div>
               </div>
             </div>
           </section>
@@ -203,7 +162,7 @@
           <!-- Setup -->
           <section class="settings-section">
             <h2 class="section-heading">Setup</h2>
-            <p class="section-subtitle">Connect your coding agent so its requests pass through the gateway.</p>
+            <p class="section-subtitle">Install hooks in your coding agent so its activity is monitored.</p>
             <div class="howto-tools">
               <button class="howto-tool-btn" data-tool="claude-code">Claude Code CLI</button>
               <button class="howto-tool-btn" data-tool="cursor">Cursor</button>
@@ -221,8 +180,8 @@
               <div class="card-body">
                 <div class="setting-row">
                   <div class="setting-info">
-                    <label for="port-input" class="setting-label">Gateway port</label>
-                    <p class="setting-description">Default: 8008. Use with ANTHROPIC_BASE_URL or OPENAI_BASE_URL.</p>
+                    <label for="port-input" class="setting-label">Server port</label>
+                    <p class="setting-description">Default: 8008. Used by hook receivers.</p>
                   </div>
                   <div class="setting-control">
                     <input type="number" id="port-input" class="port-input" min="1024" max="65535" value="8008" />
@@ -359,77 +318,6 @@
 
         <!-- ============ MODALS ============ -->
 
-        <!-- Add/Edit Backend Modal -->
-        <div id="backend-modal" class="modal">
-          <div class="modal-content">
-            <div class="modal-header">
-              <h3 id="backend-modal-title">Add Backend</h3>
-              <button class="modal-close" id="close-backend-modal">&times;</button>
-            </div>
-            <div class="modal-body">
-              <input type="hidden" id="backend-id" value="" />
-
-              <div class="form-group">
-                <label for="backend-name">Name</label>
-                <input type="text" id="backend-name" class="form-input" placeholder="e.g., openai, groq, together" />
-                <p class="form-hint">Alphanumeric, hyphens, underscores only. Used in URL: localhost:8008/<strong>name</strong>/...</p>
-              </div>
-
-              <div class="form-group">
-                <label for="backend-url">Base URL</label>
-                <input type="text" id="backend-url" class="form-input" placeholder="e.g., https://api.openai.com" />
-                <p class="form-hint">The API base URL. Requests to localhost:8008/name/* will be proxied to this URL.</p>
-              </div>
-
-              <div class="form-divider"></div>
-              <h4 class="form-section-title">Settings</h4>
-
-              <div class="form-group">
-                <div class="setting-toggle-row">
-                  <div class="setting-toggle-info">
-                    <label>Data Protection</label>
-                    <p class="form-hint">Apply detection patterns to detect and handle sensitive data</p>
-                  </div>
-                  <label class="toggle-switch">
-                    <input type="checkbox" id="backend-dlp-enabled" checked />
-                    <span class="toggle-slider"></span>
-                  </label>
-                </div>
-              </div>
-
-              <div class="form-group">
-                <label>Rate Limit</label>
-                <div class="rate-limit-row">
-                  <input type="number" id="backend-rate-requests" class="form-input rate-input" min="0" value="0" />
-                  <span class="rate-label">requests per</span>
-                  <input type="number" id="backend-rate-minutes" class="form-input rate-input" min="1" value="1" />
-                  <span class="rate-label">minute(s)</span>
-                </div>
-                <p class="form-hint">Set to 0 requests to disable rate limiting</p>
-              </div>
-
-              <div class="form-group">
-                <label>Max Tokens per Request</label>
-                <div class="rate-limit-row">
-                  <input type="number" id="backend-max-tokens" class="form-input rate-input" min="0" value="0" />
-                  <span class="rate-label">tokens</span>
-                  <select id="backend-max-tokens-action" class="form-input" style="width: auto; margin-left: 10px;">
-                    <option value="block">Block</option>
-                    <option value="notify">Notify</option>
-                  </select>
-                  <span class="rate-label">if exceeded</span>
-                </div>
-                <p class="form-hint">Set to 0 to disable token limit. Block will reject the request, Notify will log only.</p>
-              </div>
-
-            </div>
-            <div class="modal-footer">
-              <button class="btn btn-secondary" id="cancel-backend-btn">Cancel</button>
-              <button class="btn btn-primary" id="save-backend-btn">Save and Restart Gateway</button>
-            </div>
-          </div>
-        </div>
-
         <!-- Edit Predefined Backend Modal -->
         <div id="predefined-backend-modal" class="modal">
           <div class="modal-content">
@@ -493,48 +381,9 @@
 
             </div>
             <div class="modal-footer">
-              <button class="btn btn-secondary" id="reset-predefined-backend-btn">Reset and Restart Gateway</button>
+              <button class="btn btn-secondary" id="reset-predefined-backend-btn">Reset to defaults</button>
               <button class="btn btn-secondary" id="cancel-predefined-backend-btn">Cancel</button>
-              <button class="btn btn-primary" id="save-predefined-backend-btn">Save and Restart Gateway</button>
-            </div>
-          </div>
-        </div>
-
-        <!-- Redact Warning Modal -->
-        <div id="redact-warning-modal" class="modal">
-          <div class="modal-content">
-            <div class="modal-header">
-              <h3>Enable Redact Mode?</h3>
-              <button class="modal-close" id="close-redact-modal">&times;</button>
-            </div>
-            <div class="modal-body">
-              <div class="warning-content">
-                <div class="warning-item">
-                  <div class="warning-icon">✓</div>
-                  <div class="warning-text">
-                    <strong>Seamless redaction</strong>
-                    <p>Sensitive info is redacted before sending to LLM and restored in responses, allowing coding agents to function normally.</p>
-                  </div>
-                </div>
-                <div class="warning-item warning-caution">
-                  <div class="warning-icon">⚠</div>
-                  <div class="warning-text">
-                    <strong>Potential file edit issues</strong>
-                    <p>May occasionally cause failures when editing files due to context mismatch.</p>
-                  </div>
-                </div>
-                <div class="warning-item warning-info">
-                  <div class="warning-icon">ℹ</div>
-                  <div class="warning-text">
-                    <strong>Cursor compatibility</strong>
-                    <p>Cursor only supports Block mode.</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div class="modal-footer">
-              <button class="btn btn-secondary" id="cancel-redact-btn">Cancel</button>
-              <button class="btn btn-primary" id="confirm-redact-btn">Enable Redact</button>
+              <button class="btn btn-primary" id="save-predefined-backend-btn">Save</button>
             </div>
           </div>
         </div>

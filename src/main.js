@@ -14,7 +14,7 @@ import {
   initLogsExport
 } from './logs.js';
 import { initSettings } from './settings.js';
-import { initBackends, loadCustomBackends, loadPredefinedBackends } from './backends.js';
+import { initBackends, loadPredefinedBackends } from './backends.js';
 import { initTokenSaving, refreshTokenSaver } from './token-saving.js';
 import { initHowTo } from './howto.js';
 import { initHome, loadHome, suspendHome, resumeHome } from './home.js';
@@ -89,7 +89,6 @@ window.addEventListener('DOMContentLoaded', () => {
 
     if (route === 'guardian') {
       loadPredefinedBackends();
-      loadCustomBackends();
     }
 
     if (route === 'token-saver') {
@@ -112,6 +111,6 @@ window.addEventListener('DOMContentLoaded', () => {
   setTimeout(() => lucide.createIcons(), 100);
 });
 
-// Expose navigateTo for legacy callers (e.g., proxy-failed change-port-link)
+// Expose navigateTo for legacy callers (e.g., server-failed change-port-link)
 import { navigateTo } from './utils.js';
 window.__navigateTo = navigateTo;

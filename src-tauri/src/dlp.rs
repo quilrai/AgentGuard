@@ -1,26 +1,22 @@
-// DLP (Data Loss Prevention) Redaction Logic
+// DLP (Data Loss Prevention) Detection Logic
+//
+// Compiles enabled DLP patterns from the database and checks text against
+// them. Used by hook receivers (e.g. cursor_hooks) to decide whether to
+// allow or block a request.
 
 use crate::database::open_connection;
 use crate::pattern_utils::{
     compile_pattern_set, count_unique_chars, is_match_excluded_by_context,
 };
 use regex::Regex;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 #[derive(Clone, Debug)]
 pub struct DlpDetection {
     pub pattern_name: String,
     pub pattern_type: String, // "keyword" or "regex"
     pub original_value: String,
-    pub placeholder: String,
     pub message_index: Option<i32>,
-}
-
-#[derive(Clone)]
-pub struct DlpRedactionResult {
-    pub redacted_body: String,
-    pub replacements: HashMap<String, String>, // placeholder -> original
-    pub detections: Vec<DlpDetection>,
 }
 
 /// Compiled DLP pattern with all validation rules
@@ -105,286 +101,8 @@ pub fn get_enabled_dlp_patterns() -> Vec<CompiledDlpPattern> {
     patterns
 }
 
-
-/// Apply DLP redaction to request body (only user messages, not system)
-/// Supports both Claude (messages array) and Codex (input array) formats
-pub fn apply_dlp_redaction(body: &str) -> DlpRedactionResult {
-    println!("[DLP] Starting redaction...");
-    let patterns = get_enabled_dlp_patterns();
-    println!("[DLP] Got {} pattern groups", patterns.len());
-
-    if patterns.is_empty() {
-        println!("[DLP] No patterns enabled, skipping redaction");
-        return DlpRedactionResult {
-            redacted_body: body.to_string(),
-            replacements: HashMap::new(),
-            detections: Vec::new(),
-        };
-    }
-
-    let mut json: serde_json::Value = match serde_json::from_str(body) {
-        Ok(v) => v,
-        Err(_) => {
-            return DlpRedactionResult {
-                redacted_body: body.to_string(),
-                replacements: HashMap::new(),
-                detections: Vec::new(),
-            }
-        }
-    };
-
-    let mut replacements: HashMap<String, String> = HashMap::new();
-    let mut detections: Vec<DlpDetection> = Vec::new();
-    let mut counter = 1;
-
-    // Process Claude format: messages array
-    if let Some(messages) = json.get_mut("messages").and_then(|m| m.as_array_mut()) {
-        for (msg_idx, message) in messages.iter_mut().enumerate() {
-            // Only process user messages (skip assistant, system handled separately)
-            let role = message.get("role").and_then(|r| r.as_str()).unwrap_or("");
-            if role != "user" {
-                continue;
-            }
-
-            // Recursively process entire content structure
-            if let Some(content) = message.get_mut("content") {
-                redact_value_recursive(
-                    content,
-                    &patterns,
-                    &mut replacements,
-                    &mut detections,
-                    &mut counter,
-                    Some(msg_idx as i32),
-                );
-            }
-        }
-    }
-
-    // Process Codex format: input array
-    if let Some(input) = json.get_mut("input").and_then(|m| m.as_array_mut()) {
-        for (item_idx, item) in input.iter_mut().enumerate() {
-            let item_type = item.get("type").and_then(|t| t.as_str()).unwrap_or("");
-
-            match item_type {
-                "message" => {
-                    // Only process user messages
-                    let role = item.get("role").and_then(|r| r.as_str()).unwrap_or("");
-                    if role != "user" {
-                        continue;
-                    }
-
-                    // Process content array (contains {type: "input_text", text: "..."} items)
-                    if let Some(content) = item.get_mut("content") {
-                        redact_value_recursive(
-                            content,
-                            &patterns,
-                            &mut replacements,
-                            &mut detections,
-                            &mut counter,
-                            Some(item_idx as i32),
-                        );
-                    }
-                }
-                "function_call_output" => {
-                    // Function call outputs may contain sensitive data echoed back
-                    if let Some(output) = item.get_mut("output") {
-                        redact_value_recursive(
-                            output,
-                            &patterns,
-                            &mut replacements,
-                            &mut detections,
-                            &mut counter,
-                            Some(item_idx as i32),
-                        );
-                    }
-                }
-                _ => {
-                    // Skip reasoning, function_call, etc.
-                }
-            }
-        }
-    }
-
-    println!(
-        "[DLP] Redaction complete. {} detections, {} replacements",
-        detections.len(),
-        replacements.len()
-    );
-    DlpRedactionResult {
-        redacted_body: serde_json::to_string(&json).unwrap_or_else(|_| body.to_string()),
-        replacements,
-        detections,
-    }
-}
-
-/// Recursively redact all string values in a JSON structure
-fn redact_value_recursive(
-    value: &mut serde_json::Value,
-    patterns: &[CompiledDlpPattern],
-    replacements: &mut HashMap<String, String>,
-    detections: &mut Vec<DlpDetection>,
-    counter: &mut u32,
-    message_index: Option<i32>,
-) {
-    match value {
-        serde_json::Value::String(s) => {
-            let redacted = redact_text(s, patterns, replacements, detections, counter, message_index);
-            *s = redacted;
-        }
-        serde_json::Value::Array(arr) => {
-            for item in arr.iter_mut() {
-                redact_value_recursive(item, patterns, replacements, detections, counter, message_index);
-            }
-        }
-        serde_json::Value::Object(obj) => {
-            for (_key, v) in obj.iter_mut() {
-                redact_value_recursive(v, patterns, replacements, detections, counter, message_index);
-            }
-        }
-        _ => {} // Numbers, bools, null - no redaction needed
-    }
-}
-
-/// Create a same-length fake key that looks realistic
-fn create_placeholder(id: u32, original: &str) -> String {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-
-    // Create a seeded "random" generator based on id
-    let mut hasher = DefaultHasher::new();
-    id.hash(&mut hasher);
-    let mut seed = hasher.finish();
-
-    // Helper to get next pseudo-random value
-    let mut next_rand = || -> u64 {
-        seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
-        seed
-    };
-
-    let chars: Vec<char> = original
-        .chars()
-        .map(|c| {
-            if c.is_ascii_lowercase() {
-                // Replace with random lowercase letter
-                let idx = (next_rand() % 26) as u8;
-                (b'a' + idx) as char
-            } else if c.is_ascii_uppercase() {
-                // Replace with random uppercase letter
-                let idx = (next_rand() % 26) as u8;
-                (b'A' + idx) as char
-            } else if c.is_ascii_digit() {
-                // Replace with random digit
-                let idx = (next_rand() % 10) as u8;
-                (b'0' + idx) as char
-            } else {
-                // Keep special chars like -, _, etc.
-                c
-            }
-        })
-        .collect();
-
-    chars.into_iter().collect()
-}
-
-/// Redact text and track replacements
-fn redact_text(
-    text: &str,
-    patterns: &[CompiledDlpPattern],
-    replacements: &mut HashMap<String, String>,
-    detections: &mut Vec<DlpDetection>,
-    counter: &mut u32,
-    message_index: Option<i32>,
-) -> String {
-    let mut result = text.to_string();
-
-    for pattern in patterns {
-        // Collect all matches with their positions, filtering by context-aware negative patterns
-        let mut valid_matches: Vec<String> = Vec::new();
-        let mut seen: HashSet<String> = HashSet::new();
-
-        for regex in pattern.regexes.iter() {
-            for m in regex.find_iter(&result) {
-                let matched = m.as_str().to_string();
-
-                // Skip duplicates
-                if seen.contains(&matched) {
-                    continue;
-                }
-
-                // Check if this match should be excluded based on its context
-                // Context = 30 chars before + match + 30 chars after
-                if is_match_excluded_by_context(&result, m.start(), m.end(), &pattern.negative_regexes) {
-                    continue;
-                }
-
-                // Validate min_unique_chars
-                if pattern.min_unique_chars > 0 {
-                    let unique_count = count_unique_chars(&matched);
-                    if (unique_count as i32) < pattern.min_unique_chars {
-                        continue;
-                    }
-                }
-
-                seen.insert(matched.clone());
-                valid_matches.push(matched);
-            }
-        }
-
-        // Check min_occurrences threshold
-        if (valid_matches.len() as i32) < pattern.min_occurrences {
-            continue;
-        }
-
-        for matched in valid_matches {
-            // Check if we already have a placeholder for this exact value
-            let (placeholder, is_new) = replacements
-                .iter()
-                .find(|(_, v)| *v == &matched)
-                .map(|(k, _)| (k.clone(), false))
-                .unwrap_or_else(|| {
-                    // Create same-length fake key that looks realistic
-                    let p = create_placeholder(*counter, &matched);
-                    replacements.insert(p.clone(), matched.clone());
-                    *counter += 1;
-                    (p, true)
-                });
-
-            // Track detection (only for new placeholders to avoid duplicates)
-            if is_new {
-                detections.push(DlpDetection {
-                    pattern_name: pattern.name.clone(),
-                    pattern_type: pattern.pattern_type.clone(),
-                    original_value: matched.clone(),
-                    placeholder: placeholder.clone(),
-                    message_index,
-                });
-            }
-
-            result = result.replace(&matched, &placeholder);
-        }
-    }
-
-    result
-}
-
-/// Apply DLP unredaction to response body
-pub fn apply_dlp_unredaction(body: &str, replacements: &HashMap<String, String>) -> String {
-    if replacements.is_empty() {
-        return body.to_string();
-    }
-
-    let mut result = body.to_string();
-
-    // Replace all placeholders back with original values
-    for (placeholder, original) in replacements {
-        result = result.replace(placeholder, original);
-    }
-
-    result
-}
-
-/// Check text for DLP patterns without redaction (detection only)
-/// Used by Cursor hooks to detect and block sensitive data
+/// Check text for DLP patterns (detection only).
+/// Used by hook receivers to decide whether to allow or block a request.
 pub fn check_dlp_patterns(text: &str) -> Vec<DlpDetection> {
     let patterns = get_enabled_dlp_patterns();
 
@@ -438,7 +156,6 @@ pub fn check_dlp_patterns(text: &str) -> Vec<DlpDetection> {
                 pattern_name: pattern.name.clone(),
                 pattern_type: pattern.pattern_type.clone(),
                 original_value: matched,
-                placeholder: String::new(), // Not used for detection-only
                 message_index: None,
             });
         }

@@ -21,7 +21,7 @@ function showSettingsStatus(message, type, elementId = 'settings-status') {
 }
 
 // Update sidebar port display
-function updateProxyStatusDisplay(port, isRestarting = false, isError = false) {
+function updateServerStatusDisplay(port, isRestarting = false, isError = false) {
   const statusText = document.getElementById('proxy-status-text');
   const statusDot = document.getElementById('proxy-status-dot');
 
@@ -69,30 +69,30 @@ export async function loadPortSetting() {
     if (portInput) {
       portInput.value = port;
     }
-    // Don't update status here - let loadProxyStatus handle it
+    // Don't update status here - let loadServerStatus handle it
   } catch (error) {
     console.error('Failed to load port setting:', error);
   }
 }
 
-// Load and display the actual proxy status from backend
-async function loadProxyStatus() {
+// Load and display the actual server status from backend
+async function loadServerStatus() {
   try {
-    const status = await invoke('get_proxy_status');
+    const status = await invoke('get_server_status');
     setCurrentPort(status.port);
 
     if (status.status === 'running') {
-      updateProxyStatusDisplay(status.port, false, false);
+      updateServerStatusDisplay(status.port, false, false);
     } else if (status.status === 'failed') {
-      updateProxyStatusDisplay(status.port, false, true);
+      updateServerStatusDisplay(status.port, false, true);
     }
     // If 'starting', leave it as is (yellow dot)
   } catch (error) {
-    console.error('Failed to load proxy status:', error);
+    console.error('Failed to load server status:', error);
   }
 }
 
-// Save port setting and restart proxy
+// Save port setting and restart server
 async function savePortSetting() {
   const portInput = document.getElementById('port-input');
   const saveBtn = document.getElementById('save-port-btn');
@@ -113,163 +113,28 @@ async function savePortSetting() {
 
   saveBtn.disabled = true;
   saveBtn.textContent = 'Saving...';
-  updateProxyStatusDisplay(port, true);
+  updateServerStatusDisplay(port, true);
 
   try {
     // Save the port setting
     await invoke('save_port_setting', { port });
     setCurrentPort(port);
 
-    // Restart the proxy server
-    showSettingsStatus('Restarting proxy server...', 'info');
-    await invoke('restart_proxy');
+    // Restart the server
+    showSettingsStatus('Restarting server...', 'info');
+    await invoke('restart_server');
 
     // Wait for server to restart
     await new Promise(resolve => setTimeout(resolve, 1500));
-    updateProxyStatusDisplay(port, false);
-    showSettingsStatus(`Proxy server now running on port ${port}`, 'success');
+    updateServerStatusDisplay(port, false);
+    showSettingsStatus(`Server now running on port ${port}`, 'success');
   } catch (error) {
-    updateProxyStatusDisplay(currentPort, false);
+    updateServerStatusDisplay(currentPort, false);
     showSettingsStatus(`Failed: ${error}`, 'error');
   } finally {
     saveBtn.disabled = false;
     saveBtn.textContent = 'Save';
   }
-}
-
-// ============ DLP Action Setting ============
-
-const DLP_ACTION_DESCRIPTIONS = {
-  redact: 'Sensitive data is redacted before sending to LLM and restored in the response seamlessly. No manual action needed.',
-  block: 'If any sensitive data is found, the request is blocked. Manual action is required to remove sensitive data from your prompt or files.'
-};
-
-// Load DLP action setting from backend
-async function loadDlpActionSetting() {
-  try {
-    const action = await invoke('get_dlp_action_setting');
-    const toggle = document.getElementById('dlp-action-toggle');
-    const labelRedact = document.getElementById('dlp-action-label-redact');
-    const labelBlock = document.getElementById('dlp-action-label-block');
-
-    if (toggle) {
-      toggle.checked = action === 'block';
-      updateDlpActionUI(toggle.checked, labelRedact, labelBlock);
-    }
-  } catch (error) {
-    console.error('Failed to load DLP action setting:', error);
-  }
-}
-
-// Update UI based on toggle state (labels and description)
-function updateDlpActionUI(isBlock, labelRedact, labelBlock) {
-  // Update label styles
-  if (labelRedact && labelBlock) {
-    if (isBlock) {
-      labelRedact.classList.remove('active');
-      labelBlock.classList.add('active');
-    } else {
-      labelRedact.classList.add('active');
-      labelBlock.classList.remove('active');
-    }
-  }
-
-  // Update description text
-  const description = document.getElementById('dlp-action-description');
-  if (description) {
-    description.textContent = isBlock ? DLP_ACTION_DESCRIPTIONS.block : DLP_ACTION_DESCRIPTIONS.redact;
-  }
-}
-
-// Save DLP action setting
-async function saveDlpActionSetting(action) {
-  try {
-    await invoke('save_dlp_action_setting', { action });
-    showSettingsStatus(
-      action === 'block'
-        ? 'Action set to Block - requests with sensitive data will be blocked'
-        : 'Action set to Redact - sensitive data will be redacted from requests',
-      'success',
-      'dlp-action-status'
-    );
-  } catch (error) {
-    console.error('Failed to save DLP action setting:', error);
-    showSettingsStatus(`Failed to save: ${error}`, 'error', 'dlp-action-status');
-    // Revert toggle
-    loadDlpActionSetting();
-  }
-}
-
-// Show redact warning modal
-function showRedactWarningModal() {
-  const modal = document.getElementById('redact-warning-modal');
-  if (modal) {
-    modal.classList.add('show');
-  }
-}
-
-// Hide redact warning modal
-function hideRedactWarningModal() {
-  const modal = document.getElementById('redact-warning-modal');
-  if (modal) {
-    modal.classList.remove('show');
-  }
-}
-
-// Initialize redact warning modal handlers
-function initRedactWarningModal() {
-  const closeBtn = document.getElementById('close-redact-modal');
-  const cancelBtn = document.getElementById('cancel-redact-btn');
-  const confirmBtn = document.getElementById('confirm-redact-btn');
-  const toggle = document.getElementById('dlp-action-toggle');
-  const labelRedact = document.getElementById('dlp-action-label-redact');
-  const labelBlock = document.getElementById('dlp-action-label-block');
-
-  const revertToggle = () => {
-    if (toggle) {
-      toggle.checked = true; // Revert to block
-      updateDlpActionUI(true, labelRedact, labelBlock);
-    }
-    hideRedactWarningModal();
-  };
-
-  if (closeBtn) closeBtn.addEventListener('click', revertToggle);
-  if (cancelBtn) cancelBtn.addEventListener('click', revertToggle);
-
-  if (confirmBtn) {
-    confirmBtn.addEventListener('click', () => {
-      hideRedactWarningModal();
-      saveDlpActionSetting('redact');
-    });
-  }
-}
-
-// Initialize DLP action toggle
-function initDlpActionToggle() {
-  const toggle = document.getElementById('dlp-action-toggle');
-  const labelRedact = document.getElementById('dlp-action-label-redact');
-  const labelBlock = document.getElementById('dlp-action-label-block');
-
-  if (toggle) {
-    toggle.addEventListener('change', () => {
-      const isBlock = toggle.checked;
-      updateDlpActionUI(isBlock, labelRedact, labelBlock);
-
-      if (isBlock) {
-        // Switching to block - save immediately
-        saveDlpActionSetting('block');
-      } else {
-        // Switching to redact - show warning modal first
-        showRedactWarningModal();
-      }
-    });
-  }
-
-  // Initialize modal handlers
-  initRedactWarningModal();
-
-  // Load initial state
-  loadDlpActionSetting();
 }
 
 // ============ DLP Settings ============
@@ -593,7 +458,7 @@ function initDlpSettings() {
 // ============ Initialize Settings ============
 
 export function initSettings() {
-  // Reverse proxy port settings
+  // Server port settings
   const saveBtn = document.getElementById('save-port-btn');
   const portInput = document.getElementById('port-input');
 
@@ -612,26 +477,23 @@ export function initSettings() {
   // Load settings
   loadPortSetting();
 
-  // Listen for proxy server events (for real-time updates after initial load)
-  listen('proxy-started', (event) => {
+  // Listen for server events (for real-time updates after initial load)
+  listen('server-started', (event) => {
     const { port } = event.payload;
     setCurrentPort(port);
-    updateProxyStatusDisplay(port, false, false);
+    updateServerStatusDisplay(port, false, false);
   });
 
-  listen('proxy-failed', (event) => {
+  listen('server-failed', (event) => {
     const { port } = event.payload;
-    updateProxyStatusDisplay(port, false, true);
+    updateServerStatusDisplay(port, false, true);
   });
 
-  // Query actual proxy status after a short delay
+  // Query actual server status after a short delay
   // This handles the race condition where the event fired before we registered listeners
   setTimeout(() => {
-    loadProxyStatus();
+    loadServerStatus();
   }, 500);
-
-  // Initialize DLP action toggle
-  initDlpActionToggle();
 
   // Initialize DLP settings
   initDlpSettings();

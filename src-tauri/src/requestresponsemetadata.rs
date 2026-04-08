@@ -30,5 +30,9 @@ pub struct ResponseMetadata {
     pub cache_creation_tokens: i32,
     pub stop_reason: Option<String>,
     pub has_thinking: bool,
+    /// Populated by passthrough backends (currently none) and by the
+    /// tool-call backfill in database.rs. Not consumed by the slim server,
+    /// but kept on the struct so log_request callers stay uniform.
+    #[allow(dead_code)]
     pub tool_calls: Vec<ToolCall>,
 }

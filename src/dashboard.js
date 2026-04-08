@@ -189,10 +189,7 @@ export async function loadDashboard() {
       content.innerHTML = `
         <div class="empty-state">
           <h3>No data yet</h3>
-          <p>Make some API requests through the proxy to see stats here.</p>
-          <p style="margin-top: 12px; font-family: monospace; font-size: 0.85rem; color: #666;">
-            Proxy: http://localhost:8008
-          </p>
+          <p>Install hooks for one of your agents to start collecting data.</p>
         </div>
       `;
       return;

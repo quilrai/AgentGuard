@@ -14,16 +14,12 @@ async function loadGuardianCard() {
   if (!dot || !text || !stats) return;
 
   try {
-    const [predefined, custom, facts] = await Promise.all([
+    const [predefined, facts] = await Promise.all([
       invoke('get_predefined_backends'),
-      invoke('get_custom_backends'),
       invoke('get_home_facts'),
     ]);
 
-    const all = [
-      ...predefined.filter(b => b.name !== 'cursor-hooks'),
-      ...custom,
-    ];
+    const all = predefined.filter(b => b.name !== 'cursor-hooks');
 
     const protectedCount = all.filter(b => parseSettings(b.settings).dlp_enabled).length;
     const patternCount = facts.enabled_pattern_count || 0;
@@ -58,15 +54,11 @@ async function loadTokenSaverCard() {
   if (!dot || !text || !stats) return;
 
   try {
-    const [predefined, custom] = await Promise.all([
+    const [predefined] = await Promise.all([
       invoke('get_predefined_backends'),
-      invoke('get_custom_backends'),
     ]);
 
-    const all = [
-      ...predefined.filter(b => b.name !== 'cursor-hooks'),
-      ...custom,
-    ];
+    const all = predefined.filter(b => b.name !== 'cursor-hooks');
 
     const enabled = all.filter(b => parseSettings(b.settings).token_saving.shell_compression);
     const isActive = enabled.length > 0;
@@ -266,7 +258,7 @@ async function loadFacts() {
     factPool = buildFactPool(facts);
     factIndex = 0;
     if (factPool.length === 0) {
-      el.innerHTML = 'Make a request through the gateway to see your stats here.';
+      el.innerHTML = 'Make a request through one of your agents to see your stats here.';
       const dots = document.getElementById('home-fact-dots');
       if (dots) dots.innerHTML = '';
       return;
@@ -276,7 +268,7 @@ async function loadFacts() {
     startFactTimer();
   } catch (e) {
     console.error('Failed to load home facts:', e);
-    el.innerHTML = 'Make a request through the gateway to see your stats here.';
+    el.innerHTML = 'Make a request through one of your agents to see your stats here.';
   }
 }
 

@@ -1,7 +1,7 @@
 import { invoke, escapeHtml } from './utils.js';
 import { parseSettings, buildSettingsJson } from './backends.js';
 
-let allBackends = []; // { type: 'predefined'|'custom', backend }
+let allBackends = []; // { backend }
 
 // ============================================================================
 // Shell Compression Hooks
@@ -69,14 +69,10 @@ function setupHookButton(agent, installCmd, uninstallCmd, checkCmd) {
 
 async function loadAllBackends() {
   try {
-    const [predefined, custom] = await Promise.all([
-      invoke('get_predefined_backends'),
-      invoke('get_custom_backends'),
-    ]);
-    allBackends = [
-      ...predefined.filter(b => b.name !== 'cursor-hooks').map(b => ({ type: 'predefined', backend: b })),
-      ...custom.map(b => ({ type: 'custom', backend: b })),
-    ];
+    const predefined = await invoke('get_predefined_backends');
+    allBackends = predefined
+      .filter(b => b.name !== 'cursor-hooks')
+      .map(b => ({ backend: b }));
     renderTokenSavingList();
   } catch (error) {
     console.error('Failed to load backends for token saving:', error);
@@ -96,14 +92,10 @@ function renderTokenSavingList() {
     return;
   }
 
-  container.innerHTML = allBackends.map(({ type, backend }) => {
+  container.innerHTML = allBackends.map(({ backend }) => {
     const settings = parseSettings(backend.settings);
     const isEnabled = settings.token_saving.shell_compression;
-    const typeBadge = type === 'predefined'
-      ? '<span class="backend-status enabled">Pre-defined</span>'
-      : `<span class="backend-status ${backend.enabled ? 'enabled' : 'disabled'}">${backend.enabled ? 'Active' : 'Disabled'}</span>`;
-
-    const key = type === 'predefined' ? `predefined:${backend.name}` : `custom:${backend.id}`;
+    const typeBadge = '<span class="backend-status enabled">Pre-defined</span>';
 
     return `
     <div class="token-saving-item">
@@ -113,7 +105,7 @@ function renderTokenSavingList() {
       </div>
       <div class="setting-toggle-row" style="padding: 0;">
         <label class="toggle-switch">
-          <input type="checkbox" class="ts-toggle" data-key="${key}" ${isEnabled ? 'checked' : ''} />
+          <input type="checkbox" class="ts-toggle" data-name="${escapeHtml(backend.name)}" ${isEnabled ? 'checked' : ''} />
           <span class="toggle-slider"></span>
         </label>
       </div>
@@ -123,15 +115,12 @@ function renderTokenSavingList() {
   // Add toggle event listeners
   container.querySelectorAll('.ts-toggle').forEach(toggle => {
     toggle.addEventListener('change', async () => {
-      const key = toggle.dataset.key;
+      const name = toggle.dataset.name;
       const enabled = toggle.checked;
       toggle.disabled = true;
 
       try {
-        const [type, id] = key.split(':');
-        const entry = allBackends.find(e =>
-          type === 'predefined' ? (e.type === 'predefined' && e.backend.name === id) : (e.type === 'custom' && String(e.backend.id) === id)
-        );
+        const entry = allBackends.find(e => e.backend.name === name);
         if (!entry) return;
 
         const settings = parseSettings(entry.backend.settings);
@@ -145,17 +134,8 @@ function renderTokenSavingList() {
           settings.token_saving
         );
 
-        if (type === 'predefined') {
-          await invoke('update_predefined_backend', { name: id, settings: newSettingsJson });
-        } else {
-          await invoke('update_custom_backend', {
-            id: parseInt(id),
-            name: entry.backend.name,
-            baseUrl: entry.backend.base_url,
-            settings: newSettingsJson,
-          });
-        }
-        await invoke('restart_proxy');
+        await invoke('update_predefined_backend', { name, settings: newSettingsJson });
+        await invoke('restart_server');
         // Update local state
         entry.backend.settings = newSettingsJson;
       } catch (error) {

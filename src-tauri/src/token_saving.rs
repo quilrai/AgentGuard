@@ -5,8 +5,14 @@
 //
 // Note: shell_compression is handled separately by the /cli_compression endpoint,
 // not through this module. This module handles request-body transformations only.
+//
+// Currently dormant — the passthrough proxy that called into this module was
+// removed. Kept as a stub for future request-body transforms once hook
+// receivers are wired up.
 
-use crate::backends::custom::TokenSavingSettings;
+#![allow(dead_code)]
+
+use crate::predefined_backend_settings::TokenSavingSettings;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
