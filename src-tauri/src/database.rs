@@ -1008,9 +1008,13 @@ impl Database {
     ) -> Result<bool, rusqlite::Error> {
         let conn = self.conn.lock().unwrap();
 
-        // Find the request by correlation_id in extra_metadata (within last 5 minutes for faster lookup)
-        // Also get timestamp for latency calculation
-        let cutoff = (chrono::Utc::now() - chrono::Duration::minutes(5)).to_rfc3339();
+        // Find the request by correlation_id in extra_metadata. The 30-minute
+        // window matches `update_latest_agent_hook_with_usage` /
+        // `close_latest_agent_hook_row_additive` and is wide enough for long
+        // turn-scoped flows (Codex Stop following UserPromptSubmit can be more
+        // than 5 minutes apart on long agentic turns).
+        // Also pulls timestamp for latency calculation.
+        let cutoff = (chrono::Utc::now() - chrono::Duration::minutes(30)).to_rfc3339();
         let existing: Option<(i64, i32, String)> = conn
             .query_row(
                 "SELECT id, output_tokens, timestamp FROM requests WHERE timestamp >= ?1 AND backend = ?2 AND json_extract(extra_metadata, '$.correlation_id') = ?3",
@@ -1144,6 +1148,81 @@ impl Database {
                 usage.cache_creation_tokens,
                 usage.model,
                 usage.stop_reason,
+                response_text,
+                latency_ms,
+                id,
+            ],
+        )?;
+
+        Ok(true)
+    }
+
+    /// Close out the most-recent open agent-hook row for a session **without
+    /// touching its `input_tokens`**: additively bumps `output_tokens`, sets
+    /// `assistant_message_count = 1`, updates `response_body` / `latency_ms` /
+    /// `model` / `stop_reason`. Used by Codex's Stop handler in the rare path
+    /// where neither `turn_id` nor a parseable transcript is available, so we
+    /// only know an *estimated* output token count and must preserve the
+    /// estimated input token count minted at UserPromptSubmit time.
+    ///
+    /// Returns true if a row was found and closed.
+    #[allow(clippy::too_many_arguments)]
+    pub fn close_latest_agent_hook_row_additive(
+        &self,
+        backend: &str,
+        session_id: &str,
+        endpoint_name: &str,
+        output_token_count: i32,
+        response_text: Option<&str>,
+        model: Option<&str>,
+        stop_reason: Option<&str>,
+    ) -> Result<bool, rusqlite::Error> {
+        let conn = self.conn.lock().unwrap();
+        let cutoff = (chrono::Utc::now() - chrono::Duration::minutes(30)).to_rfc3339();
+
+        let existing: Option<(i64, i32, String)> = conn
+            .query_row(
+                "SELECT id, output_tokens, timestamp FROM requests
+                 WHERE timestamp >= ?1
+                   AND backend = ?2
+                   AND endpoint_name = ?3
+                   AND json_extract(extra_metadata, '$.session_id') = ?4
+                   AND assistant_message_count = 0
+                 ORDER BY id DESC
+                 LIMIT 1",
+                rusqlite::params![cutoff, backend, endpoint_name, session_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .ok();
+
+        let Some((id, current_output, timestamp_str)) = existing else {
+            return Ok(false);
+        };
+
+        let latency_ms = chrono::DateTime::parse_from_rfc3339(&timestamp_str)
+            .map(|start_time| {
+                let now = chrono::Utc::now();
+                (now.signed_duration_since(start_time))
+                    .num_milliseconds()
+                    .max(0) as i64
+            })
+            .unwrap_or(0);
+
+        let new_output = current_output + output_token_count;
+
+        conn.execute(
+            "UPDATE requests SET
+                output_tokens = ?1,
+                model = COALESCE(?2, model),
+                stop_reason = COALESCE(?3, stop_reason),
+                response_body = COALESCE(?4, response_body),
+                assistant_message_count = 1,
+                latency_ms = ?5
+             WHERE id = ?6",
+            rusqlite::params![
+                new_output,
+                model,
+                stop_reason,
                 response_text,
                 latency_ms,
                 id,

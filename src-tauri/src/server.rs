@@ -3,6 +3,7 @@
 // The server hosts:
 //   - /cursor_hook/*    Cursor IDE hook receivers (cursor_hooks.rs)
 //   - /claude_hook/*    Claude Code hook receivers (claude_hooks.rs)
+//   - /codex_hook/*     Codex CLI hook receivers (codex_hooks.rs)
 //   - /cli_compression  Shell-output compression endpoint used by the
 //                       token-saver hook scripts installed for
 //                       Claude Code, Cursor, and Codex.
@@ -13,6 +14,7 @@
 // now driven by hooks installed in the agent CLIs/IDEs.
 
 use crate::claude_hooks::create_claude_hooks_router;
+use crate::codex_hooks::create_codex_hooks_router;
 use crate::cursor_hooks::create_cursor_hooks_router;
 use crate::database::Database;
 use crate::dlp_pattern_config::get_db_path;
@@ -365,6 +367,27 @@ pub async fn start_server(app_handle: AppHandle) {
             claude_hooks_settings,
         );
 
+        // Load codex-hooks settings (the `codex` row already written by the UI)
+        // and build its router.
+        let codex_hooks_settings_json = db
+            .get_predefined_backend_settings("codex")
+            .unwrap_or_else(|_| "{}".to_string());
+        let codex_hooks_settings: CustomBackendSettings =
+            serde_json::from_str(&codex_hooks_settings_json).unwrap_or_default();
+        if codex_hooks_settings.rate_limit_requests > 0 {
+            println!(
+                "[SERVER] Codex-hooks: rate limit {} requests per {} minute(s), DLP: {}",
+                codex_hooks_settings.rate_limit_requests,
+                codex_hooks_settings.rate_limit_minutes.max(1),
+                if codex_hooks_settings.dlp_enabled { "enabled" } else { "disabled" }
+            );
+        }
+        let codex_hooks_router = create_codex_hooks_router(
+            db.clone(),
+            rate_limiter.clone(),
+            codex_hooks_settings,
+        );
+
         // Build shell compression router
         let cli_compression_router = Router::new().route("/", post(cli_compression_handler));
 
@@ -373,7 +396,8 @@ pub async fn start_server(app_handle: AppHandle) {
             .route("/", get(health_handler))
             .nest("/cli_compression", cli_compression_router)
             .nest("/cursor_hook", cursor_hooks_router)
-            .nest("/claude_hook", claude_hooks_router);
+            .nest("/claude_hook", claude_hooks_router)
+            .nest("/codex_hook", codex_hooks_router);
 
         let addr = SocketAddr::from(([127, 0, 0, 1], port));
         let listener = match TcpListener::bind(addr).await {

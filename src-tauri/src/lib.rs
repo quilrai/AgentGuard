@@ -1,12 +1,13 @@
 // DLP Demo App - Main Library
 //
-// A Tauri app that hosts a local HTTP server for hook receivers (Cursor IDE
-// hooks today; Claude Code and Codex hook receivers planned) with DLP
-// (Data Loss Prevention) detection. Logs, analytics, and detection results
-// flow in via hooks installed in the agent CLIs/IDEs.
+// A Tauri app that hosts a local HTTP server for hook receivers (Cursor IDE,
+// Claude Code, and Codex CLI) with DLP (Data Loss Prevention) detection. Logs,
+// analytics, and detection results flow in via hooks installed in the agent
+// CLIs/IDEs.
 
 mod builtin_patterns;
 mod claude_hooks;
+mod codex_hooks;
 mod commands;
 mod cursor_hooks;
 mod database;
@@ -210,6 +211,9 @@ pub fn run() {
             commands::install_claude_hooks,
             commands::uninstall_claude_hooks,
             commands::check_claude_hooks_installed,
+            commands::install_codex_hooks,
+            commands::uninstall_codex_hooks,
+            commands::check_codex_hooks_installed,
             // Predefined backends commands
             commands::get_predefined_backends,
             commands::update_predefined_backend,

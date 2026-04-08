@@ -1,10 +1,8 @@
 // Settings shapes shared by predefined-backend rows in the database.
 //
 // These structs deserialize the JSON stored in the `predefined_backend_settings`
-// table. The cursor-hooks router consumes them at startup; the claude/codex
-// rows are written from the UI but currently have no consumer (the passthrough
-// proxy that read them was removed). They will be re-wired when the Claude
-// Code / Codex hook receivers land.
+// table. The cursor-hooks, claude-hooks, and codex-hooks routers all consume
+// them at startup to pick up DLP / rate-limit / token-limit settings.
 
 use serde::{Deserialize, Serialize};
 
