@@ -255,6 +255,12 @@ pub struct GenericResponse {
 
 #[derive(Debug, Serialize)]
 struct CursorHookMetadata {
+    /// Stable per-turn ID used to thread before/after hooks together at the
+    /// DB layer (matched on by `log_agent_hook_request` /
+    /// `update_agent_hook_output`). For Cursor this is the engine's
+    /// `generation_id`; the field is named `correlation_id` so the same DB
+    /// path can serve Claude/Codex hooks too.
+    correlation_id: String,
     conversation_id: String,
     generation_id: String,
     hook_event_name: String,
@@ -400,6 +406,7 @@ async fn before_submit_prompt_handler(
 
     // Build extra metadata
     let metadata = CursorHookMetadata {
+        correlation_id: input.generation_id.clone(),
         conversation_id: input.conversation_id.clone(),
         generation_id: input.generation_id.clone(),
         hook_event_name: input.hook_event_name.clone(),
@@ -425,7 +432,8 @@ async fn before_submit_prompt_handler(
         let response_body_json = serde_json::to_string(&response).unwrap_or_default();
 
         // Log the rate-limited request
-        let _ = state.db.log_cursor_hook_request(
+        let _ = state.db.log_agent_hook_request(
+            "cursor-hooks",
             &input.generation_id,
             "CursorChat",
             &input.model,
@@ -457,7 +465,8 @@ async fn before_submit_prompt_handler(
         let response_body_json = serde_json::to_string(&response).unwrap_or_default();
 
         // Log the token-limited request
-        let _ = state.db.log_cursor_hook_request(
+        let _ = state.db.log_agent_hook_request(
+            "cursor-hooks",
             &input.generation_id,
             "CursorChat",
             &input.model,
@@ -526,7 +535,8 @@ async fn before_submit_prompt_handler(
 
     // Log to database
     let dlp_action = if is_blocked { DLP_ACTION_BLOCKED } else { DLP_ACTION_PASSED };
-    match state.db.log_cursor_hook_request(
+    match state.db.log_agent_hook_request(
+        "cursor-hooks",
         &input.generation_id,
         "CursorChat",
         &input.model,
@@ -599,6 +609,7 @@ async fn before_read_file_handler(
 
     // Build extra metadata
     let metadata = CursorHookMetadata {
+        correlation_id: input.generation_id.clone(),
         conversation_id: input.conversation_id.clone(),
         generation_id: input.generation_id.clone(),
         hook_event_name: input.hook_event_name.clone(),
@@ -625,7 +636,8 @@ async fn before_read_file_handler(
         let response_body_json = serde_json::to_string(&response).unwrap_or_default();
 
         // Log the rate-limited request
-        let _ = state.db.log_cursor_hook_request(
+        let _ = state.db.log_agent_hook_request(
+            "cursor-hooks",
             &input.generation_id,
             "CursorChat",
             &input.model,
@@ -658,7 +670,8 @@ async fn before_read_file_handler(
         let response_body_json = serde_json::to_string(&response).unwrap_or_default();
 
         // Log the token-limited request
-        let _ = state.db.log_cursor_hook_request(
+        let _ = state.db.log_agent_hook_request(
+            "cursor-hooks",
             &input.generation_id,
             "CursorChat",
             &input.model,
@@ -738,7 +751,8 @@ async fn before_read_file_handler(
     let response_status = if is_blocked { 403 } else { 200 };
     let dlp_action = if is_blocked { DLP_ACTION_BLOCKED } else { DLP_ACTION_PASSED };
 
-    if let Ok(request_id) = state.db.log_cursor_hook_request(
+    if let Ok(request_id) = state.db.log_agent_hook_request(
+        "cursor-hooks",
         &input.generation_id,
         "CursorChat",
         &input.model,
@@ -809,6 +823,7 @@ async fn before_tab_file_read_handler(
 
     // Build extra metadata
     let metadata = CursorHookMetadata {
+        correlation_id: input.generation_id.clone(),
         conversation_id: input.conversation_id,
         generation_id: input.generation_id.clone(),
         hook_event_name: input.hook_event_name,
@@ -831,7 +846,8 @@ async fn before_tab_file_read_handler(
     let response_status = if is_blocked { 403 } else { 200 };
     let dlp_action = if is_blocked { DLP_ACTION_BLOCKED } else { DLP_ACTION_PASSED };
 
-    if let Ok(request_id) = state.db.log_cursor_hook_request(
+    if let Ok(request_id) = state.db.log_agent_hook_request(
+        "cursor-hooks",
         &input.generation_id,
         "CursorTab",
         &input.model,
@@ -867,10 +883,12 @@ async fn after_agent_response_handler(
     let token_count = estimate_tokens(&input.text);
 
     // Update existing request entry with output tokens
-    match state.db.update_cursor_hook_output(
+    match state.db.update_agent_hook_output(
+        "cursor-hooks",
         &input.generation_id,
         token_count,
         Some(&input.text),
+        None,
     ) {
         Ok(false) => {
             println!(
@@ -904,7 +922,8 @@ async fn after_agent_thought_handler(
     let token_count = estimate_tokens(&input.text);
 
     // Add thinking token count to output tokens
-    match state.db.add_cursor_hook_thinking_tokens(
+    match state.db.add_agent_hook_thinking_tokens(
+        "cursor-hooks",
         &input.generation_id,
         token_count,
     ) {
@@ -949,10 +968,12 @@ async fn after_tab_file_edit_handler(
     let response_body = format!("Tab edit: {}\nEdits: {}", input.file_path, edits_json);
 
     // Update existing entry from beforeTabFileRead with output tokens
-    match state.db.update_cursor_hook_output(
+    match state.db.update_agent_hook_output(
+        "cursor-hooks",
         &input.generation_id,
         output_token_count,
         Some(&response_body),
+        None,
     ) {
         Ok(false) => {
             println!(
@@ -992,6 +1013,7 @@ async fn before_shell_execution_handler(
 
     // Build extra metadata
     let metadata = CursorHookMetadata {
+        correlation_id: input.generation_id.clone(),
         conversation_id: input.conversation_id.clone(),
         generation_id: input.generation_id.clone(),
         hook_event_name: input.hook_event_name.clone(),
@@ -1038,7 +1060,8 @@ async fn before_shell_execution_handler(
     let response_status = if is_blocked { 403 } else { 200 };
     let dlp_action = if is_blocked { DLP_ACTION_BLOCKED } else { DLP_ACTION_PASSED };
 
-    if let Ok(request_id) = state.db.log_cursor_hook_request(
+    if let Ok(request_id) = state.db.log_agent_hook_request(
+        "cursor-hooks",
         &input.generation_id,
         "CursorChat",
         &input.model,
@@ -1100,6 +1123,7 @@ async fn before_mcp_execution_handler(
 
     // Build extra metadata
     let metadata = CursorHookMetadata {
+        correlation_id: input.generation_id.clone(),
         conversation_id: input.conversation_id.clone(),
         generation_id: input.generation_id.clone(),
         hook_event_name: input.hook_event_name.clone(),
@@ -1153,7 +1177,8 @@ async fn before_mcp_execution_handler(
     let response_status = if is_blocked { 403 } else { 200 };
     let dlp_action = if is_blocked { DLP_ACTION_BLOCKED } else { DLP_ACTION_PASSED };
 
-    if let Ok(request_id) = state.db.log_cursor_hook_request(
+    if let Ok(request_id) = state.db.log_agent_hook_request(
+        "cursor-hooks",
         &input.generation_id,
         "CursorChat",
         &input.model,

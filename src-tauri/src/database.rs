@@ -859,14 +859,43 @@ impl Database {
     }
 
     // ========================================================================
-    // Cursor Hooks Methods
+    // Agent Hooks Methods (shared by Cursor / Claude Code / Codex hook receivers)
     // ========================================================================
+}
 
-    /// Log a cursor hook request (creates new entry)
+/// Real token usage pulled from a transcript / API response. When passed to
+/// `update_agent_hook_output`, these values **overwrite** the existing row's
+/// columns instead of being added to them. Used by Claude Code's Stop hook,
+/// which has access to the actual API usage block in the transcript JSONL
+/// (Cursor calls pass `None` and keep the additive behavior).
+#[derive(Debug, Clone, Default)]
+pub struct RealUsage {
+    pub input_tokens: i32,
+    pub output_tokens: i32,
+    pub cache_read_tokens: i32,
+    pub cache_creation_tokens: i32,
+    pub model: Option<String>,
+    pub stop_reason: Option<String>,
+}
+
+impl Database {
+
+    /// Log an agent hook request (creates new entry, or upgrades an existing
+    /// row keyed on `correlation_id` for the given `backend`).
+    ///
+    /// `correlation_id` is a stable per-turn / per-tool-call identifier that
+    /// joins multiple hook events for the same logical request:
+    ///   - Cursor hooks pass `generation_id`
+    ///   - Claude Code hooks pass `session_id` (for prompt rows) or
+    ///     `tool_use_id` (for individual tool rows)
+    ///
+    /// `backend` is the value written to (and matched on) the `backend` column
+    /// — e.g. `"cursor-hooks"`, `"claude-hooks"`.
     #[allow(clippy::too_many_arguments)]
-    pub fn log_cursor_hook_request(
+    pub fn log_agent_hook_request(
         &self,
-        generation_id: &str,
+        backend: &str,
+        correlation_id: &str,
         endpoint_name: &str,
         model: &str,
         input_tokens: i32,
@@ -882,20 +911,20 @@ impl Database {
         let conn = self.conn.lock().unwrap();
         let timestamp = chrono::Utc::now().to_rfc3339();
 
-        println!("[DB] log_cursor_hook_request - generation_id: {}, endpoint: {}", generation_id, endpoint_name);
+        println!("[DB] log_agent_hook_request - backend: {}, correlation_id: {}, endpoint: {}", backend, correlation_id, endpoint_name);
 
-        // Check if entry already exists for this generation_id (within last 5 minutes for faster lookup)
+        // Check if entry already exists for this correlation_id (within last 5 minutes for faster lookup)
         let cutoff = (chrono::Utc::now() - chrono::Duration::minutes(5)).to_rfc3339();
         let existing_id: Option<i64> = conn
             .query_row(
-                "SELECT id FROM requests WHERE timestamp >= ?1 AND backend = 'cursor-hooks' AND json_extract(extra_metadata, '$.generation_id') = ?2",
-                rusqlite::params![cutoff, generation_id],
+                "SELECT id FROM requests WHERE timestamp >= ?1 AND backend = ?2 AND json_extract(extra_metadata, '$.correlation_id') = ?3",
+                rusqlite::params![cutoff, backend, correlation_id],
                 |row| row.get(0),
             )
             .ok();
 
         if let Some(id) = existing_id {
-            println!("[DB] log_cursor_hook_request - found existing entry id: {}, updating", id);
+            println!("[DB] log_agent_hook_request - found existing entry id: {}, updating", id);
             // Update existing entry - only upgrade dlp_action (blocked > redacted > passed)
             conn.execute(
                 "UPDATE requests SET
@@ -908,8 +937,9 @@ impl Database {
             return Ok(id);
         }
 
-        println!("[DB] log_cursor_hook_request - creating new entry");
+        println!("[DB] log_agent_hook_request - creating new entry");
         // Create new entry
+        let path_value = format!("/{}", backend);
         conn.execute(
             "INSERT INTO requests (
                 timestamp, backend, endpoint_name, method, path, model,
@@ -921,10 +951,10 @@ impl Database {
             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25)",
             rusqlite::params![
                 timestamp,
-                "cursor-hooks",
+                backend,
                 endpoint_name,
                 "POST",
-                "/cursor_hook",
+                path_value,
                 if model.is_empty() { None } else { Some(model) },
                 input_tokens,
                 output_tokens,
@@ -960,30 +990,36 @@ impl Database {
         Ok(request_id)
     }
 
-    /// Update cursor hook output tokens, response body, and latency by generation_id
-    /// Returns true if an entry was found and updated, false otherwise
-    pub fn update_cursor_hook_output(
+    /// Update agent-hook output tokens, response body, and latency by
+    /// `correlation_id`. Returns true if an entry was found and updated.
+    ///
+    /// When `real_usage` is `Some`, the row's token columns are **overwritten**
+    /// with the values it carries (used by Claude Code's Stop hook, which gets
+    /// real numbers from the transcript). When `None`, `output_token_count` is
+    /// **added** to the existing `output_tokens` (matches Cursor's additive
+    /// flow where each `after_*` event accumulates).
+    pub fn update_agent_hook_output(
         &self,
-        generation_id: &str,
+        backend: &str,
+        correlation_id: &str,
         output_token_count: i32,
         response_text: Option<&str>,
+        real_usage: Option<&RealUsage>,
     ) -> Result<bool, rusqlite::Error> {
         let conn = self.conn.lock().unwrap();
 
-        // Find the request by generation_id in extra_metadata (within last 5 minutes for faster lookup)
+        // Find the request by correlation_id in extra_metadata (within last 5 minutes for faster lookup)
         // Also get timestamp for latency calculation
         let cutoff = (chrono::Utc::now() - chrono::Duration::minutes(5)).to_rfc3339();
         let existing: Option<(i64, i32, String)> = conn
             .query_row(
-                "SELECT id, output_tokens, timestamp FROM requests WHERE timestamp >= ?1 AND backend = 'cursor-hooks' AND json_extract(extra_metadata, '$.generation_id') = ?2",
-                rusqlite::params![cutoff, generation_id],
+                "SELECT id, output_tokens, timestamp FROM requests WHERE timestamp >= ?1 AND backend = ?2 AND json_extract(extra_metadata, '$.correlation_id') = ?3",
+                rusqlite::params![cutoff, backend, correlation_id],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
             .ok();
 
         if let Some((id, current_output, timestamp_str)) = existing {
-            let new_output = current_output + output_token_count;
-
             // Calculate latency from stored timestamp
             let latency_ms = chrono::DateTime::parse_from_rfc3339(&timestamp_str)
                 .map(|start_time| {
@@ -992,16 +1028,46 @@ impl Database {
                 })
                 .unwrap_or(0);
 
-            if let Some(text) = response_text {
+            if let Some(usage) = real_usage {
+                // Overwrite mode: real numbers from a transcript / API response.
                 conn.execute(
-                    "UPDATE requests SET output_tokens = ?1, response_body = ?2, assistant_message_count = 1, latency_ms = ?3 WHERE id = ?4",
-                    rusqlite::params![new_output, text, latency_ms, id],
+                    "UPDATE requests SET
+                        input_tokens = ?1,
+                        output_tokens = ?2,
+                        cache_read_tokens = ?3,
+                        cache_creation_tokens = ?4,
+                        model = COALESCE(?5, model),
+                        stop_reason = COALESCE(?6, stop_reason),
+                        response_body = COALESCE(?7, response_body),
+                        assistant_message_count = 1,
+                        latency_ms = ?8
+                     WHERE id = ?9",
+                    rusqlite::params![
+                        usage.input_tokens,
+                        usage.output_tokens,
+                        usage.cache_read_tokens,
+                        usage.cache_creation_tokens,
+                        usage.model,
+                        usage.stop_reason,
+                        response_text,
+                        latency_ms,
+                        id,
+                    ],
                 )?;
             } else {
-                conn.execute(
-                    "UPDATE requests SET output_tokens = ?1, latency_ms = ?2 WHERE id = ?3",
-                    rusqlite::params![new_output, latency_ms, id],
-                )?;
+                // Additive mode (Cursor flow).
+                let new_output = current_output + output_token_count;
+                if let Some(text) = response_text {
+                    conn.execute(
+                        "UPDATE requests SET output_tokens = ?1, response_body = ?2, assistant_message_count = 1, latency_ms = ?3 WHERE id = ?4",
+                        rusqlite::params![new_output, text, latency_ms, id],
+                    )?;
+                } else {
+                    conn.execute(
+                        "UPDATE requests SET output_tokens = ?1, latency_ms = ?2 WHERE id = ?3",
+                        rusqlite::params![new_output, latency_ms, id],
+                    )?;
+                }
             }
             Ok(true)
         } else {
@@ -1009,11 +1075,90 @@ impl Database {
         }
     }
 
-    /// Add thinking tokens to cursor hook output by generation_id
-    /// Returns true if an entry was found and updated, false otherwise
-    pub fn add_cursor_hook_thinking_tokens(
+    /// Find the most-recent agent-hook row for a given backend / session,
+    /// matching on `endpoint_name` and the `session_id` field inside
+    /// `extra_metadata`, and **overwrite** its token columns with `usage`.
+    ///
+    /// Used by Claude Code's Stop hook, which fires per-turn but doesn't
+    /// expose a per-turn ID — so we generate a unique correlation_id at
+    /// UserPromptSubmit time and resolve "which row to close" at Stop time
+    /// by picking the latest row in this session that hasn't been closed yet
+    /// (`assistant_message_count = 0`).
+    ///
+    /// Returns true if a row was found and updated.
+    pub fn update_latest_agent_hook_with_usage(
         &self,
-        generation_id: &str,
+        backend: &str,
+        session_id: &str,
+        endpoint_name: &str,
+        usage: &RealUsage,
+        response_text: Option<&str>,
+    ) -> Result<bool, rusqlite::Error> {
+        let conn = self.conn.lock().unwrap();
+        let cutoff = (chrono::Utc::now() - chrono::Duration::minutes(30)).to_rfc3339();
+
+        let existing: Option<(i64, String)> = conn
+            .query_row(
+                "SELECT id, timestamp FROM requests
+                 WHERE timestamp >= ?1
+                   AND backend = ?2
+                   AND endpoint_name = ?3
+                   AND json_extract(extra_metadata, '$.session_id') = ?4
+                   AND assistant_message_count = 0
+                 ORDER BY id DESC
+                 LIMIT 1",
+                rusqlite::params![cutoff, backend, endpoint_name, session_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .ok();
+
+        let Some((id, timestamp_str)) = existing else {
+            return Ok(false);
+        };
+
+        let latency_ms = chrono::DateTime::parse_from_rfc3339(&timestamp_str)
+            .map(|start_time| {
+                let now = chrono::Utc::now();
+                (now.signed_duration_since(start_time))
+                    .num_milliseconds()
+                    .max(0) as i64
+            })
+            .unwrap_or(0);
+
+        conn.execute(
+            "UPDATE requests SET
+                input_tokens = ?1,
+                output_tokens = ?2,
+                cache_read_tokens = ?3,
+                cache_creation_tokens = ?4,
+                model = COALESCE(?5, model),
+                stop_reason = COALESCE(?6, stop_reason),
+                response_body = COALESCE(?7, response_body),
+                assistant_message_count = 1,
+                latency_ms = ?8
+             WHERE id = ?9",
+            rusqlite::params![
+                usage.input_tokens,
+                usage.output_tokens,
+                usage.cache_read_tokens,
+                usage.cache_creation_tokens,
+                usage.model,
+                usage.stop_reason,
+                response_text,
+                latency_ms,
+                id,
+            ],
+        )?;
+
+        Ok(true)
+    }
+
+    /// Add thinking tokens to an agent-hook row by `correlation_id`.
+    /// Returns true if an entry was found and updated, false otherwise.
+    pub fn add_agent_hook_thinking_tokens(
+        &self,
+        backend: &str,
+        correlation_id: &str,
         thinking_word_count: i32,
     ) -> Result<bool, rusqlite::Error> {
         let conn = self.conn.lock().unwrap();
@@ -1021,41 +1166,20 @@ impl Database {
         // Find and update the request (within last 5 minutes for faster lookup)
         let cutoff = (chrono::Utc::now() - chrono::Duration::minutes(5)).to_rfc3339();
 
-        // Debug: Check what entries exist and their extra_metadata values
-        println!("[DB] add_cursor_hook_thinking_tokens - looking for generation_id: {}", generation_id);
+        println!("[DB] add_agent_hook_thinking_tokens - backend: {}, correlation_id: {}", backend, correlation_id);
 
-        // Query from the underlying table to see what's actually stored
-        let debug_result: Result<(i64, Option<String>), _> = conn.query_row(
-            "SELECT id, extra_metadata FROM _requests_zstd WHERE timestamp >= ?1 AND backend = 'cursor-hooks' ORDER BY id DESC LIMIT 1",
-            rusqlite::params![cutoff],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        );
-
-        match debug_result {
-            Ok((id, extra_meta)) => {
-                println!("[DB] Found entry id: {}, extra_metadata: {:?}", id, extra_meta);
-                if let Some(meta) = &extra_meta {
-                    // Try to parse and extract generation_id
-                    if let Ok(json) = serde_json::from_str::<serde_json::Value>(meta) {
-                        println!("[DB] Parsed JSON, generation_id in db: {:?}", json.get("generation_id"));
-                    }
-                }
-            }
-            Err(e) => {
-                println!("[DB] No entries found or error: {}", e);
-            }
-        }
-
-        // Use the underlying table for the update
+        // Use the underlying table for the update (the `requests` view goes
+        // through an INSTEAD OF trigger which doesn't honor UPDATEs the way
+        // we need for the running, uncompressed tail).
         let rows_affected = conn.execute(
             "UPDATE _requests_zstd SET
                 output_tokens = output_tokens + ?1,
                 has_thinking = 1
-             WHERE timestamp >= ?2 AND backend = 'cursor-hooks' AND json_extract(extra_metadata, '$.generation_id') = ?3",
-            rusqlite::params![thinking_word_count, cutoff, generation_id],
+             WHERE timestamp >= ?2 AND backend = ?3 AND json_extract(extra_metadata, '$.correlation_id') = ?4",
+            rusqlite::params![thinking_word_count, cutoff, backend, correlation_id],
         )?;
 
-        println!("[DB] add_cursor_hook_thinking_tokens - rows_affected: {}", rows_affected);
+        println!("[DB] add_agent_hook_thinking_tokens - rows_affected: {}", rows_affected);
 
         Ok(rows_affected > 0)
     }

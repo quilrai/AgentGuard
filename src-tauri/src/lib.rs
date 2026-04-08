@@ -6,6 +6,7 @@
 // flow in via hooks installed in the agent CLIs/IDEs.
 
 mod builtin_patterns;
+mod claude_hooks;
 mod commands;
 mod cursor_hooks;
 mod database;
@@ -206,6 +207,9 @@ pub fn run() {
             commands::install_cursor_hooks,
             commands::uninstall_cursor_hooks,
             commands::check_cursor_hooks_installed,
+            commands::install_claude_hooks,
+            commands::uninstall_claude_hooks,
+            commands::check_claude_hooks_installed,
             // Predefined backends commands
             commands::get_predefined_backends,
             commands::update_predefined_backend,
