@@ -230,6 +230,10 @@ pub fn run() {
             commands::check_compression_hook_codex,
             // Home screen
             commands::get_home_facts,
+            // Garden
+            commands::get_garden_stats,
+            commands::get_garden_detail,
+            commands::get_garden_live,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

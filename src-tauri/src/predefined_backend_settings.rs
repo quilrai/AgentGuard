@@ -2,7 +2,7 @@
 //
 // These structs deserialize the JSON stored in the `predefined_backend_settings`
 // table. The cursor-hooks, claude-hooks, and codex-hooks routers all consume
-// them at startup to pick up DLP / rate-limit / token-limit settings.
+// them at startup to pick up DLP / token-limit settings.
 
 use serde::{Deserialize, Serialize};
 
@@ -29,12 +29,6 @@ pub struct CustomBackendSettings {
     /// Whether DLP is enabled for this backend (default: true)
     #[serde(default = "default_true")]
     pub dlp_enabled: bool,
-    /// Rate limit: number of requests allowed (0 = no limit)
-    #[serde(default)]
-    pub rate_limit_requests: u32,
-    /// Rate limit: time window in minutes (default: 1)
-    #[serde(default = "default_one")]
-    pub rate_limit_minutes: u32,
     /// Maximum tokens allowed in a request (0 = no limit)
     #[serde(default)]
     pub max_tokens_in_a_request: u32,
@@ -48,10 +42,6 @@ pub struct CustomBackendSettings {
 
 fn default_true() -> bool {
     true
-}
-
-fn default_one() -> u32 {
-    1
 }
 
 fn default_block() -> String {

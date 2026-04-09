@@ -1,0 +1,459 @@
+/* ============ Garden Page ============ */
+
+.garden-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* ---- Project Picker (View 1) ---- */
+
+.garden-picker {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 32px 28px;
+  gap: 24px;
+}
+
+.garden-picker-header {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.garden-picker-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: #e0e0e0;
+}
+
+.garden-picker-sub {
+  color: #666;
+  font-size: 13px;
+  flex: 1;
+}
+
+.garden-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+.garden-picker-empty {
+  color: #555;
+  font-size: 13px;
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 60px 20px;
+}
+
+/* Project card in picker */
+.garden-project-card {
+  background: #1e2324;
+  border: 1px solid #2e3233;
+  border-radius: 12px;
+  padding: 20px;
+  cursor: pointer;
+  transition: all 0.25s;
+  position: relative;
+  overflow: hidden;
+}
+
+.garden-project-card:hover {
+  border-color: #71D083;
+  background: #222728;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+}
+
+.garden-project-card-accent {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #71D083, #1FD8A4);
+  opacity: 0;
+  transition: opacity 0.25s;
+}
+
+.garden-project-card:hover .garden-project-card-accent {
+  opacity: 1;
+}
+
+.garden-project-card-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: #e0e0e0;
+  margin-bottom: 4px;
+}
+
+.garden-project-card-path {
+  font-size: 11px;
+  color: #555;
+  margin-bottom: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.garden-project-card-stats {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.garden-project-card-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.garden-project-card-stat-label {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #555;
+}
+
+.garden-project-card-stat-value {
+  font-size: 14px;
+  font-weight: 600;
+  color: #aaa;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Mini preview tree in card */
+.garden-card-preview {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  opacity: 0.25;
+  transition: opacity 0.25s;
+}
+
+.garden-project-card:hover .garden-card-preview {
+  opacity: 0.45;
+}
+
+/* Backends pills */
+.garden-project-card-backends {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.garden-backend-pill {
+  font-size: 9px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: #2a2e2f;
+  color: #888;
+}
+
+/* ---- Garden Scene (View 2) ---- */
+
+.garden-scene {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.garden-scene-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 20px;
+  border-bottom: 1px solid #2a2d2e;
+  flex-shrink: 0;
+}
+
+.garden-back-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  color: #71D083;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: background 0.15s;
+}
+
+.garden-back-btn:hover {
+  background: rgba(113, 208, 131, 0.1);
+}
+
+.garden-back-btn i,
+.garden-back-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.garden-scene-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #e0e0e0;
+}
+
+.garden-scene-path {
+  font-size: 11px;
+  color: #555;
+}
+
+.garden-scene-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+.garden-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* Legend bar */
+.garden-legend {
+  padding: 10px 20px;
+  border-top: 1px solid #2a2d2e;
+  background: #1a1d1e;
+  flex-shrink: 0;
+}
+
+.garden-legend-items {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.garden-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: #666;
+}
+
+.garden-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.garden-stats-row {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+.garden-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+
+.garden-stat-label {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #555;
+}
+
+.garden-stat-value {
+  font-size: 15px;
+  font-weight: 600;
+  color: #e0e0e0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============ SVG Animations ============ */
+
+/* Leaf sway */
+@keyframes leafSway {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(2.5deg); }
+  75% { transform: rotate(-2.5deg); }
+}
+
+.garden-leaf {
+  animation: leafSway 4s ease-in-out infinite;
+  transform-origin: bottom center;
+}
+
+.garden-leaf:nth-child(odd) {
+  animation-delay: -1.5s;
+  animation-duration: 3.2s;
+}
+
+/* Trunk grow */
+@keyframes trunkGrow {
+  from { transform: scaleY(0); }
+  to   { transform: scaleY(1); }
+}
+
+.garden-trunk {
+  transform-origin: bottom center;
+  animation: trunkGrow 1s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+/* Canopy appear */
+@keyframes canopyIn {
+  from { opacity: 0; transform: scale(0.2); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+.garden-canopy {
+  transform-origin: center bottom;
+  animation: canopyIn 0.7s 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+/* Rain */
+@keyframes rainFall {
+  0%   { opacity: 0; transform: translateY(-30px); }
+  10%  { opacity: 0.7; }
+  90%  { opacity: 0.5; }
+  100% { opacity: 0; transform: translateY(50px); }
+}
+
+.garden-raindrop {
+  animation: rainFall 1s linear forwards;
+}
+
+/* Splash */
+@keyframes splash {
+  0%   { opacity: 0.6; r: 2; }
+  100% { opacity: 0; r: 8; }
+}
+
+.garden-splash {
+  animation: splash 0.5s ease-out forwards;
+}
+
+/* Water shimmer on pond */
+@keyframes pondShimmer {
+  0%, 100% { opacity: 0.3; }
+  50%      { opacity: 0.6; }
+}
+
+.garden-pond-shimmer {
+  animation: pondShimmer 3s ease-in-out infinite;
+}
+
+/* Pond ripple */
+@keyframes pondRipple {
+  0%   { r: 4; opacity: 0.4; }
+  100% { r: 25; opacity: 0; }
+}
+
+.garden-pond-ripple {
+  animation: pondRipple 2s ease-out infinite;
+}
+
+/* Sun pulse */
+@keyframes sunPulse {
+  0%, 100% { opacity: 0.15; transform: scale(1); }
+  50%      { opacity: 0.25; transform: scale(1.08); }
+}
+
+.garden-sun-glow {
+  animation: sunPulse 5s ease-in-out infinite;
+  transform-origin: center;
+}
+
+/* Sun rays rotate */
+@keyframes sunRaysRotate {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+.garden-sun-rays {
+  animation: sunRaysRotate 120s linear infinite;
+  transform-origin: center;
+}
+
+/* Mushroom pop */
+@keyframes mushroomPop {
+  from { transform: scale(0) translateY(5px); opacity: 0; }
+  to   { transform: scale(1) translateY(0); opacity: 1; }
+}
+
+.garden-mushroom {
+  transform-origin: bottom center;
+  animation: mushroomPop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+/* Star twinkle */
+@keyframes twinkle {
+  0%, 100% { opacity: 0.2; }
+  50%      { opacity: 0.9; }
+}
+
+.garden-star {
+  animation: twinkle 3s ease-in-out infinite;
+}
+
+/* Firefly */
+@keyframes fireflyFloat {
+  0%   { transform: translate(0, 0); opacity: 0; }
+  20%  { opacity: 0.9; }
+  80%  { opacity: 0.8; }
+  100% { transform: translate(20px, -30px); opacity: 0; }
+}
+
+.garden-firefly {
+  animation: fireflyFloat 3s ease-in-out infinite;
+}
+
+/* Cloud drift */
+@keyframes cloudDrift {
+  from { transform: translateX(-250px); }
+  to   { transform: translateX(1500px); }
+}
+
+.garden-cloud {
+  animation: cloudDrift 80s linear infinite;
+  opacity: 0.04;
+}
+
+/* Grass sway */
+@keyframes grassSway {
+  0%, 100% { transform: skewX(0deg); }
+  50%      { transform: skewX(1.5deg); }
+}
+
+.garden-grass-blade {
+  animation: grassSway 3s ease-in-out infinite;
+  transform-origin: bottom center;
+}
+
+/* Active tree glow */
+@keyframes treePulse {
+  0%, 100% { filter: drop-shadow(0 0 0px transparent); }
+  50%      { filter: drop-shadow(0 0 14px rgba(113, 208, 131, 0.5)); }
+}
+
+.garden-tree-active {
+  animation: treePulse 1.5s ease-in-out infinite;
+}
+
+/* SVG text labels */
+.garden-label {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  fill: #777;
+  font-size: 11px;
+  text-anchor: middle;
+}
+
+.garden-label-dim {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  fill: #444;
+  font-size: 9px;
+  text-anchor: middle;
+}

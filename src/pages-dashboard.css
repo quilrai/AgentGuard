@@ -1,0 +1,87 @@
+/* ============ Dashboard - Feature Bars ============ */
+
+.feature-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.feature-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.feature-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+}
+
+.feature-name {
+  color: #aaa;
+}
+
+.feature-value {
+  font-weight: 600;
+  color: #fff;
+}
+
+.bar-track {
+  height: 8px;
+  background: #25292C;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.5s ease;
+}
+
+.bar-fill.system { background: linear-gradient(90deg, #71D083, #7DD38D); }
+.bar-fill.tools { background: linear-gradient(90deg, #1FD8A4, #4ade80); }
+.bar-fill.thinking { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+
+/* ============ Dashboard - Token Stats ============ */
+
+.token-stats {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+.token-stat {
+  text-align: center;
+  padding: 16px;
+  background: #161819;
+  border-radius: 8px;
+}
+
+.token-stat .value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.token-stat .label {
+  font-size: 0.75rem;
+  color: #888;
+  text-transform: uppercase;
+  margin-top: 4px;
+}
+
+.token-stat.input .value { color: #71D083; }
+.token-stat.output .value { color: #1FD8A4; }
+.token-stat.cache-read .value { color: #f59e0b; }
+.token-stat.cache-create .value { color: #ec4899; }
+
+/* ============ Dashboard - DLP Stats ============ */
+
+.dlp-chart-container {
+  height: 250px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}

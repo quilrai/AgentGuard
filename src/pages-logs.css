@@ -1,0 +1,303 @@
+/* ============ Logs Cards Grid ============ */
+
+.logs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+  gap: 16px;
+}
+
+.log-card {
+  background: #1C1F20;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+  border: 1px solid rgba(113, 208, 131, 0.08);
+  display: flex;
+  flex-direction: column;
+  max-height: 420px;
+}
+
+/* Card Header - Time and Pills */
+.log-card-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(113, 208, 131, 0.08);
+}
+
+.log-time {
+  font-size: 0.8rem;
+  color: #888;
+  font-weight: 500;
+}
+
+.log-number {
+  font-size: 0.75rem;
+  color: #666;
+  font-weight: 600;
+  font-family: monospace;
+}
+
+.log-pill {
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.log-pill.backend {
+  background: rgba(113, 208, 131, 0.1);
+  color: #71D083;
+  border: 1px solid rgba(113, 208, 131, 0.2);
+}
+
+.log-pill.model {
+  background: #25292C;
+  color: #e8e8e8;
+  font-family: monospace;
+}
+
+.log-pill.status {
+  margin-left: auto;
+}
+
+.log-pill.status.passed {
+  background: rgba(31, 216, 164, 0.12);
+  color: #1FD8A4;
+  border: 1px solid rgba(31, 216, 164, 0.25);
+}
+
+.log-pill.status.blocked {
+  background: rgba(239, 68, 68, 0.12);
+  color: #fca5a5;
+  border: 1px solid rgba(239, 68, 68, 0.25);
+}
+
+.log-pill.status.redacted {
+  background: rgba(249, 115, 22, 0.12);
+  color: #fed7aa;
+  border: 1px solid rgba(249, 115, 22, 0.25);
+}
+
+.log-pill.status.ratelimited {
+  background: rgba(245, 158, 11, 0.12);
+  color: #fde68a;
+  border: 1px solid rgba(245, 158, 11, 0.25);
+}
+
+.log-pill.status.notify-ratelimit {
+  background: rgba(113, 208, 131, 0.1);
+  color: #7DD38D;
+  border: 1px solid rgba(113, 208, 131, 0.2);
+}
+
+/* Card Stats Row */
+.log-card-stats {
+  display: flex;
+  gap: 16px;
+  padding: 10px 16px;
+  background: #161819;
+  font-size: 0.8rem;
+  color: #aaa;
+}
+
+.log-card-stats .stat {
+  display: flex;
+  gap: 4px;
+}
+
+.log-card-stats .stat strong {
+  color: #e8e8e8;
+  font-weight: 600;
+}
+
+.log-card-stats .stat.token-saved {
+  color: #1FD8A4;
+}
+
+.log-card-stats .stat.token-saved strong {
+  color: #1FD8A4;
+}
+
+/* Card Tabs (Data/Headers) */
+.log-card-tabs {
+  display: flex;
+  border-bottom: 1px solid rgba(113, 208, 131, 0.08);
+}
+
+.log-tab {
+  flex: 1;
+  padding: 10px 16px;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: #888;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.log-tab:hover {
+  color: #71D083;
+  background: #161819;
+}
+
+.log-tab.active {
+  color: #71D083;
+  border-bottom-color: #71D083;
+}
+
+/* Card Subtabs (Request/Response) */
+.log-card-subtabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 12px;
+  background: #161819;
+  border-bottom: 1px solid rgba(113, 208, 131, 0.08);
+}
+
+.log-subtab {
+  padding: 5px 12px;
+  background: transparent;
+  border: 1px solid rgba(113, 208, 131, 0.15);
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: #888;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.log-subtab:hover {
+  background: #1C1F20;
+  border-color: rgba(113, 208, 131, 0.3);
+  color: #71D083;
+}
+
+.log-subtab.active {
+  background: rgba(113, 208, 131, 0.14);
+  border-color: #71D083;
+  color: #71D083;
+}
+
+.log-copy-btn {
+  margin-left: auto;
+  padding: 5px 10px;
+  background: rgba(113, 208, 131, 0.1);
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  color: #71D083;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.7rem;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.log-copy-btn:hover {
+  background: rgba(113, 208, 131, 0.2);
+}
+
+.log-copy-btn.copied {
+  background: rgba(31, 216, 164, 0.14);
+  color: #1FD8A4;
+}
+
+/* Card Content */
+.log-card-content {
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+}
+
+.log-json {
+  margin: 0;
+  padding: 12px 16px;
+  font-family: monospace;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #e8e8e8;
+  background: #1C1F20;
+}
+
+/* Search highlight styling */
+.search-highlight {
+  background: #854d0e;
+  color: #fef08a;
+  padding: 1px 2px;
+  border-radius: 2px;
+}
+
+/* ============ Logs Toolbar & Pagination ============ */
+
+#logs-tab .page-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: #1D2021;
+  padding-bottom: 12px;
+  margin-bottom: 0;
+}
+
+.logs-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  position: sticky;
+  top: 52px;
+  z-index: 9;
+  background: #1D2021;
+  padding: 8px 0 16px 0;
+}
+
+.logs-toolbar .search-box {
+  flex: 0 0 auto;
+}
+
+.logs-toolbar .pagination {
+  margin-bottom: 0;
+  padding: 0;
+}
+
+.pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 16px;
+}
+
+.pagination-btn {
+  padding: 8px 16px;
+  background: #1C1F20;
+  border: 1px solid rgba(113, 208, 131, 0.2);
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #e8e8e8;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.pagination-btn:hover:not(:disabled) {
+  background: rgba(113, 208, 131, 0.14);
+  border-color: #71D083;
+  color: #71D083;
+}
+
+.pagination-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.pagination-info {
+  font-size: 0.85rem;
+  color: #888;
+}

@@ -20,29 +20,24 @@ function showSettingsStatus(message, type, elementId = 'settings-status') {
   }
 }
 
-// Update sidebar port display
+// Update topbar port display
 function updateServerStatusDisplay(port, isRestarting = false, isError = false) {
   const statusText = document.getElementById('proxy-status-text');
   const statusDot = document.getElementById('proxy-status-dot');
 
   if (statusText) {
     if (isError) {
-      statusText.innerHTML = `Failed - <span class="proxy-status-link" id="change-port-link">change port</span>`;
+      statusText.innerHTML = `Failed — <span class="proxy-status-link" id="change-port-link">change port</span>`;
       // Add click handler for the link
       const link = document.getElementById('change-port-link');
       if (link) {
-        link.addEventListener('click', () => {
-          // Navigate to Guardian Agent (where the port setting now lives)
-          if (window.__navigateTo) window.__navigateTo('guardian');
-          // Focus on port input
-          const portInput = document.getElementById('port-input');
-          if (portInput) {
-            portInput.focus();
-            portInput.select();
-            portInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          }
+        link.addEventListener('click', (e) => {
+          e.stopPropagation();
+          openPortPopover();
         });
       }
+    } else if (isRestarting) {
+      statusText.textContent = `Restarting on ${port}…`;
     } else {
       statusText.textContent = `Running at localhost:${port}`;
     }
@@ -56,6 +51,41 @@ function updateServerStatusDisplay(port, isRestarting = false, isError = false) 
       statusDot.classList.add('restarting');
     }
   }
+}
+
+// ============ Port Popover ============
+
+function openPortPopover() {
+  const popover = document.getElementById('port-popover');
+  if (!popover) return;
+  popover.hidden = false;
+  // Defer to next frame so the transition runs
+  requestAnimationFrame(() => popover.classList.add('show'));
+  const input = document.getElementById('port-input');
+  if (input) {
+    input.value = getCurrentPort();
+    setTimeout(() => {
+      input.focus();
+      input.select();
+    }, 50);
+  }
+}
+
+function closePortPopover() {
+  const popover = document.getElementById('port-popover');
+  if (!popover) return;
+  popover.classList.remove('show');
+  // Clear any inline status
+  const status = document.getElementById('settings-status');
+  if (status) status.className = 'settings-status';
+  setTimeout(() => { popover.hidden = true; }, 180);
+}
+
+function togglePortPopover() {
+  const popover = document.getElementById('port-popover');
+  if (!popover) return;
+  if (popover.hidden) openPortPopover();
+  else closePortPopover();
 }
 
 // ============ Port Settings ============
@@ -128,6 +158,8 @@ async function savePortSetting() {
     await new Promise(resolve => setTimeout(resolve, 1500));
     updateServerStatusDisplay(port, false);
     showSettingsStatus(`Server now running on port ${port}`, 'success');
+    // Auto-close the popover shortly after success
+    setTimeout(() => closePortPopover(), 900);
   } catch (error) {
     updateServerStatusDisplay(currentPort, false);
     showSettingsStatus(`Failed: ${error}`, 'error');
@@ -473,6 +505,34 @@ export function initSettings() {
       }
     });
   }
+
+  // Port popover open/close
+  const cog = document.getElementById('proxy-status-cog');
+  if (cog) {
+    cog.addEventListener('click', (e) => {
+      e.stopPropagation();
+      togglePortPopover();
+    });
+  }
+  const popoverClose = document.getElementById('port-popover-close');
+  if (popoverClose) {
+    popoverClose.addEventListener('click', closePortPopover);
+  }
+  // Click outside to close
+  document.addEventListener('click', (e) => {
+    const popover = document.getElementById('port-popover');
+    if (!popover || popover.hidden) return;
+    if (popover.contains(e.target)) return;
+    if (e.target.closest('#proxy-status-cog')) return;
+    closePortPopover();
+  });
+  // Escape to close
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      const popover = document.getElementById('port-popover');
+      if (popover && !popover.hidden) closePortPopover();
+    }
+  });
 
   // Load settings
   loadPortSetting();

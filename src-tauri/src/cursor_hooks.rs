@@ -8,7 +8,6 @@
 use crate::database::{Database, DLP_ACTION_BLOCKED, DLP_ACTION_PASSED, DLP_ACTION_RATELIMITED};
 use crate::dlp::{check_dlp_patterns, DlpDetection};
 use crate::predefined_backend_settings::CustomBackendSettings;
-use crate::server::RateLimiter;
 use axum::{
     extract::State,
     http::StatusCode,
@@ -280,7 +279,6 @@ struct CursorHookMetadata {
 #[derive(Clone)]
 pub struct CursorHooksState {
     pub db: Database,
-    pub rate_limiter: RateLimiter,
     pub settings: Arc<CustomBackendSettings>,
 }
 
@@ -308,33 +306,6 @@ fn format_detection_message(detections: &[DlpDetection]) -> String {
         ));
     }
     message
-}
-
-/// Check rate limit for cursor hooks (used for before_submit_prompt and before_read_file combined)
-/// Returns (is_allowed, error_message)
-fn check_cursor_rate_limit(
-    rate_limiter: &RateLimiter,
-    settings: &CustomBackendSettings,
-) -> (bool, Option<String>) {
-    let rate_requests = settings.rate_limit_requests;
-    let rate_minutes = settings.rate_limit_minutes.max(1);
-
-    if rate_requests == 0 {
-        return (true, None);
-    }
-
-    // Use a combined key for before_submit_prompt and before_read_file
-    if rate_limiter.check_and_record("cursor-hooks-combined", rate_requests, rate_minutes) {
-        (true, None)
-    } else {
-        (
-            false,
-            Some(format!(
-                "Rate limit exceeded: {} requests per {} minute(s)",
-                rate_requests, rate_minutes
-            )),
-        )
-    }
 }
 
 /// Check token limit for cursor hooks
@@ -417,39 +388,6 @@ async fn before_submit_prompt_handler(
         thinking_word_count: None,
     };
     let metadata_json = serde_json::to_string(&metadata).ok();
-
-    // Check rate limit (for before_submit_prompt and before_read_file combined)
-    let (rate_allowed, rate_error) = check_cursor_rate_limit(&state.rate_limiter, &state.settings);
-    if !rate_allowed {
-        println!(
-            "[CURSOR_HOOK] Rate limited request for generation_id: {}",
-            input.generation_id
-        );
-        let response = BeforeSubmitPromptResponse {
-            should_continue: false,
-            user_message: rate_error,
-        };
-        let response_body_json = serde_json::to_string(&response).unwrap_or_default();
-
-        // Log the rate-limited request
-        let _ = state.db.log_agent_hook_request(
-            "cursor-hooks",
-            &input.generation_id,
-            "CursorChat",
-            &input.model,
-            total_token_count,
-            0,
-            &request_body_json,
-            &response_body_json,
-            429,
-            metadata_json.as_deref(),
-            None,
-            None,
-            DLP_ACTION_RATELIMITED,
-        );
-
-        return (StatusCode::OK, Json(response));
-    }
 
     // Check token limit
     let (token_allowed, token_error) = check_cursor_token_limit(total_token_count, &state.settings);
@@ -621,40 +559,6 @@ async fn before_read_file_handler(
     };
     let metadata_json = serde_json::to_string(&metadata).ok();
 
-    // Check rate limit (for before_submit_prompt and before_read_file combined)
-    let (rate_allowed, rate_error) = check_cursor_rate_limit(&state.rate_limiter, &state.settings);
-    if !rate_allowed {
-        println!(
-            "[CURSOR_HOOK] Rate limited request for generation_id: {}",
-            input.generation_id
-        );
-        let response = BeforeReadFileResponse {
-            permission: "deny".to_string(),
-            user_message: rate_error,
-            agent_message: Some("Request was rate limited.".to_string()),
-        };
-        let response_body_json = serde_json::to_string(&response).unwrap_or_default();
-
-        // Log the rate-limited request
-        let _ = state.db.log_agent_hook_request(
-            "cursor-hooks",
-            &input.generation_id,
-            "CursorChat",
-            &input.model,
-            token_count,
-            0,
-            &request_body_json,
-            &response_body_json,
-            429,
-            metadata_json.as_deref(),
-            None,
-            None,
-            DLP_ACTION_RATELIMITED,
-        );
-
-        return (StatusCode::OK, Json(response));
-    }
-
     // Check token limit
     let (token_allowed, token_error) = check_cursor_token_limit(token_count, &state.settings);
     if !token_allowed {
@@ -776,7 +680,7 @@ async fn before_read_file_handler(
 
 /// POST /cursor_hook/before_tab_file_read
 /// Checks file content for Tab completions, blocks if sensitive data found
-/// NOTE: This endpoint is NOT rate limited (only DLP is applied)
+/// NOTE: Only DLP is applied on this endpoint
 async fn before_tab_file_read_handler(
     State(state): State<CursorHooksState>,
     Json(input): Json<BeforeTabFileReadInput>,
@@ -813,7 +717,7 @@ async fn before_tab_file_read_handler(
     };
 
     // Check DLP patterns (only if DLP is enabled)
-    // NOTE: before_tab_file_read is NOT rate limited
+    // NOTE: before_tab_file_read only applies DLP
     let detections = if state.settings.dlp_enabled {
         check_dlp_patterns(&content)
     } else {
@@ -1222,12 +1126,10 @@ async fn before_mcp_execution_handler(
 
 pub fn create_cursor_hooks_router(
     db: Database,
-    rate_limiter: RateLimiter,
     settings: CustomBackendSettings,
 ) -> Router {
     let state = CursorHooksState {
         db,
-        rate_limiter,
         settings: Arc::new(settings),
     };
 

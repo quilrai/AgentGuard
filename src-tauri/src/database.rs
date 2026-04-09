@@ -20,11 +20,8 @@ pub const DLP_ACTION_REDACTED: i32 = 1;
 /// DLP action: Sensitive data was detected and request was blocked
 pub const DLP_ACTION_BLOCKED: i32 = 2;
 
-/// DLP action: Request was blocked due to rate limit or token limit
+/// DLP action: Request was blocked due to token limit
 pub const DLP_ACTION_RATELIMITED: i32 = 3;
-
-/// DLP action: Token limit exceeded but request was allowed (notify mode)
-pub const DLP_ACTION_NOTIFY_RATELIMIT: i32 = 4;
 
 /// Thread-safe database wrapper
 #[derive(Clone)]

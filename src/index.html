@@ -5,6 +5,7 @@
     <link rel="stylesheet" href="base.css" />
     <link rel="stylesheet" href="components.css" />
     <link rel="stylesheet" href="pages.css" />
+    <link rel="stylesheet" href="pages-garden.css" />
     <link rel="stylesheet" href="dark-mode.css" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>LLMwatcher</title>
@@ -25,13 +26,32 @@
         </div>
         <nav class="topbar-nav">
           <button class="topbar-nav-item active" data-route="home">Home</button>
+          <button class="topbar-nav-item" data-route="garden">Garden</button>
           <button class="topbar-nav-item" data-route="analytics">Analytics</button>
           <button class="topbar-nav-item" data-route="logs">Logs</button>
         </nav>
         <div class="topbar-right">
-          <div class="proxy-status">
+          <div class="proxy-status" id="proxy-status">
             <span class="status-dot starting" id="proxy-status-dot"></span>
             <span id="proxy-status-text">Starting server...</span>
+            <button class="proxy-status-cog" id="proxy-status-cog" title="Change port" type="button">
+              <i data-lucide="settings-2"></i>
+            </button>
+          </div>
+
+          <!-- Port popover -->
+          <div class="port-popover" id="port-popover" hidden>
+            <div class="port-popover-arrow"></div>
+            <div class="port-popover-head">
+              <span class="port-popover-title">Server port</span>
+              <button class="port-popover-close" id="port-popover-close" type="button" aria-label="Close">&times;</button>
+            </div>
+            <p class="port-popover-hint">Used by hook receivers. Server restarts on save.</p>
+            <div class="port-popover-row">
+              <input type="number" id="port-input" class="port-input" min="1024" max="65535" value="8008" />
+              <button id="save-port-btn" class="btn btn-primary btn-sm">Save</button>
+            </div>
+            <div id="settings-status" class="settings-status"></div>
           </div>
         </div>
       </header>
@@ -116,100 +136,112 @@
 
         <!-- ============ GUARDIAN AGENT ============ -->
         <div id="guardian-tab" class="tab-content">
-          <div class="page-back-header">
+          <div class="page-back-header page-back-header--compact">
             <button class="back-link" data-route="home" type="button">
               <i data-lucide="arrow-left"></i> Back
             </button>
-            <h1 class="page-title">Guardian Agent</h1>
-            <p class="page-lede">Stop sensitive data leaving your machine. Per-backend protection, custom rules, and setup all live here.</p>
+            <div class="page-header-row">
+              <h1 class="page-title">Guardian Agent</h1>
+              <div class="page-tabs" role="tablist">
+                <button class="page-tab active" data-guardian-tab="setup" type="button" role="tab" aria-selected="true">
+                  <i data-lucide="plug"></i> Setup
+                </button>
+                <button class="page-tab" data-guardian-tab="config" type="button" role="tab" aria-selected="false">
+                  <i data-lucide="sliders-horizontal"></i> Rules
+                </button>
+              </div>
+            </div>
           </div>
 
-          <!-- Backends -->
-          <section class="settings-section">
-            <h2 class="section-heading">Backends</h2>
-            <p class="section-subtitle">Toggle protection, rate limits, and per-request token caps for each LLM backend.</p>
-            <div class="card">
-              <div class="card-body">
-                <div id="predefined-backends-list" class="backends-list">
-                  <p class="empty-text">Loading backends...</p>
-                </div>
-              </div>
-            </div>
-          </section>
+          <!-- ====== Setup ====== -->
+          <div class="guardian-tab-panel active" id="guardian-panel-setup">
+            <div class="agent-setup-grid">
 
-          <!-- Detection Rules -->
-          <section class="settings-section">
-            <h2 class="section-heading">Detection rules</h2>
-            <p class="section-subtitle">Patterns the guardian uses to find sensitive data inside prompts and file reads.</p>
-            <div class="card">
-              <div class="card-body">
-                <div class="dlp-section">
-                  <div class="dlp-section-header">
-                    <h4 class="dlp-section-title">Patterns</h4>
-                    <button id="add-pattern-btn" class="btn btn-secondary btn-sm">
-                      <i data-lucide="plus"></i> Add pattern
-                    </button>
-                  </div>
-                  <div class="dlp-pattern-list" id="dlp-patterns">
-                    <p class="empty-text">Loading patterns...</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </section>
+              <div class="agent-add-label">Add guardian to</div>
 
-          <!-- Setup -->
-          <section class="settings-section">
-            <h2 class="section-heading">Setup</h2>
-            <p class="section-subtitle">Install hooks in your coding agent so its activity is monitored.</p>
-            <div class="card">
-              <div class="card-body">
-                <div class="sc-hooks-list">
-                  <div class="sc-hook-row">
-                    <div class="sc-hook-info">
-                      <span class="sc-hook-name">Claude Code</span>
-                      <span class="sc-hook-status" id="guardian-claude-status">Checking...</span>
-                    </div>
-                    <button class="btn btn-sm" id="guardian-claude-btn" disabled>Install</button>
+              <div class="agent-card" data-agent="claude">
+                <span class="agent-card-accent"></span>
+                <div class="agent-card-head">
+                  <div class="agent-card-icon">
+                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 1C12.5 6 18 11.5 23 12 18 12.5 12.5 18 12 23 11.5 18 6 12.5 1 12 6 11.5 11.5 6 12 1Z"/></svg>
                   </div>
-                  <div class="sc-hook-row">
-                    <div class="sc-hook-info">
-                      <span class="sc-hook-name">Codex CLI</span>
-                      <span class="sc-hook-status" id="guardian-codex-status">Checking...</span>
+                  <div class="agent-card-head-actions">
+                    <div class="agent-card-pill" id="guardian-claude-pill">
+                      <span class="status-dot inactive"></span>
+                      <span id="guardian-claude-status">Checking…</span>
                     </div>
-                    <button class="btn btn-sm" id="guardian-codex-btn" disabled>Install</button>
-                  </div>
-                  <div class="sc-hook-row">
-                    <div class="sc-hook-info">
-                      <span class="sc-hook-name">Cursor</span>
-                      <span class="sc-hook-status" id="guardian-cursor-status">Checking...</span>
-                    </div>
-                    <button class="btn btn-sm" id="guardian-cursor-btn" disabled>Install</button>
+                    <button class="agent-hook-btn" id="guardian-claude-btn" disabled>Install</button>
                   </div>
                 </div>
+                <div class="agent-card-title">Claude Code</div>
+                <div class="agent-card-sub">Anthropic's official CLI. Hooks fire on prompts, file reads, and tool calls.</div>
+                <div class="agent-card-settings" id="agent-settings-claude"></div>
               </div>
-            </div>
-          </section>
 
-          <!-- Advanced -->
-          <section class="settings-section">
-            <h2 class="section-heading">Advanced</h2>
-            <div class="card">
-              <div class="card-body">
-                <div class="setting-row">
-                  <div class="setting-info">
-                    <label for="port-input" class="setting-label">Server port</label>
-                    <p class="setting-description">Default: 8008. Used by hook receivers.</p>
+              <div class="agent-card" data-agent="codex">
+                <span class="agent-card-accent"></span>
+                <div class="agent-card-head">
+                  <div class="agent-card-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2.5L21 7.5V16.5L12 21.5L3 16.5V7.5Z"/><path d="M12 2.5V12L21 7.5" opacity="0.45"/><path d="M12 12L3 7.5" opacity="0.45"/><path d="M12 12V21.5" opacity="0.45"/></svg>
                   </div>
-                  <div class="setting-control">
-                    <input type="number" id="port-input" class="port-input" min="1024" max="65535" value="8008" />
-                    <button id="save-port-btn" class="btn btn-primary">Save</button>
+                  <div class="agent-card-head-actions">
+                    <div class="agent-card-pill" id="guardian-codex-pill">
+                      <span class="status-dot inactive"></span>
+                      <span id="guardian-codex-status">Checking…</span>
+                    </div>
+                    <button class="agent-hook-btn" id="guardian-codex-btn" disabled>Install</button>
                   </div>
                 </div>
-                <div id="settings-status" class="settings-status"></div>
+                <div class="agent-card-title">Codex CLI</div>
+                <div class="agent-card-sub">OpenAI's coding agent. Routed through the guardian for outbound checks.</div>
+                <div class="agent-card-settings" id="agent-settings-codex"></div>
               </div>
+
+              <div class="agent-card" data-agent="cursor">
+                <span class="agent-card-accent"></span>
+                <div class="agent-card-head">
+                  <div class="agent-card-icon">
+                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 2v17l4.5-5L15 22l2.5-1.5L13 13l6-1z"/></svg>
+                  </div>
+                  <div class="agent-card-head-actions">
+                    <div class="agent-card-pill" id="guardian-cursor-pill">
+                      <span class="status-dot inactive"></span>
+                      <span id="guardian-cursor-status">Checking…</span>
+                    </div>
+                    <button class="agent-hook-btn" id="guardian-cursor-btn" disabled>Install</button>
+                  </div>
+                </div>
+                <div class="agent-card-title">Cursor</div>
+                <div class="agent-card-sub">The Cursor editor. Hooks watch file context and chat traffic.</div>
+                <div class="agent-card-settings" id="agent-settings-cursor"></div>
+              </div>
+
             </div>
-          </section>
+          </div>
+
+          <!-- ====== Guardian Configuration ====== -->
+          <div class="guardian-tab-panel" id="guardian-panel-config">
+            <!-- Detection Rules -->
+            <section class="settings-section">
+              <h2 class="section-heading">Detection rules</h2>
+              <p class="section-subtitle">Patterns the guardian uses to find sensitive data inside prompts and file reads.</p>
+              <div class="card">
+                <div class="card-body">
+                  <div class="dlp-section">
+                    <div class="dlp-section-header">
+                      <h4 class="dlp-section-title">Patterns</h4>
+                      <button id="add-pattern-btn" class="btn btn-secondary btn-sm">
+                        <i data-lucide="plus"></i> Add pattern
+                      </button>
+                    </div>
+                    <div class="dlp-pattern-list" id="dlp-patterns">
+                      <p class="empty-text">Loading patterns...</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
         </div>
 
         <!-- ============ TOKEN SAVER ============ -->
@@ -260,6 +292,55 @@
           </section>
         </div>
 
+        <!-- ============ GARDEN ============ -->
+        <div id="garden-tab" class="tab-content">
+          <div class="garden-page">
+
+            <!-- View 1: Project Picker -->
+            <div class="garden-picker" id="garden-picker">
+              <div class="garden-picker-header">
+                <h1 class="garden-picker-title">Your Gardens</h1>
+                <p class="garden-picker-sub">Each project grows its own garden. Pick one to explore.</p>
+                <select id="garden-time-select" class="filter-select">
+                  <option value="1h">1 Hour</option>
+                  <option value="6h">6 Hours</option>
+                  <option value="1d" selected>1 Day</option>
+                  <option value="7d">7 Days</option>
+                </select>
+              </div>
+              <div class="garden-picker-grid" id="garden-picker-grid">
+                <p class="garden-picker-empty" id="garden-picker-empty">No projects yet. Start using Claude Code, Cursor, or Codex and gardens will appear here.</p>
+              </div>
+            </div>
+
+            <!-- View 2: Single Project Garden Scene -->
+            <div class="garden-scene" id="garden-scene" style="display:none;">
+              <div class="garden-scene-header">
+                <button class="garden-back-btn" id="garden-back-btn" type="button">
+                  <i data-lucide="arrow-left"></i> Gardens
+                </button>
+                <span class="garden-scene-title" id="garden-scene-title">project</span>
+                <span class="garden-scene-path" id="garden-scene-path">/path/to/project</span>
+              </div>
+              <div class="garden-scene-wrap">
+                <svg id="garden-svg" class="garden-svg" viewBox="0 0 1200 700" preserveAspectRatio="xMidYMid meet"></svg>
+              </div>
+              <!-- Legend + stats -->
+              <div class="garden-legend" id="garden-legend">
+                <div class="garden-legend-items">
+                  <span class="garden-legend-item"><span class="garden-legend-dot" style="background:#4a8a3a"></span> Trees = sessions (height = output)</span>
+                  <span class="garden-legend-item"><span class="garden-legend-dot" style="background:#4a90d9"></span> Pond = input tokens</span>
+                  <span class="garden-legend-item"><span class="garden-legend-dot" style="background:#f5c542"></span> Sun = cache read</span>
+                  <span class="garden-legend-item"><span class="garden-legend-dot" style="background:#c084fc"></span> Mushrooms = cache write</span>
+                  <span class="garden-legend-item"><span class="garden-legend-dot" style="background:#5b9bd5"></span> Rain = live activity</span>
+                </div>
+                <div class="garden-stats-row" id="garden-stats-row"></div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
         <!-- ============ ANALYTICS ============ -->
         <div id="analytics-tab" class="tab-content">
           <div class="page-header">
@@ -301,8 +382,6 @@
                 <option value="passed">Passed</option>
                 <option value="redacted">Redacted</option>
                 <option value="blocked">Blocked</option>
-                <option value="ratelimited">Ratelimited</option>
-                <option value="notify-ratelimit">Notify-Ratelimit</option>
               </select>
               <select id="logs-time-select" class="filter-select">
                 <option value="1h">1 Hour</option>
@@ -336,75 +415,6 @@
 
         <!-- ============ MODALS ============ -->
 
-        <!-- Edit Predefined Backend Modal -->
-        <div id="predefined-backend-modal" class="modal">
-          <div class="modal-content">
-            <div class="modal-header">
-              <h3 id="predefined-backend-modal-title">Edit Backend Settings</h3>
-              <button class="modal-close" id="close-predefined-backend-modal">&times;</button>
-            </div>
-            <div class="modal-body">
-              <input type="hidden" id="predefined-backend-name" value="" />
-
-              <div class="form-group">
-                <label>Backend Name</label>
-                <input type="text" id="predefined-backend-name-display" class="form-input" disabled />
-              </div>
-
-              <div class="form-group">
-                <label>Base URL</label>
-                <input type="text" id="predefined-backend-url-display" class="form-input" disabled />
-              </div>
-
-              <div class="form-divider"></div>
-              <h4 class="form-section-title">Settings</h4>
-
-              <div class="form-group">
-                <div class="setting-toggle-row">
-                  <div class="setting-toggle-info">
-                    <label>Data Protection</label>
-                    <p class="form-hint">Apply detection patterns to detect and handle sensitive data</p>
-                  </div>
-                  <label class="toggle-switch">
-                    <input type="checkbox" id="predefined-backend-dlp-enabled" checked />
-                    <span class="toggle-slider"></span>
-                  </label>
-                </div>
-              </div>
-
-              <div class="form-group">
-                <label>Rate Limit</label>
-                <div class="rate-limit-row">
-                  <input type="number" id="predefined-backend-rate-requests" class="form-input rate-input" min="0" value="0" />
-                  <span class="rate-label">requests per</span>
-                  <input type="number" id="predefined-backend-rate-minutes" class="form-input rate-input" min="1" value="1" />
-                  <span class="rate-label">minute(s)</span>
-                </div>
-                <p class="form-hint">Set to 0 requests to disable rate limiting</p>
-              </div>
-
-              <div class="form-group">
-                <label>Max Tokens per Request</label>
-                <div class="rate-limit-row">
-                  <input type="number" id="predefined-backend-max-tokens" class="form-input rate-input" min="0" value="0" />
-                  <span class="rate-label">tokens</span>
-                  <select id="predefined-backend-max-tokens-action" class="form-input" style="width: auto; margin-left: 10px;">
-                    <option value="block">Block</option>
-                    <option value="notify">Notify</option>
-                  </select>
-                  <span class="rate-label">if exceeded</span>
-                </div>
-                <p class="form-hint">Set to 0 to disable token limit.</p>
-              </div>
-
-            </div>
-            <div class="modal-footer">
-              <button class="btn btn-secondary" id="reset-predefined-backend-btn">Reset to defaults</button>
-              <button class="btn btn-secondary" id="cancel-predefined-backend-btn">Cancel</button>
-              <button class="btn btn-primary" id="save-predefined-backend-btn">Save</button>
-            </div>
-          </div>
-        </div>
 
         <!-- Add/Edit Pattern Modal -->
         <div id="pattern-modal" class="modal">

@@ -1,0 +1,826 @@
+/* ============================================================================
+ * Drill-down pages — back link + page title + section headings
+ * ========================================================================= */
+
+#guardian-tab,
+#token-saver-tab,
+#analytics-tab,
+#logs-tab {
+  max-width: 1080px;
+  margin: 0 auto;
+}
+
+.page-back-header {
+  margin-bottom: 36px;
+  position: relative;
+}
+
+.page-back-header--compact {
+  margin-bottom: 24px;
+}
+
+.page-back-header--compact .back-link {
+  margin-bottom: 10px;
+}
+
+.page-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.page-header-row .page-title {
+  margin: 0;
+}
+
+.page-header-row .page-tabs {
+  margin-bottom: 0;
+}
+
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: none;
+  color: #888;
+  font-family: inherit;
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 4px 0;
+  margin-bottom: 18px;
+  transition: color 0.2s, gap 0.2s;
+}
+
+.back-link:hover {
+  color: #71D083;
+  gap: 10px;
+}
+
+.back-link svg {
+  width: 14px;
+  height: 14px;
+}
+
+.page-title {
+  font-weight: 600;
+  font-size: 1.85rem;
+  line-height: 1.15;
+  color: #f5f5f5;
+  margin: 0 0 8px;
+  letter-spacing: -0.022em;
+}
+
+.page-lede {
+  font-size: 0.95rem;
+  color: #888;
+  max-width: 580px;
+  line-height: 1.55;
+  margin: 0;
+}
+
+#analytics-tab .page-header,
+#logs-tab .page-header {
+  margin-bottom: 24px;
+}
+
+#analytics-tab .page-title,
+#logs-tab .page-title {
+  margin-right: auto;
+  font-size: 2.2rem;
+  margin-bottom: 0;
+}
+
+.section-heading {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #e8e8e8;
+  margin: 0 0 4px;
+  letter-spacing: -0.005em;
+}
+
+.section-subtitle {
+  font-size: 0.85rem;
+  color: #888;
+  margin: 0 0 16px;
+  line-height: 1.5;
+}
+
+.settings-section {
+  margin-bottom: 36px;
+}
+
+/* Empty card body padding consistency for sections inside guardian */
+#guardian-tab .card,
+#token-saver-tab .card {
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* ============================================================================
+ * Port popover (anchored under the topbar status pill)
+ * ========================================================================= */
+
+.port-popover {
+  position: absolute;
+  top: 52px;
+  right: 24px;
+  z-index: 200;
+  width: 280px;
+  padding: 16px 16px 14px;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(113, 208, 131, 0.08) 0%, transparent 55%),
+    linear-gradient(180deg, #1F2328 0%, #181B1E 100%);
+  border: 1px solid rgba(113, 208, 131, 0.18);
+  border-radius: 14px;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.05) inset,
+    0 24px 60px -20px rgba(0, 0, 0, 0.7),
+    0 0 0 1px rgba(113, 208, 131, 0.04);
+  opacity: 0;
+  transform: translateY(-6px) scale(0.98);
+  transform-origin: top right;
+  transition: opacity 0.18s ease, transform 0.18s cubic-bezier(0.2, 0.8, 0.2, 1);
+  pointer-events: none;
+}
+
+.port-popover.show {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  pointer-events: auto;
+}
+
+.port-popover[hidden] {
+  display: none;
+}
+
+.port-popover-arrow {
+  position: absolute;
+  top: -6px;
+  right: 24px;
+  width: 12px;
+  height: 12px;
+  background: #1F2328;
+  border-left: 1px solid rgba(113, 208, 131, 0.18);
+  border-top: 1px solid rgba(113, 208, 131, 0.18);
+  transform: rotate(45deg);
+}
+
+.port-popover-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.port-popover-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #e8e8e8;
+  letter-spacing: 0.01em;
+}
+
+.port-popover-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: #6c7278;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.2s, background 0.2s;
+}
+
+.port-popover-close:hover {
+  color: #e8e8e8;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.port-popover-hint {
+  font-size: 0.74rem;
+  color: #7a8086;
+  line-height: 1.45;
+  margin: 0 0 12px;
+}
+
+.port-popover-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.port-popover .port-input {
+  flex: 1;
+  width: auto;
+  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(113, 208, 131, 0.18);
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  text-align: left;
+  color: #e8e8e8;
+}
+
+.port-popover .port-input:focus {
+  outline: none;
+  border-color: #71D083;
+  box-shadow: 0 0 0 3px rgba(113, 208, 131, 0.12);
+}
+
+.port-popover .settings-status {
+  margin-top: 10px;
+  padding: 8px 10px;
+  font-size: 0.78rem;
+}
+
+/* ============================================================================
+ * Guardian page tab switcher (Setup / Configuration)
+ * ========================================================================= */
+
+.page-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  margin-bottom: 28px;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.04) inset,
+    0 8px 24px -18px rgba(0, 0, 0, 0.6);
+}
+
+.page-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 18px;
+  background: transparent;
+  border: none;
+  border-radius: 9px;
+  font-family: inherit;
+  font-size: 0.83rem;
+  font-weight: 500;
+  color: #8a9096;
+  letter-spacing: 0.005em;
+  cursor: pointer;
+  transition: color 0.2s, background 0.25s;
+  position: relative;
+}
+
+.page-tab svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 2;
+}
+
+.page-tab:hover {
+  color: #d8dde2;
+}
+
+.page-tab.active {
+  color: #f3f4f5;
+  background: linear-gradient(180deg, rgba(113, 208, 131, 0.18) 0%, rgba(31, 216, 164, 0.06) 100%);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.06) inset,
+    0 0 0 1px rgba(113, 208, 131, 0.22),
+    0 0 22px -4px rgba(31, 216, 164, 0.28);
+}
+
+.page-tab.active svg {
+  color: #1FD8A4;
+}
+
+.guardian-tab-panel {
+  display: none;
+  animation: guardian-panel-fade 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.guardian-tab-panel.active {
+  display: block;
+}
+
+@keyframes guardian-panel-fade {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ============================================================================
+ * Setup tab — agent install cards (3-up grid, home-card flavor)
+ * ========================================================================= */
+
+.agent-setup-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  width: 100%;
+}
+
+@media (max-width: 980px) {
+  .agent-setup-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.agent-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 20px 20px 18px;
+  min-height: 190px;
+  background:
+    radial-gradient(circle at 92% -10%, rgba(113, 208, 131, 0.10) 0%, transparent 50%),
+    linear-gradient(180deg, #1F2328 0%, #181B1E 100%);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 16px;
+  overflow: visible;
+  transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1),
+              border-color 0.3s ease,
+              box-shadow 0.3s ease;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.04) inset,
+    0 12px 32px -22px rgba(0, 0, 0, 0.55);
+}
+
+.agent-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 18px 18px;
+  background-position: -1px -1px;
+  pointer-events: none;
+  opacity: 0.6;
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.9) 0%, rgba(0, 0, 0, 0.15) 75%, transparent 100%);
+  -webkit-mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.9) 0%, rgba(0, 0, 0, 0.15) 75%, transparent 100%);
+  transition: opacity 0.3s ease;
+}
+
+.agent-card::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  pointer-events: none;
+  background: radial-gradient(circle at 50% 110%, rgba(113, 208, 131, 0.16) 0%, transparent 55%);
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+
+.agent-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(113, 208, 131, 0.25);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.05) inset,
+    0 22px 44px -24px rgba(0, 0, 0, 0.7),
+    0 0 0 1px rgba(113, 208, 131, 0.04);
+}
+
+.agent-card:hover::before { opacity: 0.9; }
+.agent-card:hover::after  { opacity: 1; }
+
+.agent-card.is-installed {
+  border-color: rgba(31, 216, 164, 0.32);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.05) inset,
+    0 18px 40px -22px rgba(0, 0, 0, 0.7),
+    0 0 0 1px rgba(31, 216, 164, 0.08),
+    0 0 28px -8px rgba(31, 216, 164, 0.25);
+}
+
+.agent-card-accent {
+  position: absolute;
+  left: 0;
+  top: 22px;
+  bottom: 22px;
+  width: 2px;
+  background: linear-gradient(180deg, transparent 0%, rgba(113, 208, 131, 0.55) 50%, transparent 100%);
+  opacity: 0.5;
+  border-radius: 0 2px 2px 0;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.agent-card.is-installed .agent-card-accent {
+  background: linear-gradient(180deg, transparent 0%, rgba(31, 216, 164, 0.85) 50%, transparent 100%);
+  opacity: 1;
+}
+
+.agent-card:hover .agent-card-accent {
+  opacity: 1;
+  transform: scaleY(1.1);
+}
+
+.agent-card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 14px;
+  position: relative;
+  z-index: 1;
+}
+
+.agent-card-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  position: relative;
+}
+
+@keyframes btn-nudge {
+  0%, 88% { transform: rotate(0); }
+  90% { transform: rotate(-1.2deg); }
+  92% { transform: rotate(1.5deg); }
+  94% { transform: rotate(-0.8deg); }
+  96% { transform: rotate(0.5deg); }
+  100% { transform: rotate(0); }
+}
+
+/* Hook install/remove button — pill-shaped to match status pills */
+.agent-hook-btn {
+  padding: 5px 14px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  font-family: inherit;
+  letter-spacing: 0.02em;
+  border: 1px solid rgba(31, 216, 164, 0.22);
+  border-radius: 999px;
+  background: rgba(31, 216, 164, 0.08);
+  color: #1FD8A4;
+  cursor: pointer;
+  transition: background 0.25s, border-color 0.25s, box-shadow 0.25s, color 0.25s;
+  white-space: nowrap;
+}
+
+.agent-hook-btn:hover:not(:disabled) {
+  background: rgba(31, 216, 164, 0.16);
+  border-color: rgba(31, 216, 164, 0.35);
+  box-shadow: 0 0 12px -2px rgba(31, 216, 164, 0.2);
+}
+
+/* Not-installed state — no wobble, callout handles attention */
+.agent-hook-btn.needs-setup {
+  /* styled via setup-callout instead */
+}
+
+.agent-hook-btn.is-remove {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(255, 255, 255, 0.08);
+  color: #8a9096;
+  font-weight: 500;
+}
+
+.agent-hook-btn.is-remove:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.08);
+  border-color: rgba(239, 68, 68, 0.22);
+  color: #fca5a5;
+}
+
+.agent-hook-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  animation: none;
+}
+
+.agent-card-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 11px;
+  background: linear-gradient(160deg, rgba(113, 208, 131, 0.18) 0%, rgba(31, 216, 164, 0.06) 100%);
+  border: 1px solid rgba(113, 208, 131, 0.22);
+  color: #1FD8A4;
+  box-shadow:
+    0 0 18px -4px rgba(31, 216, 164, 0.32),
+    0 1px 0 rgba(255, 255, 255, 0.06) inset;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.agent-card:hover .agent-card-icon {
+  transform: translateY(-1px) rotate(-2deg);
+  box-shadow:
+    0 0 24px -4px rgba(31, 216, 164, 0.5),
+    0 1px 0 rgba(255, 255, 255, 0.08) inset;
+}
+
+.agent-card-icon svg {
+  width: 19px;
+  height: 19px;
+}
+
+/* ---- Per-agent brand colours ---- */
+
+.agent-card[data-agent="claude"] .agent-card-icon {
+  background: linear-gradient(160deg, rgba(212, 132, 94, 0.22) 0%, rgba(212, 132, 94, 0.06) 100%);
+  border-color: rgba(212, 132, 94, 0.28);
+  color: #D4845E;
+  box-shadow: 0 0 18px -4px rgba(212, 132, 94, 0.35), 0 1px 0 rgba(255, 255, 255, 0.06) inset;
+}
+
+.agent-card[data-agent="claude"]:hover .agent-card-icon {
+  box-shadow: 0 0 24px -4px rgba(212, 132, 94, 0.55), 0 1px 0 rgba(255, 255, 255, 0.08) inset;
+}
+
+.agent-card[data-agent="codex"] .agent-card-icon {
+  background: linear-gradient(160deg, rgba(16, 163, 127, 0.22) 0%, rgba(16, 163, 127, 0.06) 100%);
+  border-color: rgba(16, 163, 127, 0.28);
+  color: #10A37F;
+  box-shadow: 0 0 18px -4px rgba(16, 163, 127, 0.35), 0 1px 0 rgba(255, 255, 255, 0.06) inset;
+}
+
+.agent-card[data-agent="codex"]:hover .agent-card-icon {
+  box-shadow: 0 0 24px -4px rgba(16, 163, 127, 0.55), 0 1px 0 rgba(255, 255, 255, 0.08) inset;
+}
+
+.agent-card[data-agent="cursor"] .agent-card-icon {
+  background: linear-gradient(160deg, rgba(124, 58, 237, 0.22) 0%, rgba(124, 58, 237, 0.06) 100%);
+  border-color: rgba(124, 58, 237, 0.28);
+  color: #A78BFA;
+  box-shadow: 0 0 18px -4px rgba(124, 58, 237, 0.35), 0 1px 0 rgba(255, 255, 255, 0.06) inset;
+}
+
+.agent-card[data-agent="cursor"]:hover .agent-card-icon {
+  box-shadow: 0 0 24px -4px rgba(124, 58, 237, 0.55), 0 1px 0 rgba(255, 255, 255, 0.08) inset;
+}
+
+.agent-card-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 11px 5px 9px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: #b8bcc0;
+  text-transform: uppercase;
+  position: relative;
+  z-index: 1;
+}
+
+.agent-card-pill .status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #555;
+  box-shadow: none;
+}
+
+.agent-card-pill .status-dot.active {
+  background: #1FD8A4;
+  box-shadow: 0 0 8px rgba(31, 216, 164, 0.7);
+}
+
+.agent-card-pill .status-dot.inactive {
+  background: #777;
+}
+
+.agent-card-pill .status-dot.error {
+  background: #ef4444;
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.6);
+}
+
+.agent-card-pill.pill-active {
+  border-color: rgba(31, 216, 164, 0.32);
+  background: rgba(31, 216, 164, 0.08);
+  color: #1FD8A4;
+}
+
+.agent-card-pill.pill-error {
+  border-color: rgba(239, 68, 68, 0.32);
+  background: rgba(239, 68, 68, 0.08);
+  color: #fca5a5;
+}
+
+.agent-card-title {
+  font-size: 1.18rem;
+  font-weight: 600;
+  line-height: 1.15;
+  color: #f3f4f5;
+  letter-spacing: -0.018em;
+  margin-bottom: 6px;
+  position: relative;
+  z-index: 1;
+}
+
+.agent-card-sub {
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: #7a8086;
+  margin-bottom: 0;
+  position: relative;
+  z-index: 1;
+}
+
+/* ============================================================================
+ * "Add guardian to" label — visible only when uninstalled agents exist
+ * ========================================================================= */
+
+.agent-add-label {
+  grid-column: 1 / -1;
+  order: -2;
+  display: none;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #6c7278;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 0 2px 2px;
+}
+
+.agent-setup-grid.status-checked:has(.agent-card:not(.is-installed)) .agent-add-label {
+  display: block;
+}
+
+/* ============================================================================
+ * Compact badges — not-installed agents as side-by-side icon pills
+ * ========================================================================= */
+
+.agent-setup-grid.status-checked .agent-card.is-installed {
+  order: 0;
+}
+
+.agent-setup-grid.status-checked .agent-card:not(.is-installed) {
+  order: -1;
+  min-height: auto;
+  flex-direction: row;
+  align-items: center;
+  padding: 10px 14px;
+  gap: 10px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px dashed rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  box-shadow: none;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.agent-setup-grid.status-checked .agent-card:not(.is-installed)::before,
+.agent-setup-grid.status-checked .agent-card:not(.is-installed)::after,
+.agent-setup-grid.status-checked .agent-card:not(.is-installed) .agent-card-accent {
+  display: none;
+}
+
+.agent-setup-grid.status-checked .agent-card:not(.is-installed):hover {
+  transform: none;
+  background: rgba(31, 216, 164, 0.04);
+  border-color: rgba(31, 216, 164, 0.2);
+  border-style: solid;
+}
+
+.agent-setup-grid.status-checked .agent-card:not(.is-installed):hover::before,
+.agent-setup-grid.status-checked .agent-card:not(.is-installed):hover::after {
+  opacity: 0;
+}
+
+/* Flatten head so icon sits inline */
+.agent-setup-grid.status-checked .agent-card:not(.is-installed) .agent-card-head {
+  display: contents;
+}
+
+.agent-setup-grid.status-checked .agent-card:not(.is-installed) .agent-card-icon {
+  order: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  flex-shrink: 0;
+}
+
+.agent-setup-grid.status-checked .agent-card:not(.is-installed) .agent-card-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.agent-setup-grid.status-checked .agent-card:not(.is-installed) .agent-card-title {
+  order: 1;
+  font-size: 0.82rem;
+  font-weight: 500;
+  margin-bottom: 0;
+  color: #9a9ea3;
+}
+
+.agent-setup-grid.status-checked .agent-card:not(.is-installed) .agent-card-head-actions {
+  order: 2;
+  margin-left: auto;
+}
+
+/* Hide everything except icon, name, and button */
+.agent-setup-grid.status-checked .agent-card:not(.is-installed) .agent-card-sub,
+.agent-setup-grid.status-checked .agent-card:not(.is-installed) .agent-card-settings,
+.agent-setup-grid.status-checked .agent-card:not(.is-installed) .agent-card-pill {
+  display: none !important;
+}
+
+/* Make the install button a small "+  Add" badge */
+.agent-setup-grid.status-checked .agent-card:not(.is-installed) .agent-hook-btn.needs-setup {
+  padding: 4px 10px;
+  font-size: 0.68rem;
+  border-style: solid;
+}
+
+/* ============================================================================
+ * Setup callout — shown on the first uninstalled agent card
+ * ========================================================================= */
+
+.setup-callout {
+  position: absolute;
+  top: calc(100% + 12px);
+  right: 0;
+  z-index: 10;
+  width: 210px;
+  padding: 14px 16px;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(31, 216, 164, 0.08) 0%, transparent 55%),
+    linear-gradient(180deg, #1F2328 0%, #181B1E 100%);
+  border: 1px solid rgba(31, 216, 164, 0.28);
+  border-radius: 12px;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.05) inset,
+    0 16px 40px -12px rgba(0, 0, 0, 0.65),
+    0 0 0 1px rgba(31, 216, 164, 0.06);
+  opacity: 0;
+  transform: translateY(-6px) scale(0.97);
+  transform-origin: top right;
+  transition: opacity 0.25s ease, transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+  pointer-events: none;
+}
+
+.setup-callout.show {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  pointer-events: auto;
+}
+
+.setup-callout-arrow {
+  position: absolute;
+  top: -6px;
+  right: 18px;
+  width: 10px;
+  height: 10px;
+  background: #1F2328;
+  border-left: 1px solid rgba(31, 216, 164, 0.28);
+  border-top: 1px solid rgba(31, 216, 164, 0.28);
+  transform: rotate(45deg);
+}
+
+.setup-callout-close {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  background: none;
+  border: none;
+  border-radius: 5px;
+  color: #6c7278;
+  font-size: 0.9rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.2s, background 0.2s;
+}
+
+.setup-callout-close:hover {
+  color: #e8e8e8;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.setup-callout-msg {
+  font-size: 0.78rem;
+  color: #b8bcc0;
+  margin: 0 0 8px;
+  line-height: 1.45;
+  padding-right: 14px;
+}
+
+.setup-callout-msg strong {
+  color: #1FD8A4;
+  font-weight: 600;
+}
+
+.setup-callout-link {
+  font-size: 0.7rem;
+  color: rgba(31, 216, 164, 0.7);
+  text-decoration: none;
+  font-weight: 500;
+  transition: color 0.2s;
+}
+
+.setup-callout-link:hover {
+  color: #1FD8A4;
+  text-decoration: underline;
+}

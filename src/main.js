@@ -14,10 +14,10 @@ import {
   initLogsExport
 } from './logs.js';
 import { initSettings } from './settings.js';
-import { initBackends, loadPredefinedBackends } from './backends.js';
+import { initBackends, loadPredefinedBackends, refreshGuardianHooks } from './backends.js';
 import { initTokenSaving, refreshTokenSaver } from './token-saving.js';
-import { initHowTo, refreshGuardianHooks } from './howto.js';
 import { initHome, loadHome, suspendHome, resumeHome } from './home.js';
+import { initGarden, loadGarden, startGardenPolling, stopGardenPolling } from './garden.js';
 
 const { openUrl } = window.__TAURI__.opener;
 
@@ -49,13 +49,15 @@ window.addEventListener('DOMContentLoaded', () => {
   loadLogsBackends();
   loadLogsModels();
 
-  // Initialize Guardian Agent sub-modules (settings, backends, howto)
+  // Initialize Guardian Agent sub-modules
   initSettings();
   initBackends();
-  initHowTo();
 
   // Initialize Token Saver
   initTokenSaving();
+
+  // Initialize Garden
+  initGarden();
 
   // Refresh buttons
   const refreshBtn = document.getElementById('refresh-btn');
@@ -96,6 +98,13 @@ window.addEventListener('DOMContentLoaded', () => {
       refreshTokenSaver();
     }
 
+    if (route === 'garden') {
+      loadGarden();
+      startGardenPolling();
+    } else {
+      stopGardenPolling();
+    }
+
     if (route === 'analytics') {
       loadBackends();
       loadDashboard();
@@ -112,6 +121,6 @@ window.addEventListener('DOMContentLoaded', () => {
   setTimeout(() => lucide.createIcons(), 100);
 });
 
-// Expose navigateTo for legacy callers (e.g., server-failed change-port-link)
+// Expose navigateTo for any legacy global callers
 import { navigateTo } from './utils.js';
 window.__navigateTo = navigateTo;

@@ -7,7 +7,7 @@
 // Hook coverage (Codex's lifecycle hook surface is narrower than Claude Code's;
 // PreToolUse / PostToolUse currently only fire for the Bash tool, and there is
 // no SessionEnd event):
-//   /user_prompt_submit  -- DLP scan + rate-limit + token-limit, blocks the prompt
+//   /user_prompt_submit  -- DLP scan + token-limit, blocks the prompt
 //   /pre_bash            -- DLP scan command, blocks shell tool, logs tool call
 //   /post_tool           -- updates the row created at PreToolUse with tool_response
 //   /stop                -- closes the prompt row; if a transcript is available
@@ -36,7 +36,6 @@
 use crate::database::{Database, RealUsage, DLP_ACTION_BLOCKED, DLP_ACTION_PASSED, DLP_ACTION_RATELIMITED};
 use crate::dlp::{check_dlp_patterns, DlpDetection};
 use crate::predefined_backend_settings::CustomBackendSettings;
-use crate::server::RateLimiter;
 use axum::{
     extract::State,
     http::StatusCode,
@@ -215,7 +214,6 @@ struct CodexHookMetadata {
 #[derive(Clone)]
 pub struct CodexHooksState {
     pub db: Database,
-    pub rate_limiter: RateLimiter,
     pub settings: Arc<CustomBackendSettings>,
 }
 
@@ -264,28 +262,6 @@ fn format_detection_message(detections: &[DlpDetection]) -> String {
         ));
     }
     message
-}
-
-fn check_codex_rate_limit(
-    rate_limiter: &RateLimiter,
-    settings: &CustomBackendSettings,
-) -> (bool, Option<String>) {
-    let rate_requests = settings.rate_limit_requests;
-    let rate_minutes = settings.rate_limit_minutes.max(1);
-    if rate_requests == 0 {
-        return (true, None);
-    }
-    if rate_limiter.check_and_record("codex-hooks-combined", rate_requests, rate_minutes) {
-        (true, None)
-    } else {
-        (
-            false,
-            Some(format!(
-                "Rate limit exceeded: {} requests per {} minute(s)",
-                rate_requests, rate_minutes
-            )),
-        )
-    }
 }
 
 fn check_codex_token_limit(
@@ -424,32 +400,6 @@ async fn user_prompt_submit_handler(
     };
     let metadata_json = serde_json::to_string(&metadata).ok();
 
-    // Rate limit
-    let (rate_allowed, rate_error) = check_codex_rate_limit(&state.rate_limiter, &state.settings);
-    if !rate_allowed {
-        let response = UserPromptSubmitResponse {
-            decision: Some("block".to_string()),
-            reason: rate_error.clone(),
-        };
-        let response_body_json = serde_json::to_string(&response).unwrap_or_default();
-        let _ = state.db.log_agent_hook_request(
-            BACKEND,
-            &correlation_id,
-            PROMPT_ENDPOINT,
-            input.model.as_deref().unwrap_or(""),
-            token_count,
-            0,
-            &request_body_json,
-            &response_body_json,
-            429,
-            metadata_json.as_deref(),
-            None,
-            None,
-            DLP_ACTION_RATELIMITED,
-        );
-        return (StatusCode::OK, Json(response));
-    }
-
     // Token limit
     let (token_allowed, token_error) = check_codex_token_limit(token_count, &state.settings);
     if !token_allowed {
@@ -532,8 +482,8 @@ fn pre_tool_response(blocked: bool, reason: Option<String>) -> PreToolUseRespons
 }
 
 /// Shared body for PreToolUse handlers (Bash only at the moment — Codex's hook
-/// surface doesn't yet expose Read/Write/MCP). Computes rate-limit /
-/// token-limit / DLP and logs the row keyed on `tool_use_id` (or a synthesized
+/// surface doesn't yet expose Read/Write/MCP). Computes token-limit /
+/// DLP and logs the row keyed on `tool_use_id` (or a synthesized
 /// session+tool key if absent).
 fn handle_pre_tool(
     state: &CodexHooksState,
@@ -561,29 +511,6 @@ fn handle_pre_tool(
         source: None,
     };
     let metadata_json = serde_json::to_string(&metadata).ok();
-
-    // Rate limit
-    let (rate_allowed, rate_error) = check_codex_rate_limit(&state.rate_limiter, &state.settings);
-    if !rate_allowed {
-        let response = pre_tool_response(true, rate_error.clone());
-        let response_body_json = serde_json::to_string(&response).unwrap_or_default();
-        let _ = state.db.log_agent_hook_request(
-            BACKEND,
-            &correlation_id,
-            TOOL_ENDPOINT,
-            input.model.as_deref().unwrap_or(""),
-            token_count,
-            0,
-            &request_body_json,
-            &response_body_json,
-            429,
-            metadata_json.as_deref(),
-            None,
-            None,
-            DLP_ACTION_RATELIMITED,
-        );
-        return response;
-    }
 
     // Token limit
     let (token_allowed, token_error) = check_codex_token_limit(token_count, &state.settings);
@@ -919,12 +846,10 @@ async fn session_start_handler(
 
 pub fn create_codex_hooks_router(
     db: Database,
-    rate_limiter: RateLimiter,
     settings: CustomBackendSettings,
 ) -> Router {
     let state = CodexHooksState {
         db,
-        rate_limiter,
         settings: Arc::new(settings),
     };
 

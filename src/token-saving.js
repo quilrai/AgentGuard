@@ -127,8 +127,6 @@ function renderTokenSavingList() {
         settings.token_saving.shell_compression = enabled;
         const newSettingsJson = buildSettingsJson(
           settings.dlp_enabled,
-          settings.rate_limit_requests,
-          settings.rate_limit_minutes,
           settings.max_tokens_in_a_request,
           settings.action_for_max_tokens_in_a_request,
           settings.token_saving

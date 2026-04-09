@@ -1,6 +1,6 @@
 // Stats and Monitoring Tauri Commands
 
-use crate::database::{get_port_from_db, open_connection, save_port_to_db, DLP_ACTION_BLOCKED, DLP_ACTION_PASSED, DLP_ACTION_REDACTED, DLP_ACTION_RATELIMITED, DLP_ACTION_NOTIFY_RATELIMIT};
+use crate::database::{get_port_from_db, open_connection, save_port_to_db, DLP_ACTION_BLOCKED, DLP_ACTION_PASSED, DLP_ACTION_REDACTED};
 use crate::{ServerStatus, RESTART_SENDER, SERVER_PORT, SERVER_STATUS};
 use serde::Serialize;
 
@@ -474,8 +474,6 @@ pub fn get_message_logs(
         "passed" => format!(" AND COALESCE(dlp_action, 0) = {}", DLP_ACTION_PASSED),
         "redacted" => format!(" AND dlp_action = {}", DLP_ACTION_REDACTED),
         "blocked" => format!(" AND dlp_action = {}", DLP_ACTION_BLOCKED),
-        "ratelimited" => format!(" AND dlp_action = {}", DLP_ACTION_RATELIMITED),
-        "notify-ratelimit" => format!(" AND dlp_action = {}", DLP_ACTION_NOTIFY_RATELIMIT),
         _ => String::new(),
     };
 
@@ -591,8 +589,6 @@ pub fn export_message_logs(
         "passed" => format!(" AND COALESCE(dlp_action, 0) = {}", DLP_ACTION_PASSED),
         "redacted" => format!(" AND dlp_action = {}", DLP_ACTION_REDACTED),
         "blocked" => format!(" AND dlp_action = {}", DLP_ACTION_BLOCKED),
-        "ratelimited" => format!(" AND dlp_action = {}", DLP_ACTION_RATELIMITED),
-        "notify-ratelimit" => format!(" AND dlp_action = {}", DLP_ACTION_NOTIFY_RATELIMIT),
         _ => String::new(),
     };
 
@@ -1122,4 +1118,245 @@ pub fn get_home_facts() -> Result<HomeFacts, String> {
         top_tool_week,
         enabled_pattern_count,
     })
+}
+
+// ========================================================================
+// Garden Stats
+// ========================================================================
+
+/// Project summary for the garden picker.
+#[derive(Serialize, Clone)]
+pub struct GardenProject {
+    pub cwd: String,
+    pub display_name: String,
+    pub input_tokens: i64,
+    pub output_tokens: i64,
+    pub cache_read_tokens: i64,
+    pub cache_creation_tokens: i64,
+    pub request_count: i64,
+    pub last_active: String,
+    pub backends: Vec<String>,
+}
+
+#[derive(Serialize)]
+pub struct GardenProjectList {
+    pub projects: Vec<GardenProject>,
+}
+
+/// Per-session breakdown within a single project garden.
+#[derive(Serialize, Clone)]
+pub struct GardenSession {
+    pub session_id: String,
+    pub output_tokens: i64,
+    pub input_tokens: i64,
+    pub request_count: i64,
+    pub last_active: String,
+    pub model: String,
+    pub backend: String,
+}
+
+/// Full detail for one project's garden scene.
+#[derive(Serialize)]
+pub struct GardenDetail {
+    pub cwd: String,
+    pub display_name: String,
+    /// Per-session trees
+    pub sessions: Vec<GardenSession>,
+    /// Aggregate totals
+    pub total_input: i64,
+    pub total_output: i64,
+    pub cache_read: i64,
+    pub cache_creation: i64,
+    pub request_count: i64,
+}
+
+/// Recent activity for live rain/watering.
+#[derive(Serialize, Clone)]
+pub struct GardenActivity {
+    pub session_id: String,
+    pub timestamp: String,
+    pub input_tokens: i64,
+    pub output_tokens: i64,
+}
+
+#[derive(Serialize)]
+pub struct GardenLive {
+    pub recent: Vec<GardenActivity>,
+}
+
+/// List all projects (for the garden picker).
+#[tauri::command]
+pub fn get_garden_stats(time_range: String) -> Result<GardenProjectList, String> {
+    let conn = open_connection().map_err(|e| e.to_string())?;
+
+    let hours = time_range_to_hours(&time_range);
+    let cutoff_ts = get_cutoff_timestamp(hours);
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT
+                json_extract(extra_metadata, '$.cwd') as cwd,
+                COALESCE(SUM(input_tokens), 0),
+                COALESCE(SUM(output_tokens), 0),
+                COALESCE(SUM(cache_read_tokens), 0),
+                COALESCE(SUM(cache_creation_tokens), 0),
+                COUNT(*) as req_count,
+                MAX(timestamp) as last_active,
+                GROUP_CONCAT(DISTINCT backend) as backends
+             FROM requests
+             WHERE timestamp >= ?1
+               AND extra_metadata IS NOT NULL
+               AND json_extract(extra_metadata, '$.cwd') IS NOT NULL
+             GROUP BY cwd
+             ORDER BY req_count DESC"
+        )
+        .map_err(|e| e.to_string())?;
+
+    let projects: Vec<GardenProject> = stmt
+        .query_map([&cutoff_ts], |row| {
+            let cwd: String = row.get(0)?;
+            let display_name = cwd
+                .rsplit('/')
+                .next()
+                .unwrap_or(&cwd)
+                .to_string();
+            let backends_str: String = row.get::<_, String>(7)?;
+            let backends: Vec<String> = backends_str
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .collect();
+            Ok(GardenProject {
+                cwd,
+                display_name,
+                input_tokens: row.get(1)?,
+                output_tokens: row.get(2)?,
+                cache_read_tokens: row.get(3)?,
+                cache_creation_tokens: row.get(4)?,
+                request_count: row.get(5)?,
+                last_active: row.get(6)?,
+                backends,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    Ok(GardenProjectList { projects })
+}
+
+/// Get detailed breakdown for a single project's garden.
+#[tauri::command]
+pub fn get_garden_detail(cwd: String, time_range: String) -> Result<GardenDetail, String> {
+    let conn = open_connection().map_err(|e| e.to_string())?;
+
+    let hours = time_range_to_hours(&time_range);
+    let cutoff_ts = get_cutoff_timestamp(hours);
+
+    // Per-session breakdown (trees)
+    let mut sess_stmt = conn
+        .prepare(
+            "SELECT
+                COALESCE(json_extract(extra_metadata, '$.session_id'), 'unknown') as sid,
+                COALESCE(SUM(output_tokens), 0),
+                COALESCE(SUM(input_tokens), 0),
+                COUNT(*) as req_count,
+                MAX(timestamp) as last_active,
+                COALESCE(model, 'unknown'),
+                backend
+             FROM requests
+             WHERE timestamp >= ?1
+               AND extra_metadata IS NOT NULL
+               AND json_extract(extra_metadata, '$.cwd') = ?2
+             GROUP BY sid
+             ORDER BY last_active DESC
+             LIMIT 20"
+        )
+        .map_err(|e| e.to_string())?;
+
+    let sessions: Vec<GardenSession> = sess_stmt
+        .query_map(rusqlite::params![&cutoff_ts, &cwd], |row| {
+            Ok(GardenSession {
+                session_id: row.get(0)?,
+                output_tokens: row.get(1)?,
+                input_tokens: row.get(2)?,
+                request_count: row.get(3)?,
+                last_active: row.get(4)?,
+                model: row.get(5)?,
+                backend: row.get(6)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    // Aggregate totals
+    let (total_input, total_output, cache_read, cache_creation, request_count): (i64, i64, i64, i64, i64) = conn
+        .query_row(
+            "SELECT
+                COALESCE(SUM(input_tokens), 0),
+                COALESCE(SUM(output_tokens), 0),
+                COALESCE(SUM(cache_read_tokens), 0),
+                COALESCE(SUM(cache_creation_tokens), 0),
+                COUNT(*)
+             FROM requests
+             WHERE timestamp >= ?1
+               AND extra_metadata IS NOT NULL
+               AND json_extract(extra_metadata, '$.cwd') = ?2",
+            rusqlite::params![&cutoff_ts, &cwd],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+        )
+        .unwrap_or((0, 0, 0, 0, 0));
+
+    let display_name = cwd.rsplit('/').next().unwrap_or(&cwd).to_string();
+
+    Ok(GardenDetail {
+        cwd,
+        display_name,
+        sessions,
+        total_input,
+        total_output,
+        cache_read,
+        cache_creation,
+        request_count,
+    })
+}
+
+/// Recent activity within a specific project for live rain animation.
+#[tauri::command]
+pub fn get_garden_live(cwd: String) -> Result<GardenLive, String> {
+    let conn = open_connection().map_err(|e| e.to_string())?;
+
+    let cutoff = chrono::Utc::now() - chrono::Duration::seconds(30);
+    let cutoff_ts = cutoff.to_rfc3339();
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT
+                COALESCE(json_extract(extra_metadata, '$.session_id'), 'unknown'),
+                timestamp,
+                input_tokens,
+                output_tokens
+             FROM requests
+             WHERE timestamp >= ?1
+               AND extra_metadata IS NOT NULL
+               AND json_extract(extra_metadata, '$.cwd') = ?2
+             ORDER BY timestamp DESC
+             LIMIT 20"
+        )
+        .map_err(|e| e.to_string())?;
+
+    let recent: Vec<GardenActivity> = stmt
+        .query_map(rusqlite::params![&cutoff_ts, &cwd], |row| {
+            Ok(GardenActivity {
+                session_id: row.get(0)?,
+                timestamp: row.get(1)?,
+                input_tokens: row.get(2)?,
+                output_tokens: row.get(3)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    Ok(GardenLive { recent })
 }

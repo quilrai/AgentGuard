@@ -31,57 +31,10 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::sync::watch;
-
-/// Rate limiter for tracking request counts per logical client (e.g. cursor-hooks).
-#[derive(Clone, Default)]
-pub struct RateLimiter {
-    /// Map of client_name -> list of request timestamps (in seconds since epoch)
-    requests: Arc<Mutex<HashMap<String, Vec<u64>>>>,
-}
-
-impl RateLimiter {
-    pub fn new() -> Self {
-        Self {
-            requests: Arc::new(Mutex::new(HashMap::new())),
-        }
-    }
-
-    /// Check if a request is allowed and record it if so.
-    /// Returns true if allowed, false if rate limited.
-    pub fn check_and_record(&self, client_name: &str, max_requests: u32, window_minutes: u32) -> bool {
-        if max_requests == 0 {
-            return true; // No rate limit
-        }
-
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        let window_secs = (window_minutes as u64) * 60;
-        let cutoff = now.saturating_sub(window_secs);
-
-        let mut requests = self.requests.lock().unwrap();
-        let timestamps = requests.entry(client_name.to_string()).or_default();
-
-        // Remove old timestamps outside the window
-        timestamps.retain(|&ts| ts > cutoff);
-
-        // Check if we're at the limit
-        if timestamps.len() >= max_requests as usize {
-            return false;
-        }
-
-        // Record this request
-        timestamps.push(now);
-        true
-    }
-}
 
 async fn health_handler() -> impl IntoResponse {
     Response::builder()
@@ -316,9 +269,6 @@ pub async fn start_server(app_handle: AppHandle) {
             });
         }
 
-        // Create shared rate limiter
-        let rate_limiter = RateLimiter::new();
-
         // Load cursor-hooks settings and create router
         let cursor_hooks_settings_json = db
             .get_predefined_backend_settings("cursor-hooks")
@@ -326,65 +276,30 @@ pub async fn start_server(app_handle: AppHandle) {
         let cursor_hooks_settings: CustomBackendSettings =
             serde_json::from_str(&cursor_hooks_settings_json).unwrap_or_default();
 
-        // Log cursor-hooks settings
-        if cursor_hooks_settings.rate_limit_requests > 0 {
-            println!(
-                "[SERVER] Cursor-hooks: rate limit {} requests per {} minute(s), DLP: {}",
-                cursor_hooks_settings.rate_limit_requests,
-                cursor_hooks_settings.rate_limit_minutes.max(1),
-                if cursor_hooks_settings.dlp_enabled {
-                    "enabled"
-                } else {
-                    "disabled"
-                }
-            );
-        }
-
         let cursor_hooks_router = create_cursor_hooks_router(
             db.clone(),
-            rate_limiter.clone(),
             cursor_hooks_settings,
         );
 
-        // Load claude-hooks settings (the `claude` row already written by the UI)
-        // and build its router.
+        // Load claude-hooks settings and build its router.
         let claude_hooks_settings_json = db
             .get_predefined_backend_settings("claude")
             .unwrap_or_else(|_| "{}".to_string());
         let claude_hooks_settings: CustomBackendSettings =
             serde_json::from_str(&claude_hooks_settings_json).unwrap_or_default();
-        if claude_hooks_settings.rate_limit_requests > 0 {
-            println!(
-                "[SERVER] Claude-hooks: rate limit {} requests per {} minute(s), DLP: {}",
-                claude_hooks_settings.rate_limit_requests,
-                claude_hooks_settings.rate_limit_minutes.max(1),
-                if claude_hooks_settings.dlp_enabled { "enabled" } else { "disabled" }
-            );
-        }
         let claude_hooks_router = create_claude_hooks_router(
             db.clone(),
-            rate_limiter.clone(),
             claude_hooks_settings,
         );
 
-        // Load codex-hooks settings (the `codex` row already written by the UI)
-        // and build its router.
+        // Load codex-hooks settings and build its router.
         let codex_hooks_settings_json = db
             .get_predefined_backend_settings("codex")
             .unwrap_or_else(|_| "{}".to_string());
         let codex_hooks_settings: CustomBackendSettings =
             serde_json::from_str(&codex_hooks_settings_json).unwrap_or_default();
-        if codex_hooks_settings.rate_limit_requests > 0 {
-            println!(
-                "[SERVER] Codex-hooks: rate limit {} requests per {} minute(s), DLP: {}",
-                codex_hooks_settings.rate_limit_requests,
-                codex_hooks_settings.rate_limit_minutes.max(1),
-                if codex_hooks_settings.dlp_enabled { "enabled" } else { "disabled" }
-            );
-        }
         let codex_hooks_router = create_codex_hooks_router(
             db.clone(),
-            rate_limiter.clone(),
             codex_hooks_settings,
         );
 
