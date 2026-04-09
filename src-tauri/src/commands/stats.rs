@@ -213,7 +213,8 @@ fn time_range_to_hours(time_range: &str) -> i64 {
         "6h" => 6,
         "1d" => 24,
         "7d" => 24 * 7,
-        _ => 1, // default to 1 hour
+        "all" => 24 * 365 * 10, // ~10 years, effectively all time
+        _ => 24 * 365 * 10, // default to all time
     }
 }
 

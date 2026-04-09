@@ -54,29 +54,34 @@ async function loadTokenSaverCard() {
   if (!dot || !text || !stats) return;
 
   try {
-    const [predefined] = await Promise.all([
-      invoke('get_predefined_backends'),
+    const [claude, codex, facts] = await Promise.all([
+      invoke('check_compression_hook_claude'),
+      invoke('check_compression_hook_codex'),
+      invoke('get_home_facts'),
     ]);
 
-    const all = predefined.filter(b => b.name !== 'cursor-hooks');
+    const active = [];
+    if (claude) active.push('Claude Code');
+    if (codex) active.push('Codex');
 
-    const enabled = all.filter(b => parseSettings(b.settings).token_saving.shell_compression);
-    const isActive = enabled.length > 0;
-
+    const isActive = active.length > 0;
     dot.className = 'status-dot ' + (isActive ? 'active' : 'inactive');
 
+    const saved = facts.tokens_saved_today || 0;
+    const savedLine = saved > 0
+      ? `<div class="home-card-stat-line">${formatNumber(saved)} tokens saved today</div>`
+      : '';
+
     if (isActive) {
-      text.textContent = `Active on ${enabled.length}`;
-      const names = enabled.map(b => b.name).slice(0, 3).join(', ');
-      const more = enabled.length > 3 ? ` and ${enabled.length - 3} more` : '';
+      text.textContent = `Active on ${active.length}`;
       stats.innerHTML = `
-        <div class="home-card-stat-line">Compressing shell output</div>
-        <div class="home-card-stat-line">${names}${more}</div>
+        <div class="home-card-stat-line">${active.join(', ')}</div>
+        ${savedLine}
       `;
     } else {
       text.textContent = 'Inactive';
       stats.innerHTML = `
-        <div class="home-card-stat-line">No backends compressing yet</div>
+        ${savedLine || '<div class="home-card-stat-line">No hooks installed yet</div>'}
         <div class="home-card-stat-line">Click to set up</div>
       `;
     }

@@ -1,166 +1,89 @@
-import { invoke, escapeHtml } from './utils.js';
+import { invoke } from './utils.js';
 import { parseSettings, buildSettingsJson } from './backends.js';
 
-let allBackends = []; // { backend }
+const AGENTS = [
+  {
+    id: 'claude',
+    backend: 'claude',
+    checkCmd: 'check_compression_hook_claude',
+    installCmd: 'install_compression_hook_claude',
+    uninstallCmd: 'uninstall_compression_hook_claude',
+  },
+  {
+    id: 'codex',
+    backend: 'codex',
+    checkCmd: 'check_compression_hook_codex',
+    installCmd: 'install_compression_hook_codex',
+    uninstallCmd: 'uninstall_compression_hook_codex',
+  },
+];
 
-// ============================================================================
-// Shell Compression Hooks
-// ============================================================================
-
-async function checkAllHookStatuses() {
-  await Promise.all([
-    checkHookStatus('claude', 'check_compression_hook_claude'),
-    checkHookStatus('codex', 'check_compression_hook_codex'),
-  ]);
-}
-
-async function checkHookStatus(agent, checkCommand) {
-  const statusEl = document.getElementById(`sc-${agent}-status`);
-  const btn = document.getElementById(`sc-${agent}-btn`);
-  if (!statusEl || !btn) return;
+async function checkAndSetToggle(agent) {
+  const toggle = document.getElementById(`ts-${agent.id}-shell`);
+  if (!toggle) return;
 
   try {
-    const installed = await invoke(checkCommand);
-    statusEl.textContent = installed ? 'Installed' : 'Not installed';
-    statusEl.className = `sc-hook-status ${installed ? 'installed' : 'not-installed'}`;
-    btn.textContent = installed ? 'Remove' : 'Install';
-    btn.className = `btn btn-sm ${installed ? 'btn-danger' : 'btn-primary'}`;
-    btn.disabled = false;
+    const installed = await invoke(agent.checkCmd);
+    toggle.checked = installed;
+    toggle.disabled = false;
   } catch (error) {
-    statusEl.textContent = 'Error';
-    statusEl.className = 'sc-hook-status error';
-    btn.disabled = true;
-    console.error(`Failed to check ${agent} hook status:`, error);
+    toggle.disabled = true;
+    console.error(`Failed to check ${agent.id} hook status:`, error);
   }
 }
 
-function setupHookButtons() {
-  setupHookButton('claude', 'install_compression_hook_claude', 'uninstall_compression_hook_claude', 'check_compression_hook_claude');
-  setupHookButton('codex', 'install_compression_hook_codex', 'uninstall_compression_hook_codex', 'check_compression_hook_codex');
+async function setBackendCompression(backendName, enabled) {
+  const predefined = await invoke('get_predefined_backends');
+  const backend = predefined.find(b => b.name === backendName);
+  if (!backend) return;
+
+  const settings = parseSettings(backend.settings);
+  settings.token_saving.shell_compression = enabled;
+  const newSettings = buildSettingsJson(
+    settings.dlp_enabled,
+    settings.max_tokens_in_a_request,
+    settings.action_for_max_tokens_in_a_request,
+    settings.token_saving
+  );
+  await invoke('update_predefined_backend', { name: backendName, settings: newSettings });
+  await invoke('restart_server');
 }
 
-function setupHookButton(agent, installCmd, uninstallCmd, checkCmd) {
-  const btn = document.getElementById(`sc-${agent}-btn`);
-  if (!btn) return;
+function setupToggle(agent) {
+  const toggle = document.getElementById(`ts-${agent.id}-shell`);
+  if (!toggle) return;
 
-  btn.addEventListener('click', async () => {
-    const isInstalled = btn.textContent === 'Remove';
-    btn.disabled = true;
-    btn.textContent = isInstalled ? 'Removing...' : 'Installing...';
+  toggle.addEventListener('change', async () => {
+    const shouldInstall = toggle.checked;
+    toggle.disabled = true;
 
     try {
-      if (isInstalled) {
-        await invoke(uninstallCmd);
+      if (shouldInstall) {
+        await invoke(agent.installCmd);
+        await setBackendCompression(agent.backend, true);
       } else {
-        await invoke(installCmd);
+        await invoke(agent.uninstallCmd);
+        await setBackendCompression(agent.backend, false);
       }
-      await checkHookStatus(agent, checkCmd);
     } catch (error) {
-      console.error(`Failed to ${isInstalled ? 'uninstall' : 'install'} ${agent} hook:`, error);
+      console.error(`Failed to ${shouldInstall ? 'install' : 'uninstall'} ${agent.id} hook:`, error);
+      toggle.checked = !shouldInstall;
       alert(`Failed: ${error}`);
-      await checkHookStatus(agent, checkCmd);
+    } finally {
+      toggle.disabled = false;
     }
   });
 }
 
-// ============================================================================
-// Shell Compression (per-backend)
-// ============================================================================
-
-async function loadAllBackends() {
-  try {
-    const predefined = await invoke('get_predefined_backends');
-    allBackends = predefined
-      .filter(b => b.name !== 'cursor-hooks')
-      .map(b => ({ backend: b }));
-    renderTokenSavingList();
-  } catch (error) {
-    console.error('Failed to load backends for token saving:', error);
-    const container = document.getElementById('token-saving-backends-list');
-    if (container) {
-      container.innerHTML = '<p class="empty-text">Failed to load backends</p>';
-    }
-  }
+async function refreshAllToggles() {
+  await Promise.all(AGENTS.map(a => checkAndSetToggle(a)));
 }
-
-function renderTokenSavingList() {
-  const container = document.getElementById('token-saving-backends-list');
-  if (!container) return;
-
-  if (allBackends.length === 0) {
-    container.innerHTML = '<p class="empty-text">No backends configured</p>';
-    return;
-  }
-
-  container.innerHTML = allBackends.map(({ backend }) => {
-    const settings = parseSettings(backend.settings);
-    const isEnabled = settings.token_saving.shell_compression;
-    const typeBadge = '<span class="backend-status enabled">Pre-defined</span>';
-
-    return `
-    <div class="token-saving-item">
-      <div class="token-saving-info">
-        <span class="backend-name">${escapeHtml(backend.name)}</span>
-        ${typeBadge}
-      </div>
-      <div class="setting-toggle-row" style="padding: 0;">
-        <label class="toggle-switch">
-          <input type="checkbox" class="ts-toggle" data-name="${escapeHtml(backend.name)}" ${isEnabled ? 'checked' : ''} />
-          <span class="toggle-slider"></span>
-        </label>
-      </div>
-    </div>`;
-  }).join('');
-
-  // Add toggle event listeners
-  container.querySelectorAll('.ts-toggle').forEach(toggle => {
-    toggle.addEventListener('change', async () => {
-      const name = toggle.dataset.name;
-      const enabled = toggle.checked;
-      toggle.disabled = true;
-
-      try {
-        const entry = allBackends.find(e => e.backend.name === name);
-        if (!entry) return;
-
-        const settings = parseSettings(entry.backend.settings);
-        settings.token_saving.shell_compression = enabled;
-        const newSettingsJson = buildSettingsJson(
-          settings.dlp_enabled,
-          settings.max_tokens_in_a_request,
-          settings.action_for_max_tokens_in_a_request,
-          settings.token_saving
-        );
-
-        await invoke('update_predefined_backend', { name, settings: newSettingsJson });
-        await invoke('restart_server');
-        // Update local state
-        entry.backend.settings = newSettingsJson;
-      } catch (error) {
-        console.error('Failed to update token saving:', error);
-        toggle.checked = !enabled; // revert
-        alert(`Failed to update: ${error}`);
-      } finally {
-        toggle.disabled = false;
-      }
-    });
-  });
-}
-
-// ============================================================================
-// Init
-// ============================================================================
 
 export function initTokenSaving() {
-  // Setup hook buttons
-  setupHookButtons();
-
-  checkAllHookStatuses();
-  loadAllBackends();
+  AGENTS.forEach(a => setupToggle(a));
+  refreshAllToggles();
 }
 
-// Refresh helper called by the router on route entry
 export function refreshTokenSaver() {
-  checkAllHookStatuses();
-  loadAllBackends();
+  refreshAllToggles();
 }

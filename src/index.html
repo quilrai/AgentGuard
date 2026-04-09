@@ -255,38 +255,37 @@
           </div>
 
           <section class="settings-section">
-            <h2 class="section-heading">Per-backend</h2>
-            <p class="section-subtitle">Enable shell output compression for each backend that supports it.</p>
             <div class="card">
-              <div class="card-body">
-                <div id="token-saving-backends-list" class="backends-list">
-                  <p class="empty-text">Loading backends...</p>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <section class="settings-section">
-            <h2 class="section-heading">Agent hooks</h2>
-            <p class="section-subtitle">Install hooks so your agents automatically use the compressor for shell tool output.</p>
-            <div class="card">
-              <div class="card-body">
-                <div class="sc-hooks-list">
-                  <div class="sc-hook-row">
-                    <div class="sc-hook-info">
-                      <span class="sc-hook-name">Claude Code</span>
-                      <span class="sc-hook-status" id="sc-claude-status">Checking...</span>
-                    </div>
-                    <button class="btn btn-sm" id="sc-claude-btn" disabled>Install</button>
-                  </div>
-                  <div class="sc-hook-row">
-                    <div class="sc-hook-info">
-                      <span class="sc-hook-name">Codex</span>
-                      <span class="sc-hook-status" id="sc-codex-status">Checking...</span>
-                    </div>
-                    <button class="btn btn-sm" id="sc-codex-btn" disabled>Install</button>
-                  </div>
-                </div>
+              <div class="card-body" style="padding: 0;">
+                <table class="ts-feature-table">
+                  <thead>
+                    <tr>
+                      <th class="ts-feature-col">Feature</th>
+                      <th class="ts-agent-col">Claude Code</th>
+                      <th class="ts-agent-col">Codex</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td class="ts-feature-col">
+                        <span class="ts-feature-name">Shell output compression</span>
+                        <span class="ts-feature-desc">Compresses verbose tool output (git, cargo, npm, etc.)</span>
+                      </td>
+                      <td class="ts-agent-col">
+                        <label class="toggle-switch">
+                          <input type="checkbox" id="ts-claude-shell" disabled />
+                          <span class="toggle-slider"></span>
+                        </label>
+                      </td>
+                      <td class="ts-agent-col">
+                        <label class="toggle-switch">
+                          <input type="checkbox" id="ts-codex-shell" disabled />
+                          <span class="toggle-slider"></span>
+                        </label>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
             </div>
           </section>
