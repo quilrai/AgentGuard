@@ -1153,6 +1153,15 @@ pub struct GardenSession {
     pub last_active: String,
     pub model: String,
     pub backend: String,
+    /// Input tokens of the most recent request in this session (tree height).
+    pub last_input_tokens: i64,
+}
+
+/// A source file that exceeds a size threshold.
+#[derive(Serialize, Clone)]
+pub struct LargeFile {
+    pub path: String,
+    pub lines: u64,
 }
 
 /// Full detail for one project's garden scene.
@@ -1168,6 +1177,8 @@ pub struct GardenDetail {
     pub cache_read: i64,
     pub cache_creation: i64,
     pub request_count: i64,
+    /// Source files exceeding a line-count threshold
+    pub large_files: Vec<LargeFile>,
 }
 
 /// Recent activity for live rain/watering.
@@ -1253,22 +1264,39 @@ pub fn get_garden_detail(cwd: String, time_range: String) -> Result<GardenDetail
     let cutoff_ts = get_cutoff_timestamp(hours);
 
     // Per-session breakdown (trees)
+    // last_input_tokens = input tokens from the most recent request in each session
     let mut sess_stmt = conn
         .prepare(
             "SELECT
-                COALESCE(json_extract(extra_metadata, '$.session_id'), 'unknown') as sid,
-                COALESCE(SUM(output_tokens), 0),
-                COALESCE(SUM(input_tokens), 0),
-                COUNT(*) as req_count,
-                MAX(timestamp) as last_active,
-                COALESCE(model, 'unknown'),
-                backend
-             FROM requests
-             WHERE timestamp >= ?1
-               AND extra_metadata IS NOT NULL
-               AND json_extract(extra_metadata, '$.cwd') = ?2
-             GROUP BY sid
-             ORDER BY last_active DESC
+                s.sid,
+                s.total_output,
+                s.total_input,
+                s.req_count,
+                s.last_active,
+                s.model,
+                s.backend,
+                COALESCE(r.input_tokens, 0) as last_input_tokens
+             FROM (
+                SELECT
+                    COALESCE(json_extract(extra_metadata, '$.session_id'), 'unknown') as sid,
+                    COALESCE(SUM(output_tokens), 0) as total_output,
+                    COALESCE(SUM(input_tokens), 0) as total_input,
+                    COUNT(*) as req_count,
+                    MAX(timestamp) as last_active,
+                    COALESCE(model, 'unknown') as model,
+                    backend
+                FROM requests
+                WHERE timestamp >= ?1
+                  AND extra_metadata IS NOT NULL
+                  AND json_extract(extra_metadata, '$.cwd') = ?2
+                GROUP BY sid
+             ) s
+             LEFT JOIN requests r
+               ON COALESCE(json_extract(r.extra_metadata, '$.session_id'), 'unknown') = s.sid
+               AND r.timestamp = s.last_active
+               AND r.extra_metadata IS NOT NULL
+               AND json_extract(r.extra_metadata, '$.cwd') = ?2
+             ORDER BY s.last_active DESC
              LIMIT 20"
         )
         .map_err(|e| e.to_string())?;
@@ -1283,6 +1311,7 @@ pub fn get_garden_detail(cwd: String, time_range: String) -> Result<GardenDetail
                 last_active: row.get(4)?,
                 model: row.get(5)?,
                 backend: row.get(6)?,
+                last_input_tokens: row.get(7)?,
             })
         })
         .map_err(|e| e.to_string())?
@@ -1309,6 +1338,9 @@ pub fn get_garden_detail(cwd: String, time_range: String) -> Result<GardenDetail
 
     let display_name = cwd.rsplit('/').next().unwrap_or(&cwd).to_string();
 
+    // Scan for large source files (>500 lines)
+    let large_files = scan_large_files(&cwd, 500);
+
     Ok(GardenDetail {
         cwd,
         display_name,
@@ -1318,7 +1350,80 @@ pub fn get_garden_detail(cwd: String, time_range: String) -> Result<GardenDetail
         cache_read,
         cache_creation,
         request_count,
+        large_files,
     })
+}
+
+/// Walk a project directory and find source files exceeding a line threshold.
+/// Skips hidden dirs, node_modules, target, .git, vendor, dist, build.
+fn scan_large_files(cwd: &str, threshold: u64) -> Vec<LargeFile> {
+    use std::fs;
+    use std::io::{BufRead, BufReader};
+    use std::path::Path;
+
+    let source_exts: &[&str] = &[
+        "rs", "js", "ts", "tsx", "jsx", "py", "go", "java", "c", "cpp", "h", "hpp",
+        "rb", "swift", "kt", "scala", "cs", "vue", "svelte", "css", "scss", "html",
+    ];
+    let skip_dirs: &[&str] = &[
+        "node_modules", "target", ".git", "vendor", "dist", "build", "__pycache__",
+        ".next", ".nuxt", "coverage", ".turbo",
+    ];
+
+    let mut results = Vec::new();
+    let root = Path::new(cwd);
+    if !root.is_dir() {
+        return results;
+    }
+
+    fn walk(dir: &Path, root: &Path, exts: &[&str], skip: &[&str], threshold: u64, out: &mut Vec<LargeFile>) {
+        let entries = match std::fs::read_dir(dir) {
+            Ok(e) => e,
+            Err(_) => return,
+        };
+        for entry in entries.filter_map(|e| e.ok()) {
+            let path = entry.path();
+            let name = entry.file_name();
+            let name_str = name.to_string_lossy();
+
+            if name_str.starts_with('.') {
+                continue;
+            }
+
+            if path.is_dir() {
+                if skip.contains(&name_str.as_ref()) {
+                    continue;
+                }
+                // Limit depth to 6 levels
+                let depth = path.strip_prefix(root).map(|p| p.components().count()).unwrap_or(0);
+                if depth < 6 {
+                    walk(&path, root, exts, skip, threshold, out);
+                }
+                continue;
+            }
+
+            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+            if !exts.contains(&ext) {
+                continue;
+            }
+
+            // Count lines
+            if let Ok(file) = fs::File::open(&path) {
+                let lines = BufReader::new(file).lines().count() as u64;
+                if lines > threshold {
+                    let rel = path.strip_prefix(root)
+                        .map(|p| p.to_string_lossy().to_string())
+                        .unwrap_or_else(|_| path.to_string_lossy().to_string());
+                    out.push(LargeFile { path: rel, lines });
+                }
+            }
+        }
+    }
+
+    walk(root, root, source_exts, skip_dirs, threshold, &mut results);
+    results.sort_by(|a, b| b.lines.cmp(&a.lines));
+    results.truncate(10); // Top 10 largest
+    results
 }
 
 /// Recent activity within a specific project for live rain animation.

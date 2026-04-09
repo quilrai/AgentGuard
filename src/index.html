@@ -321,19 +321,31 @@
                 </button>
                 <span class="garden-scene-title" id="garden-scene-title">project</span>
                 <span class="garden-scene-path" id="garden-scene-path">/path/to/project</span>
-              </div>
-              <div class="garden-scene-wrap">
-                <svg id="garden-svg" class="garden-svg" viewBox="0 0 1200 700" preserveAspectRatio="xMidYMid meet"></svg>
-              </div>
-              <!-- Legend + stats -->
-              <div class="garden-legend" id="garden-legend">
-                <div class="garden-legend-items">
-                  <span class="garden-legend-item"><span class="garden-legend-dot" style="background:#4a8a3a"></span> Trees = sessions (height = output)</span>
-                  <span class="garden-legend-item"><span class="garden-legend-dot" style="background:#4a90d9"></span> Pond = input tokens</span>
-                  <span class="garden-legend-item"><span class="garden-legend-dot" style="background:#f5c542"></span> Sun = cache read</span>
-                  <span class="garden-legend-item"><span class="garden-legend-dot" style="background:#c084fc"></span> Mushrooms = cache write</span>
-                  <span class="garden-legend-item"><span class="garden-legend-dot" style="background:#5b9bd5"></span> Rain = live activity</span>
+                <!-- Garden Health Score -->
+                <div class="garden-health" id="garden-health">
+                  <span class="garden-health-dot"></span>
+                  <span class="garden-health-label"></span>
                 </div>
+                <button class="garden-help-btn" id="garden-help-btn" type="button" title="Toggle element labels">?</button>
+              </div>
+
+              <div class="garden-scene-body">
+                <div class="garden-scene-wrap">
+                  <svg id="garden-svg" class="garden-svg" viewBox="0 0 1200 700" preserveAspectRatio="xMidYMid meet"></svg>
+                  <!-- Hover tooltip -->
+                  <div class="garden-tooltip" id="garden-tooltip" style="display:none;"></div>
+                </div>
+
+                <!-- Advisor sidebar -->
+                <div class="garden-advisor" id="garden-advisor">
+                  <div class="garden-advisor-title">Garden Advisor</div>
+                  <div class="garden-advisor-list" id="garden-advisor-list"></div>
+                </div>
+              </div>
+
+              <!-- Pictogram legend + stats -->
+              <div class="garden-legend" id="garden-legend">
+                <div class="garden-pictogram-bar" id="garden-pictogram-bar"></div>
                 <div class="garden-stats-row" id="garden-stats-row"></div>
               </div>
             </div>
