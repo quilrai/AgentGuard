@@ -21,7 +21,7 @@ import { invoke, formatNumber } from './utils.js';
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
 // ---- State ----
-let gardenTimeRange = '1d';
+let gardenTimeRange = 'all';
 let currentCwd = null;     // null = picker view, string = garden view
 let projectList = [];
 let gardenDetail = null;   // GardenDetail for current project
@@ -29,21 +29,12 @@ let liveTimer = null;
 let rainTimers = new Map();
 let helpMode = false;
 let expandedSessionId = null; // which tree is currently expanded
+let advisorSuggestions = [];  // current suggestions list
+let advisorIndex = 0;         // which suggestion is showing
 
 // ---- Public API ----
 
 export function initGarden() {
-  document.getElementById('garden-time-select')?.addEventListener('change', (e) => {
-    gardenTimeRange = e.target.value;
-    loadGarden();
-  });
-
-  document.getElementById('garden-back-btn')?.addEventListener('click', () => {
-    currentCwd = null;
-    showPicker();
-    loadGarden();
-  });
-
   // Help mode toggle
   document.getElementById('garden-help-btn')?.addEventListener('click', () => {
     helpMode = !helpMode;
@@ -80,14 +71,28 @@ export function initGarden() {
       }
     });
   }
+
+  // Quilly: click icon or "next" to cycle suggestions
+  document.getElementById('quilly-icon')?.addEventListener('click', () => {
+    cycleSuggestion();
+  });
+  document.getElementById('quilly-bubble-next')?.addEventListener('click', () => {
+    cycleSuggestion();
+  });
+
+  // Quilly: health button toggles stats panel
+  document.getElementById('quilly-health-btn')?.addEventListener('click', () => {
+    const panel = document.getElementById('quilly-stats-panel');
+    if (panel) {
+      const showing = panel.style.display !== 'none';
+      panel.style.display = showing ? 'none' : '';
+    }
+  });
 }
 
 export function loadGarden() {
-  if (currentCwd) {
-    loadGardenDetail(currentCwd);
-  } else {
-    loadProjectList();
-  }
+  // Always fetch project list first, then show selected (or first) garden
+  loadProjectList();
 }
 
 export function startGardenPolling() {
@@ -104,88 +109,58 @@ export function stopGardenPolling() {
   rainTimers.clear();
 }
 
-// ---- Views ----
-
-function showPicker() {
-  document.getElementById('garden-picker').style.display = '';
-  document.getElementById('garden-scene').style.display = 'none';
-  stopGardenPolling();
-}
-
-function showScene() {
-  document.getElementById('garden-picker').style.display = 'none';
-  document.getElementById('garden-scene').style.display = '';
-}
-
-// ---- Project List ----
+// ---- Project List & Name Bar ----
 
 function loadProjectList() {
   invoke('get_garden_stats', { timeRange: gardenTimeRange })
     .then(data => {
       projectList = data.projects || [];
-      renderPickerGrid();
+      renderNameBar();
+      // Auto-select first garden if none selected, or reload current
+      if (projectList.length > 0) {
+        if (!currentCwd || !projectList.find(p => p.cwd === currentCwd)) {
+          currentCwd = projectList[0].cwd;
+        }
+        document.getElementById('garden-empty').style.display = 'none';
+        document.getElementById('garden-scene').style.display = '';
+        loadGardenDetail(currentCwd);
+        startGardenPolling();
+        highlightActivePill();
+      } else {
+        currentCwd = null;
+        document.getElementById('garden-empty').style.display = '';
+      }
     })
     .catch(e => console.error('[garden]', e));
 }
 
-function renderPickerGrid() {
-  const grid = document.getElementById('garden-picker-grid');
-  const empty = document.getElementById('garden-picker-empty');
-  if (!grid) return;
+function renderNameBar() {
+  const scroll = document.getElementById('garden-names-scroll');
+  if (!scroll) return;
 
-  if (projectList.length === 0) {
-    grid.innerHTML = '';
-    if (empty) { empty.style.display = ''; grid.appendChild(empty); }
-    return;
-  }
-  if (empty) empty.style.display = 'none';
+  scroll.innerHTML = projectList.map(p =>
+    `<span class="garden-name-pill" data-cwd="${esc(p.cwd)}">${esc(p.display_name)}</span>`
+  ).join('');
 
-  grid.innerHTML = projectList.map(p => `
-    <div class="garden-project-card" data-cwd="${esc(p.cwd)}">
-      <span class="garden-project-card-accent"></span>
-      <div class="garden-project-card-name">${esc(p.display_name)}</div>
-      <div class="garden-project-card-path">${esc(p.cwd)}</div>
-      <div class="garden-project-card-stats">
-        <div class="garden-project-card-stat">
-          <span class="garden-project-card-stat-label">Output</span>
-          <span class="garden-project-card-stat-value">${formatNumber(p.output_tokens)}</span>
-        </div>
-        <div class="garden-project-card-stat">
-          <span class="garden-project-card-stat-label">Input</span>
-          <span class="garden-project-card-stat-value">${formatNumber(p.input_tokens)}</span>
-        </div>
-        <div class="garden-project-card-stat">
-          <span class="garden-project-card-stat-label">Requests</span>
-          <span class="garden-project-card-stat-value">${formatNumber(p.request_count)}</span>
-        </div>
-      </div>
-      <div class="garden-project-card-backends">
-        ${p.backends.map(b => `<span class="garden-backend-pill">${esc(b)}</span>`).join('')}
-      </div>
-      ${miniTreeSvg(p)}
-    </div>
-  `).join('');
-
-  grid.querySelectorAll('.garden-project-card').forEach(card => {
-    card.addEventListener('click', () => {
-      currentCwd = card.dataset.cwd;
-      showScene();
+  scroll.querySelectorAll('.garden-name-pill').forEach(pill => {
+    pill.addEventListener('click', () => {
+      const cwd = pill.dataset.cwd;
+      if (cwd === currentCwd) return;
+      currentCwd = cwd;
+      expandedSessionId = null;
+      highlightActivePill();
       loadGardenDetail(currentCwd);
       startGardenPolling();
     });
   });
 }
 
-/** Tiny inline SVG tree preview for the picker card. */
-function miniTreeSvg(project) {
-  const maxT = Math.max(project.output_tokens, 1);
-  const h = 20 + Math.min(maxT / 50000, 1) * 30;
-  return `<svg class="garden-card-preview" width="40" height="60" viewBox="0 0 40 60">
-    <rect x="18" y="${60 - h}" width="4" height="${h}" rx="2" fill="#5a3a20"/>
-    <circle cx="20" cy="${60 - h - 8}" r="14" fill="#3a7a2a" opacity="0.7"/>
-    <circle cx="14" cy="${60 - h - 4}" r="10" fill="#2d5a1e" opacity="0.6"/>
-    <circle cx="26" cy="${60 - h - 4}" r="10" fill="#2d5a1e" opacity="0.6"/>
-  </svg>`;
+function highlightActivePill() {
+  const scroll = document.getElementById('garden-names-scroll');
+  if (!scroll) return;
+  scroll.querySelectorAll('.garden-name-pill').forEach(p => {
+    p.classList.toggle('active', p.dataset.cwd === currentCwd);
+  });
 }
 
 // ---- Garden Detail ----
@@ -194,15 +169,11 @@ function loadGardenDetail(cwd) {
   invoke('get_garden_detail', { cwd, timeRange: gardenTimeRange })
     .then(data => {
       gardenDetail = data;
-      document.getElementById('garden-scene-title').textContent = data.display_name;
-      document.getElementById('garden-scene-path').textContent = data.cwd;
       renderGardenScene();
       renderStatsRow();
       renderPictogramBar();
       renderHealthScore();
       renderAdvisor();
-      // Re-init lucide icons for the back button
-      if (window.lucide) lucide.createIcons();
     })
     .catch(e => console.error('[garden]', e));
 }
@@ -295,8 +266,8 @@ function pulseElements(type) {
 // ============ Garden Health Score ============
 
 function renderHealthScore() {
-  const el = document.getElementById('garden-health');
-  if (!el || !gardenDetail) return;
+  const btn = document.getElementById('quilly-health-btn');
+  if (!btn || !gardenDetail) return;
   const d = gardenDetail;
   const cacheRatio = d.total_input + d.cache_read > 0
     ? d.cache_read / (d.total_input + d.cache_read)
@@ -304,37 +275,42 @@ function renderHealthScore() {
 
   let issues = 0;
 
-  // Check for oversized context (tall trees)
   const maxLastInput = Math.max(...d.sessions.map(s => s.last_input_tokens || 0), 0);
   if (maxLastInput > 150000) issues += 2;
   else if (maxLastInput > 80000) issues += 1;
 
-  // Low cache hit
   if (d.cache_read > 0 || d.total_input > 10000) {
     if (cacheRatio < 0.2) issues += 2;
     else if (cacheRatio < 0.5) issues += 1;
   }
 
-  // Input-heavy (big pond, small output)
   if (d.total_input > 0 && d.total_output > 0) {
     const ioRatio = d.total_input / d.total_output;
     if (ioRatio > 10) issues += 1;
   }
 
   let level, label;
-  if (issues === 0) { level = 'thriving'; label = 'Thriving'; }
-  else if (issues <= 2) { level = 'attention'; label = 'Needs Attention'; }
-  else { level = 'overgrown'; label = 'Overgrown'; }
+  if (issues === 0) { level = 'thriving'; label = 'Stats'; }
+  else if (issues <= 2) { level = 'attention'; label = 'Stats'; }
+  else { level = 'overgrown'; label = 'Stats'; }
 
-  el.dataset.level = level;
-  el.querySelector('.garden-health-label').textContent = label;
+  btn.dataset.level = level;
+  const lbl = document.getElementById('quilly-health-label');
+  if (lbl) lbl.textContent = label;
+
+  // Also update the topbar health indicator
+  const topHealth = document.getElementById('garden-health');
+  if (topHealth) {
+    topHealth.dataset.level = level;
+    const topLbl = topHealth.querySelector('.garden-health-label');
+    if (topLbl) topLbl.textContent = label;
+  }
 }
 
 // ============ Garden Advisor ============
 
 function renderAdvisor() {
-  const list = document.getElementById('garden-advisor-list');
-  if (!list || !gardenDetail) return;
+  if (!gardenDetail) return;
   const d = gardenDetail;
   const suggestions = [];
 
@@ -438,8 +414,8 @@ function renderAdvisor() {
     suggestions.push({
       severity: 'info',
       icon: '\uD83C\uDF19',
-      text: 'The garden is <strong>quiet</strong>. No sessions in this time range.',
-      hint: 'Try selecting a longer time range, or start a new coding session.',
+      text: 'The garden is <strong>quiet</strong>. No sessions yet.',
+      hint: 'Start a new coding session to grow your garden.',
     });
   }
 
@@ -453,13 +429,37 @@ function renderAdvisor() {
     });
   }
 
-  list.innerHTML = suggestions.map(s => `
-    <div class="garden-advisor-card" data-severity="${s.severity}">
-      <span class="garden-advisor-icon">${s.icon}</span>
-      <span class="garden-advisor-text">${s.text}</span>
-      <span class="garden-advisor-hint">${s.hint}</span>
-    </div>
-  `).join('');
+  advisorSuggestions = suggestions;
+  advisorIndex = 0;
+  showSuggestion();
+}
+
+function showSuggestion() {
+  const bubble = document.getElementById('quilly-bubble');
+  const textEl = document.getElementById('quilly-bubble-text');
+  const dotsEl = document.getElementById('quilly-bubble-dots');
+  if (!bubble || !textEl || advisorSuggestions.length === 0) return;
+
+  const s = advisorSuggestions[advisorIndex];
+  bubble.dataset.severity = s.severity;
+  textEl.innerHTML = `<span>${s.icon}</span> ${s.text}<br><span style="color:#666;font-size:10px;">${s.hint}</span>`;
+
+  // Render dots
+  if (dotsEl) {
+    dotsEl.innerHTML = advisorSuggestions.map((_, i) =>
+      `<span class="quilly-bubble-dot${i === advisorIndex ? ' active' : ''}"></span>`
+    ).join('');
+  }
+
+  // Hide "next" if only one suggestion
+  const nextBtn = document.getElementById('quilly-bubble-next');
+  if (nextBtn) nextBtn.style.display = advisorSuggestions.length <= 1 ? 'none' : '';
+}
+
+function cycleSuggestion() {
+  if (advisorSuggestions.length <= 1) return;
+  advisorIndex = (advisorIndex + 1) % advisorSuggestions.length;
+  showSuggestion();
 }
 
 // ============ Expand Tree In-Place ============
