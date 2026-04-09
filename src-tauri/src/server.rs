@@ -32,7 +32,6 @@ use axum::{
     Router,
 };
 use std::net::SocketAddr;
-use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::sync::watch;
 
@@ -234,40 +233,6 @@ pub async fn start_server(app_handle: AppHandle) {
             }
         };
         println!("Database initialized: {}", db_path);
-
-        // Clean up data older than 7 days on startup
-        match db.cleanup_old_data() {
-            Ok(deleted) => {
-                if deleted > 0 {
-                    println!("Cleaned up {} old records (>7 days)", deleted);
-                }
-            }
-            Err(e) => eprintln!("Failed to cleanup old data: {}", e),
-        }
-
-        // Spawn background compression worker
-        // Runs every 5 minutes, compresses in short bursts to avoid blocking live requests
-        {
-            let db_for_compression = db.clone();
-            tokio::spawn(async move {
-                let mut interval = tokio::time::interval(Duration::from_secs(300)); // 5 minutes
-                interval.tick().await; // Skip immediate first tick
-                loop {
-                    interval.tick().await;
-                    let db = db_for_compression.clone();
-                    let result = tokio::task::spawn_blocking(move || {
-                        db.run_compression_maintenance()
-                    })
-                    .await;
-
-                    if let Ok(Ok(did_compress)) = result {
-                        if did_compress {
-                            println!("[DB] Background compression maintenance completed");
-                        }
-                    }
-                }
-            });
-        }
 
         // Load cursor-hooks settings and create router
         let cursor_hooks_settings_json = db

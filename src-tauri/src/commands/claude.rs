@@ -331,6 +331,25 @@ pub fn install_claude_hooks() -> Result<String, String> {
         add_hook_entry(hooks, install, path);
     }
 
+    // Ensure the compression hook (if present) is the last PreToolUse entry
+    // so its command rewrite runs after our DLP/logging pre-bash hook.
+    if let Some(pre_tool_arr) = hooks.get_mut("PreToolUse").and_then(|v| v.as_array_mut()) {
+        if let Some(pos) = pre_tool_arr.iter().position(|entry| {
+            entry.get("hooks")
+                .and_then(|h| h.as_array())
+                .map(|arr| arr.iter().any(|hook| {
+                    hook.get("command")
+                        .and_then(|c| c.as_str())
+                        .map(|s| s.contains("llmwatcher-compress"))
+                        .unwrap_or(false)
+                }))
+                .unwrap_or(false)
+        }) {
+            let compress_entry = pre_tool_arr.remove(pos);
+            pre_tool_arr.push(compress_entry);
+        }
+    }
+
     write_claude_settings(&settings)?;
 
     Ok("Claude Code hooks installed".to_string())

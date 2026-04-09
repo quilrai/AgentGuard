@@ -5,7 +5,48 @@ use crate::dlp::DlpDetection;
 use crate::dlp_pattern_config::{get_db_path, DEFAULT_PORT};
 use crate::requestresponsemetadata::{RequestMetadata, ResponseMetadata};
 use rusqlite::Connection;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Once};
+
+const DB_VERSION: &str = "2026-april-09";
+
+static VERSION_CHECK: Once = Once::new();
+
+/// Ensure the DB version matches. If missing or mismatched, delete all DB files
+/// so we start clean.
+fn ensure_db_version(path: &str) {
+    let db_path = std::path::Path::new(path);
+    if !db_path.exists() {
+        return;
+    }
+
+    let version_ok = Connection::open(path)
+        .ok()
+        .and_then(|conn| {
+            conn.query_row(
+                "SELECT value FROM settings WHERE key = 'db_version'",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .ok()
+        })
+        .map(|v| v == DB_VERSION)
+        .unwrap_or(false);
+
+    if version_ok {
+        return;
+    }
+
+    println!("[DB] Version mismatch or missing — deleting old DB files to start clean...");
+    let _ = std::fs::remove_file(path);
+    let _ = std::fs::remove_file(format!("{}-wal", path));
+    let _ = std::fs::remove_file(format!("{}-shm", path));
+    println!("[DB] Old DB files removed.");
+}
+
+/// Run the DB version check exactly once before the first connection is opened.
+fn ensure_db_version_once(path: &str) {
+    VERSION_CHECK.call_once(|| ensure_db_version(path));
+}
 
 // ============================================================================
 // DLP Action Status Codes
@@ -31,15 +72,9 @@ pub struct Database {
 
 impl Database {
     pub fn new(path: &str) -> Result<Self, rusqlite::Error> {
-        let conn = Connection::open(path)?;
+        ensure_db_version_once(path);
 
-        // Load zstd compression extension
-        sqlite_zstd::load(&conn).map_err(|e| {
-            rusqlite::Error::SqliteFailure(
-                rusqlite::ffi::Error::new(1),
-                Some(format!("Failed to load sqlite-zstd: {}", e)),
-            )
-        })?;
+        let conn = Connection::open(path)?;
 
         // SQLite performance settings
         conn.execute_batch("
@@ -48,25 +83,8 @@ impl Database {
             PRAGMA cache_size = -64000;
             PRAGMA temp_store = MEMORY;
             PRAGMA busy_timeout = 5000;
+            PRAGMA auto_vacuum = FULL;
         ")?;
-
-        // Drop old logs if compressed schema is stale (must happen before VACUUM)
-        Self::drop_stale_logs_if_needed(&conn);
-
-        // Check and migrate auto_vacuum mode if needed (one-time migration)
-        // auto_vacuum can only be changed on empty DB or by running VACUUM after setting it
-        let auto_vacuum_mode: i32 = conn
-            .query_row("PRAGMA auto_vacuum", [], |row| row.get(0))
-            .unwrap_or(0);
-        if auto_vacuum_mode != 1 {
-            // 1 = FULL
-            println!("[DB] Migrating auto_vacuum to FULL mode (one-time operation)...");
-            conn.execute_batch("
-                PRAGMA auto_vacuum = FULL;
-                VACUUM;
-            ")?;
-            println!("[DB] auto_vacuum migration complete");
-        }
 
         // Create requests table
         conn.execute(
@@ -102,41 +120,6 @@ impl Database {
             )",
             [],
         )?;
-
-        // Migration: Add extra_metadata column if it doesn't exist (for existing databases)
-        let _ = conn.execute(
-            "ALTER TABLE requests ADD COLUMN extra_metadata TEXT",
-            [],
-        );
-
-        // Migration: Add request_headers column if it doesn't exist (for existing databases)
-        let _ = conn.execute(
-            "ALTER TABLE requests ADD COLUMN request_headers TEXT",
-            [],
-        );
-
-        // Migration: Add response_headers column if it doesn't exist (for existing databases)
-        let _ = conn.execute(
-            "ALTER TABLE requests ADD COLUMN response_headers TEXT",
-            [],
-        );
-
-        // Migration: Add dlp_action column if it doesn't exist
-        // Uses DLP_ACTION_PASSED (0), DLP_ACTION_REDACTED (1), DLP_ACTION_BLOCKED (2)
-        let _ = conn.execute(
-            "ALTER TABLE requests ADD COLUMN dlp_action INTEGER DEFAULT 0",
-            [],
-        );
-
-        // Migration: Add token saving columns if they don't exist
-        let _ = conn.execute(
-            "ALTER TABLE requests ADD COLUMN tokens_saved INTEGER DEFAULT 0",
-            [],
-        );
-        let _ = conn.execute(
-            "ALTER TABLE requests ADD COLUMN token_saving_meta TEXT",
-            [],
-        );
 
         // Create index for faster generation_id lookups (timestamp + backend filtering)
         let _ = conn.execute(
@@ -196,7 +179,7 @@ impl Database {
             [],
         );
 
-        // Create tool_calls table (no FK constraint - requests is a view due to zstd compression)
+        // Create tool_calls table
         conn.execute(
             "CREATE TABLE IF NOT EXISTS tool_calls (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -224,292 +207,15 @@ impl Database {
             [],
         )?;
 
-        // Enable transparent zstd compression on large columns if not already enabled
-        Self::enable_compression_if_needed(&conn)?;
-
-        // Backfill tool_calls for existing requests
-        Self::backfill_tool_calls(&conn);
+        // Store version
+        conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES ('db_version', ?1)",
+            rusqlite::params![DB_VERSION],
+        )?;
 
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
         })
-    }
-
-    /// If the compressed requests table exists but lacks new columns, drop all logs.
-    /// Settings and DLP patterns are preserved.
-    fn drop_stale_logs_if_needed(conn: &Connection) {
-        // First check if _requests_zstd table exists at all (compression was previously enabled)
-        let has_compressed: bool = conn
-            .query_row(
-                "SELECT COUNT(*) > 0 FROM sqlite_master WHERE type='table' AND name='_requests_zstd'",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap_or(false);
-
-        if !has_compressed {
-            return; // Fresh DB or uncompressed — nothing to migrate
-        }
-
-        // Check if _requests_zstd has the tokens_saved column
-        let has_column: bool = conn
-            .query_row(
-                "SELECT COUNT(*) > 0 FROM pragma_table_info('_requests_zstd') WHERE name = 'tokens_saved'",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap_or(false);
-
-        if has_column {
-            return; // Schema is up to date
-        }
-
-        println!("[DB] Schema outdated — dropping old logs...");
-        let _ = conn.execute_batch("
-            DROP TABLE IF EXISTS dlp_detections;
-            DROP TABLE IF EXISTS tool_calls;
-            DROP VIEW IF EXISTS requests;
-            DROP TABLE IF EXISTS _requests_zstd;
-            DROP TABLE IF EXISTS _requests_zstd_dicts;
-            DROP TABLE IF EXISTS _requests_zstd_configs;
-        ");
-        let _ = conn.execute("DELETE FROM settings WHERE key = 'tool_calls_backfill_done'", []);
-        println!("[DB] Done. Logs will be recreated.");
-    }
-
-    /// One-time backfill of tool_calls from existing response bodies
-    fn backfill_tool_calls(conn: &Connection) {
-        // Check if backfill already done
-        let already_done: bool = conn
-            .query_row(
-                "SELECT value FROM settings WHERE key = 'tool_calls_backfill_done'",
-                [],
-                |row| row.get::<_, String>(0),
-            )
-            .map(|v| v == "true")
-            .unwrap_or(false);
-
-        if already_done {
-            return;
-        }
-
-        println!("[DB] Backfilling tool_calls from existing requests...");
-
-        // Get all Claude and Codex requests that might have tool calls
-        let mut stmt = match conn.prepare(
-            "SELECT id, backend, response_body, is_streaming FROM requests WHERE backend IN ('claude', 'codex') AND response_body IS NOT NULL"
-        ) {
-            Ok(s) => s,
-            Err(e) => {
-                println!("[DB] Failed to prepare backfill query: {}", e);
-                return;
-            }
-        };
-
-        let rows: Vec<(i64, String, String, bool)> = match stmt.query_map([], |row| {
-            Ok((
-                row.get::<_, i64>(0)?,
-                row.get::<_, String>(1).unwrap_or_default(),
-                row.get::<_, String>(2).unwrap_or_default(),
-                row.get::<_, i32>(3).unwrap_or(0) == 1,
-            ))
-        }) {
-            Ok(iter) => iter.filter_map(|r| r.ok()).collect(),
-            Err(e) => {
-                println!("[DB] Failed to query requests for backfill: {}", e);
-                return;
-            }
-        };
-
-        let mut total_tool_calls = 0;
-        for (request_id, backend, response_body, is_streaming) in rows {
-            let tool_calls = match backend.as_str() {
-                "claude" => Self::extract_tool_calls_claude(&response_body, is_streaming),
-                "codex" => Self::extract_tool_calls_codex(&response_body, is_streaming),
-                _ => Vec::new(),
-            };
-            for tc in &tool_calls {
-                let input_json = serde_json::to_string(&tc.input).unwrap_or_default();
-                if conn.execute(
-                    "INSERT INTO tool_calls (request_id, tool_call_id, tool_name, tool_input) VALUES (?1, ?2, ?3, ?4)",
-                    rusqlite::params![request_id, tc.id, tc.name, input_json],
-                ).is_ok() {
-                    total_tool_calls += 1;
-                }
-            }
-        }
-
-        // Mark backfill as done
-        let _ = conn.execute(
-            "INSERT OR REPLACE INTO settings (key, value) VALUES ('tool_calls_backfill_done', 'true')",
-            [],
-        );
-
-        println!("[DB] Backfill complete. Extracted {} tool calls.", total_tool_calls);
-    }
-
-    /// Extract tool calls from Claude response body (used for backfill)
-    fn extract_tool_calls_claude(body: &str, is_streaming: bool) -> Vec<crate::requestresponsemetadata::ToolCall> {
-        use std::collections::HashMap;
-        use crate::requestresponsemetadata::ToolCall;
-
-        let mut tool_calls = Vec::new();
-
-        if is_streaming {
-            let mut tool_calls_map: HashMap<i64, (String, String, String)> = HashMap::new();
-
-            for line in body.lines() {
-                if !line.starts_with("data: ") {
-                    continue;
-                }
-                let json_str = &line[6..];
-
-                if let Ok(json) = serde_json::from_str::<serde_json::Value>(json_str) {
-                    let event_type = json.get("type").and_then(|v| v.as_str()).unwrap_or("");
-
-                    match event_type {
-                        "content_block_start" => {
-                            if let Some(content_block) = json.get("content_block") {
-                                if content_block.get("type").and_then(|v| v.as_str()) == Some("tool_use") {
-                                    let index = json.get("index").and_then(|v| v.as_i64()).unwrap_or(0);
-                                    let id = content_block.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                                    let name = content_block.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                                    tool_calls_map.insert(index, (id, name, String::new()));
-                                }
-                            }
-                        }
-                        "content_block_delta" => {
-                            if let Some(delta) = json.get("delta") {
-                                if delta.get("type").and_then(|v| v.as_str()) == Some("input_json_delta") {
-                                    let index = json.get("index").and_then(|v| v.as_i64()).unwrap_or(0);
-                                    if let Some(partial_json) = delta.get("partial_json").and_then(|v| v.as_str()) {
-                                        if let Some(entry) = tool_calls_map.get_mut(&index) {
-                                            entry.2.push_str(partial_json);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-            }
-
-            let mut sorted: Vec<(i64, ToolCall)> = tool_calls_map
-                .into_iter()
-                .map(|(index, (id, name, input_str))| {
-                    let input = serde_json::from_str(&input_str).unwrap_or(serde_json::Value::Null);
-                    (index, ToolCall { id, name, input })
-                })
-                .collect();
-            sorted.sort_by_key(|(index, _)| *index);
-            tool_calls = sorted.into_iter().map(|(_, tc)| tc).collect();
-        } else {
-            if let Ok(json) = serde_json::from_str::<serde_json::Value>(body) {
-                if let Some(content) = json.get("content").and_then(|v| v.as_array()) {
-                    for block in content {
-                        if block.get("type").and_then(|t| t.as_str()) == Some("tool_use") {
-                            let id = block.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                            let name = block.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                            let input = block.get("input").cloned().unwrap_or(serde_json::Value::Null);
-                            tool_calls.push(ToolCall { id, name, input });
-                        }
-                    }
-                }
-            }
-        }
-
-        tool_calls
-    }
-
-    /// Extract tool calls from Codex response body (used for backfill)
-    fn extract_tool_calls_codex(body: &str, is_streaming: bool) -> Vec<crate::requestresponsemetadata::ToolCall> {
-        use std::collections::HashMap;
-        use crate::requestresponsemetadata::ToolCall;
-
-        let mut tool_calls = Vec::new();
-
-        if is_streaming {
-            // Track by item_id: (call_id, name, accumulated_arguments)
-            let mut function_calls_map: HashMap<String, (String, String, String)> = HashMap::new();
-
-            for line in body.lines() {
-                if !line.starts_with("data: ") {
-                    continue;
-                }
-                let json_str = &line[6..];
-
-                if let Ok(json) = serde_json::from_str::<serde_json::Value>(json_str) {
-                    let event_type = json.get("type").and_then(|v| v.as_str()).unwrap_or("");
-
-                    match event_type {
-                        "response.output_item.added" => {
-                            if let Some(item) = json.get("item") {
-                                if item.get("type").and_then(|v| v.as_str()) == Some("function_call") {
-                                    let item_id = item.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                                    let call_id = item.get("call_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                                    let name = item.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                                    function_calls_map.insert(item_id, (call_id, name, String::new()));
-                                }
-                            }
-                        }
-                        "response.function_call_arguments.delta" => {
-                            // Delta events use item_id to identify which function call
-                            if let Some(item_id) = json.get("item_id").and_then(|v| v.as_str()) {
-                                if let Some(delta) = json.get("delta").and_then(|v| v.as_str()) {
-                                    if let Some(entry) = function_calls_map.get_mut(item_id) {
-                                        entry.2.push_str(delta);
-                                    }
-                                }
-                            }
-                        }
-                        "response.completed" => {
-                            // Also extract from completed response output
-                            if let Some(response) = json.get("response") {
-                                if let Some(output) = response.get("output").and_then(|v| v.as_array()) {
-                                    for item in output {
-                                        if item.get("type").and_then(|t| t.as_str()) == Some("function_call") {
-                                            let item_id = item.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                                            let call_id = item.get("call_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                                            let name = item.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                                            let arguments = item.get("arguments").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                                            if !function_calls_map.contains_key(&item_id) {
-                                                function_calls_map.insert(item_id, (call_id, name, arguments));
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-            }
-
-            tool_calls = function_calls_map
-                .into_iter()
-                .map(|(_item_id, (call_id, name, arguments))| {
-                    let input = serde_json::from_str(&arguments).unwrap_or(serde_json::Value::Null);
-                    ToolCall { id: call_id, name, input }
-                })
-                .collect();
-        } else {
-            if let Ok(json) = serde_json::from_str::<serde_json::Value>(body) {
-                if let Some(output) = json.get("output").and_then(|v| v.as_array()) {
-                    for item in output {
-                        if item.get("type").and_then(|t| t.as_str()) == Some("function_call") {
-                            let call_id = item.get("call_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                            let name = item.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                            let arguments = item.get("arguments").and_then(|v| v.as_str()).unwrap_or("");
-                            let input = serde_json::from_str(arguments).unwrap_or(serde_json::Value::Null);
-                            tool_calls.push(ToolCall { id: call_id, name, input });
-                        }
-                    }
-                }
-            }
-        }
-
-        tool_calls
     }
 
     /// Seed builtin DLP patterns, overwriting if they already exist
@@ -572,157 +278,6 @@ impl Database {
         Ok(())
     }
 
-    /// Enable transparent zstd compression on large text columns
-    /// This is a one-time migration that compresses existing data
-    fn enable_compression_if_needed(conn: &Connection) -> Result<(), rusqlite::Error> {
-        // Check if compression is already enabled (shadow table exists)
-        let is_compressed: bool = conn
-            .query_row(
-                "SELECT COUNT(*) > 0 FROM sqlite_master WHERE type='table' AND name='_requests_zstd'",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap_or(false);
-
-        if is_compressed {
-            // Compression enabled - check how much pending work there is
-            let pending_rows: i64 = conn
-                .query_row(
-                    "SELECT COUNT(*) FROM _requests_zstd WHERE request_body IS NOT NULL AND typeof(request_body) = 'text'",
-                    [],
-                    |row| row.get(0),
-                )
-                .unwrap_or(0);
-
-            if pending_rows > 100 {
-                // Lots of pending work (likely incomplete migration) - run full compression
-                println!("[DB] Found {} uncompressed rows, running full compression...", pending_rows);
-                let _ = conn.query_row(
-                    "SELECT zstd_incremental_maintenance(null, 1)",
-                    [],
-                    |_| Ok(()),
-                );
-                println!("[DB] Compression complete!");
-            } else if pending_rows > 0 {
-                // Just a few new rows - quick maintenance
-                let _ = conn.query_row(
-                    "SELECT zstd_incremental_maintenance(5.0, 1)",
-                    [],
-                    |_| Ok(()),
-                );
-            }
-            return Ok(());
-        }
-
-        // Enable transparent compression on large columns (even if empty - ready for new data)
-        // Using compression level 3 (fast) with single shared dictionary
-        println!("[DB] Enabling zstd compression on requests table...");
-
-        conn.execute(
-            "SELECT zstd_enable_transparent('{\"table\": \"requests\", \"column\": \"request_body\", \"compression_level\": 3, \"dict_chooser\": \"''all''\"}')",
-            [],
-        )?;
-        conn.execute(
-            "SELECT zstd_enable_transparent('{\"table\": \"requests\", \"column\": \"response_body\", \"compression_level\": 3, \"dict_chooser\": \"''all''\"}')",
-            [],
-        )?;
-        conn.execute(
-            "SELECT zstd_enable_transparent('{\"table\": \"requests\", \"column\": \"request_headers\", \"compression_level\": 3, \"dict_chooser\": \"''all''\"}')",
-            [],
-        )?;
-        conn.execute(
-            "SELECT zstd_enable_transparent('{\"table\": \"requests\", \"column\": \"response_headers\", \"compression_level\": 3, \"dict_chooser\": \"''all''\"}')",
-            [],
-        )?;
-
-        // Check if there's existing data to compress
-        let row_count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM _requests_zstd", [], |row| row.get(0))
-            .unwrap_or(0);
-
-        if row_count > 0 {
-            println!("[DB] Compressing {} existing rows (this may take a moment)...", row_count);
-            conn.query_row(
-                "SELECT zstd_incremental_maintenance(null, 1)",
-                [],
-                |_| Ok(()),
-            )?;
-            println!("[DB] Compression complete!");
-        } else {
-            println!("[DB] Compression enabled, ready for new data.");
-        }
-
-        Ok(())
-    }
-
-    /// Clean up data older than 7 days
-    pub fn cleanup_old_data(&self) -> Result<usize, rusqlite::Error> {
-        let conn = self.conn.lock().unwrap();
-        let cutoff = chrono::Utc::now() - chrono::Duration::days(7);
-        let cutoff_ts = cutoff.to_rfc3339();
-
-        // Delete DLP detections for requests that will be deleted (by relationship, not timestamp)
-        conn.execute(
-            "DELETE FROM dlp_detections WHERE request_id IN (SELECT id FROM requests WHERE timestamp < ?1)",
-            rusqlite::params![cutoff_ts],
-        )?;
-
-        // Delete tool calls for requests that will be deleted
-        conn.execute(
-            "DELETE FROM tool_calls WHERE request_id IN (SELECT id FROM requests WHERE timestamp < ?1)",
-            rusqlite::params![cutoff_ts],
-        )?;
-
-        // Delete old requests
-        conn.execute(
-            "DELETE FROM requests WHERE timestamp < ?1",
-            rusqlite::params![cutoff_ts],
-        )
-    }
-
-    /// Run incremental compression maintenance if needed
-    /// Returns Ok(true) if compression was performed, Ok(false) if skipped
-    /// This is designed to be called periodically from a background task
-    pub fn run_compression_maintenance(&self) -> Result<bool, rusqlite::Error> {
-        let conn = self.conn.lock().unwrap();
-
-        // Check if compression is enabled (shadow table exists)
-        let is_compressed: bool = conn
-            .query_row(
-                "SELECT COUNT(*) > 0 FROM sqlite_master WHERE type='table' AND name='_requests_zstd'",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap_or(false);
-
-        if !is_compressed {
-            return Ok(false);
-        }
-
-        // Check how many uncompressed rows we have (fast query)
-        let pending: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM _requests_zstd WHERE request_body IS NOT NULL AND typeof(request_body) = 'text'",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap_or(0);
-
-        // Only compress if we have > 20 pending rows (avoid unnecessary work)
-        if pending <= 20 {
-            return Ok(false);
-        }
-
-        // Very short burst (1 sec), low db_load (0.25 = 75% time available for other queries)
-        // This means actual lock time is ~250ms max per cycle
-        let _ = conn.query_row(
-            "SELECT zstd_incremental_maintenance(1.0, 0.25)",
-            [],
-            |_| Ok(()),
-        );
-
-        Ok(true)
-    }
 
     #[allow(clippy::too_many_arguments)]
     pub fn log_request(
@@ -788,16 +343,7 @@ impl Database {
             ],
         )?;
 
-        // With zstd compression enabled, 'requests' is a view and last_insert_rowid()
-        // returns 0 because the actual insert happens via an INSTEAD OF trigger.
-        // Query the actual ID from the underlying table.
-        let request_id: i64 = conn.query_row(
-            "SELECT MAX(id) FROM _requests_zstd",
-            [],
-            |row| row.get(0),
-        )?;
-
-        Ok(request_id)
+        Ok(conn.last_insert_rowid())
     }
 
     pub fn log_dlp_detections(
@@ -818,7 +364,7 @@ impl Database {
                     detection.pattern_name,
                     detection.pattern_type,
                     detection.original_value,
-                    "", // placeholder column kept for backwards compat; no longer populated
+                    "",
                     detection.message_index,
                 ],
             )?;
@@ -975,16 +521,7 @@ impl Database {
             ],
         )?;
 
-        // With zstd compression enabled, 'requests' is a view and last_insert_rowid()
-        // returns 0 because the actual insert happens via an INSTEAD OF trigger.
-        // Query the actual ID from the underlying table.
-        let request_id: i64 = conn.query_row(
-            "SELECT MAX(id) FROM _requests_zstd",
-            [],
-            |row| row.get(0),
-        )?;
-
-        Ok(request_id)
+        Ok(conn.last_insert_rowid())
     }
 
     /// Update agent-hook output tokens, response body, and latency by
@@ -1244,11 +781,8 @@ impl Database {
 
         println!("[DB] add_agent_hook_thinking_tokens - backend: {}, correlation_id: {}", backend, correlation_id);
 
-        // Use the underlying table for the update (the `requests` view goes
-        // through an INSTEAD OF trigger which doesn't honor UPDATEs the way
-        // we need for the running, uncompressed tail).
         let rows_affected = conn.execute(
-            "UPDATE _requests_zstd SET
+            "UPDATE requests SET
                 output_tokens = output_tokens + ?1,
                 has_thinking = 1
              WHERE timestamp >= ?2 AND backend = ?3 AND json_extract(extra_metadata, '$.correlation_id') = ?4",
@@ -1308,16 +842,10 @@ impl Database {
     }
 }
 
-// Helper to open connection with zstd extension loaded
 pub fn open_connection() -> Result<Connection, rusqlite::Error> {
-    let conn = Connection::open(get_db_path())?;
-    sqlite_zstd::load(&conn).map_err(|e| {
-        rusqlite::Error::SqliteFailure(
-            rusqlite::ffi::Error::new(1),
-            Some(format!("Failed to load sqlite-zstd: {}", e)),
-        )
-    })?;
-    Ok(conn)
+    let path = get_db_path();
+    ensure_db_version_once(path);
+    Connection::open(path)
 }
 
 // Port management helpers
@@ -1355,4 +883,3 @@ pub fn save_port_to_db(port: u16) -> Result<(), String> {
 
     Ok(())
 }
-

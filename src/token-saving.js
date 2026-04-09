@@ -9,13 +9,6 @@ const AGENTS = [
     installCmd: 'install_compression_hook_claude',
     uninstallCmd: 'uninstall_compression_hook_claude',
   },
-  {
-    id: 'codex',
-    backend: 'codex',
-    checkCmd: 'check_compression_hook_codex',
-    installCmd: 'install_compression_hook_codex',
-    uninstallCmd: 'uninstall_compression_hook_codex',
-  },
 ];
 
 async function checkAndSetToggle(agent) {

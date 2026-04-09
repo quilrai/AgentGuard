@@ -225,9 +225,6 @@ pub fn run() {
             commands::install_compression_hook_cursor,
             commands::uninstall_compression_hook_cursor,
             commands::check_compression_hook_cursor,
-            commands::install_compression_hook_codex,
-            commands::uninstall_compression_hook_codex,
-            commands::check_compression_hook_codex,
             // Home screen
             commands::get_home_facts,
             // Garden

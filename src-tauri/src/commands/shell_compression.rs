@@ -171,7 +171,7 @@ case "$CMD" in
 
     # Escape the rewrite for JSON output (\ -> \\, " -> \")
     REWRITE_ESC=$(printf '%s' "$REWRITE" | sed 's/\\/\\\\/g; s/"/\\"/g')
-    printf '{{"command":"%s"}}' "$REWRITE_ESC"
+    printf '{{"hookSpecificOutput":{{"hookEventName":"PreToolUse","permissionDecision":"allow","updatedInput":{{"command":"%s"}}}}}}' "$REWRITE_ESC"
     ;;
   *)
     exit 0
@@ -278,9 +278,12 @@ pub fn install_compression_hook_claude() -> Result<String, String> {
         .and_then(|v| v.as_array_mut())
         .ok_or("Failed to access PreToolUse array")?;
 
-    // Check if our hook is already installed
-    let already_installed = pre_tool_use.iter().any(|entry| {
-        entry.get("hooks")
+    // Remove any existing compress hook entry so we can re-add it at the end.
+    // This guarantees the compress hook always runs AFTER the pre-bash hook
+    // (which does DLP/logging) so that our command rewrite is the final output
+    // Claude Code sees.
+    pre_tool_use.retain(|entry| {
+        let is_ours = entry.get("hooks")
             .and_then(|h| h.as_array())
             .map(|arr| arr.iter().any(|hook| {
                 hook.get("command")
@@ -288,18 +291,18 @@ pub fn install_compression_hook_claude() -> Result<String, String> {
                     .map(|s| s.contains("llmwatcher-compress"))
                     .unwrap_or(false)
             }))
-            .unwrap_or(false)
+            .unwrap_or(false);
+        !is_ours
     });
 
-    if !already_installed {
-        pre_tool_use.push(serde_json::json!({
-            "matcher": "Bash|bash",
-            "hooks": [{
-                "type": "command",
-                "command": script_path_str
-            }]
-        }));
-    }
+    // Always append at the end so it runs last.
+    pre_tool_use.push(serde_json::json!({
+        "matcher": "Bash|bash",
+        "hooks": [{
+            "type": "command",
+            "command": script_path_str
+        }]
+    }));
 
     write_claude_settings(&settings)?;
 
@@ -528,123 +531,3 @@ pub fn check_compression_hook_cursor() -> Result<bool, String> {
     Ok(installed)
 }
 
-// ============================================================================
-// Codex Compression Hook (instruction-based)
-// ============================================================================
-
-fn get_codex_dir() -> Result<PathBuf, String> {
-    let home = std::env::var("HOME").map_err(|_| "Could not get HOME directory")?;
-    Ok(PathBuf::from(home).join(".codex"))
-}
-
-fn get_codex_instructions_path() -> Result<PathBuf, String> {
-    Ok(get_codex_dir()?.join("AGENTS.md"))
-}
-
-fn generate_codex_instructions(port: u16) -> String {
-    format!(
-        r#"# LLMwatcher Shell Compression
-
-When running shell commands that produce verbose output, prefix them with the compression endpoint to save tokens:
-
-```bash
-curl -s -X POST -H 'Content-Type: application/json' -d '{{"command":"<your command>","cwd":"'$(pwd)'","backend":"codex"}}' http://localhost:{port}/cli_compression
-```
-
-Commands that benefit most from compression: git, cargo, npm, docker, kubectl, grep, find, ls, curl, pip, terraform, aws, and many more.
-
-This is especially useful for commands that produce long output like `git log`, `git diff`, `cargo build`, `docker logs`, `kubectl describe`, etc.
-"#
-    )
-}
-
-#[tauri::command]
-pub fn install_compression_hook_codex() -> Result<String, String> {
-    let port = *SERVER_PORT.lock().unwrap();
-
-    let codex_dir = get_codex_dir()?;
-    if !codex_dir.exists() {
-        fs::create_dir_all(&codex_dir)
-            .map_err(|e| format!("Failed to create ~/.codex directory: {}", e))?;
-    }
-
-    let instructions_path = get_codex_instructions_path()?;
-    let content = if instructions_path.exists() {
-        let existing = fs::read_to_string(&instructions_path)
-            .map_err(|e| format!("Failed to read AGENTS.md: {}", e))?;
-        if existing.contains("LLMwatcher Shell Compression") {
-            // Already installed, update in place
-            let marker = "# LLMwatcher Shell Compression";
-            if let Some(start) = existing.find(marker) {
-                // Find the end of our section (next # header or end of file)
-                let rest = &existing[start + marker.len()..];
-                let end = rest.find("\n# ")
-                    .map(|i| start + marker.len() + i)
-                    .unwrap_or(existing.len());
-                let mut new_content = existing[..start].to_string();
-                new_content.push_str(&generate_codex_instructions(port));
-                if end < existing.len() {
-                    new_content.push_str(&existing[end..]);
-                }
-                new_content
-            } else {
-                existing
-            }
-        } else {
-            format!("{}\n\n{}", existing.trim_end(), generate_codex_instructions(port))
-        }
-    } else {
-        generate_codex_instructions(port)
-    };
-
-    fs::write(&instructions_path, content)
-        .map_err(|e| format!("Failed to write AGENTS.md: {}", e))?;
-
-    Ok("Shell compression instructions installed for Codex".to_string())
-}
-
-#[tauri::command]
-pub fn uninstall_compression_hook_codex() -> Result<String, String> {
-    let instructions_path = get_codex_instructions_path()?;
-    if !instructions_path.exists() {
-        return Ok("No Codex instructions to remove".to_string());
-    }
-
-    let content = fs::read_to_string(&instructions_path)
-        .map_err(|e| format!("Failed to read AGENTS.md: {}", e))?;
-
-    let marker = "# LLMwatcher Shell Compression";
-    if let Some(start) = content.find(marker) {
-        let rest = &content[start + marker.len()..];
-        let end = rest.find("\n# ")
-            .map(|i| start + marker.len() + i)
-            .unwrap_or(content.len());
-
-        let mut new_content = content[..start].trim_end().to_string();
-        if end < content.len() {
-            new_content.push_str(&content[end..]);
-        }
-
-        if new_content.trim().is_empty() {
-            let _ = fs::remove_file(&instructions_path);
-        } else {
-            fs::write(&instructions_path, new_content)
-                .map_err(|e| format!("Failed to write AGENTS.md: {}", e))?;
-        }
-    }
-
-    Ok("Shell compression instructions removed from Codex".to_string())
-}
-
-#[tauri::command]
-pub fn check_compression_hook_codex() -> Result<bool, String> {
-    let instructions_path = get_codex_instructions_path()?;
-    if !instructions_path.exists() {
-        return Ok(false);
-    }
-
-    let content = fs::read_to_string(&instructions_path)
-        .map_err(|e| format!("Failed to read AGENTS.md: {}", e))?;
-
-    Ok(content.contains("LLMwatcher Shell Compression"))
-}

@@ -54,15 +54,13 @@ async function loadTokenSaverCard() {
   if (!dot || !text || !stats) return;
 
   try {
-    const [claude, codex, facts] = await Promise.all([
+    const [claude, facts] = await Promise.all([
       invoke('check_compression_hook_claude'),
-      invoke('check_compression_hook_codex'),
       invoke('get_home_facts'),
     ]);
 
     const active = [];
     if (claude) active.push('Claude Code');
-    if (codex) active.push('Codex');
 
     const isActive = active.length > 0;
     dot.className = 'status-dot ' + (isActive ? 'active' : 'inactive');

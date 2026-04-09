@@ -35,9 +35,6 @@ futures = "0.3"
 
 # Database
 rusqlite = { version = "0.35", features = ["bundled"] }
-sqlite-zstd = { git = "https://github.com/bedapudi6788/sqlite-zstd.git" }
-# Pin zstd versions to avoid conflicts
-zstd-sys = "=2.0.1"
 chrono = "0.4"
 async-stream = "0.3"
 
