@@ -1,18 +1,37 @@
 import { invoke } from './utils.js';
 import { parseSettings, buildSettingsJson } from './backends.js';
 
-const AGENTS = [
+// Each feature has its own AGENTS array keyed by toggle id suffix.
+// Shell compression agents:
+const SHELL_AGENTS = [
   {
     id: 'claude',
     backend: 'claude',
+    toggleId: 'ts-claude-shell',
+    settingKey: 'shell_compression',
     checkCmd: 'check_compression_hook_claude',
     installCmd: 'install_compression_hook_claude',
     uninstallCmd: 'uninstall_compression_hook_claude',
   },
 ];
 
+// File read caching agents:
+const CTX_READ_AGENTS = [
+  {
+    id: 'claude',
+    backend: 'claude',
+    toggleId: 'ts-claude-ctx-read',
+    settingKey: 'ctx_read',
+    checkCmd: 'check_ctx_read_hook_claude',
+    installCmd: 'install_ctx_read_hook_claude',
+    uninstallCmd: 'uninstall_ctx_read_hook_claude',
+  },
+];
+
+const ALL_AGENTS = [...SHELL_AGENTS, ...CTX_READ_AGENTS];
+
 async function checkAndSetToggle(agent) {
-  const toggle = document.getElementById(`ts-${agent.id}-shell`);
+  const toggle = document.getElementById(agent.toggleId);
   if (!toggle) return;
 
   try {
@@ -21,17 +40,17 @@ async function checkAndSetToggle(agent) {
     toggle.disabled = false;
   } catch (error) {
     toggle.disabled = true;
-    console.error(`Failed to check ${agent.id} hook status:`, error);
+    console.error(`Failed to check ${agent.id} ${agent.settingKey} hook status:`, error);
   }
 }
 
-async function setBackendCompression(backendName, enabled) {
+async function setBackendSetting(backendName, settingKey, enabled) {
   const predefined = await invoke('get_predefined_backends');
   const backend = predefined.find(b => b.name === backendName);
   if (!backend) return;
 
   const settings = parseSettings(backend.settings);
-  settings.token_saving.shell_compression = enabled;
+  settings.token_saving[settingKey] = enabled;
   const newSettings = buildSettingsJson(
     settings.dlp_enabled,
     settings.max_tokens_in_a_request,
@@ -43,7 +62,7 @@ async function setBackendCompression(backendName, enabled) {
 }
 
 function setupToggle(agent) {
-  const toggle = document.getElementById(`ts-${agent.id}-shell`);
+  const toggle = document.getElementById(agent.toggleId);
   if (!toggle) return;
 
   toggle.addEventListener('change', async () => {
@@ -53,13 +72,13 @@ function setupToggle(agent) {
     try {
       if (shouldInstall) {
         await invoke(agent.installCmd);
-        await setBackendCompression(agent.backend, true);
+        await setBackendSetting(agent.backend, agent.settingKey, true);
       } else {
         await invoke(agent.uninstallCmd);
-        await setBackendCompression(agent.backend, false);
+        await setBackendSetting(agent.backend, agent.settingKey, false);
       }
     } catch (error) {
-      console.error(`Failed to ${shouldInstall ? 'install' : 'uninstall'} ${agent.id} hook:`, error);
+      console.error(`Failed to ${shouldInstall ? 'install' : 'uninstall'} ${agent.id} ${agent.settingKey} hook:`, error);
       toggle.checked = !shouldInstall;
       alert(`Failed: ${error}`);
     } finally {
@@ -69,11 +88,11 @@ function setupToggle(agent) {
 }
 
 async function refreshAllToggles() {
-  await Promise.all(AGENTS.map(a => checkAndSetToggle(a)));
+  await Promise.all(ALL_AGENTS.map(a => checkAndSetToggle(a)));
 }
 
 export function initTokenSaving() {
-  AGENTS.forEach(a => setupToggle(a));
+  ALL_AGENTS.forEach(a => setupToggle(a));
   refreshAllToggles();
 }
 

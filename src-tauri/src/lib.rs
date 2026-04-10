@@ -9,6 +9,7 @@ mod builtin_patterns;
 mod claude_hooks;
 mod codex_hooks;
 mod commands;
+mod ctx_read;
 mod cursor_hooks;
 mod database;
 mod dlp;
@@ -225,6 +226,10 @@ pub fn run() {
             commands::install_compression_hook_cursor,
             commands::uninstall_compression_hook_cursor,
             commands::check_compression_hook_cursor,
+            // File read caching commands
+            commands::install_ctx_read_hook_claude,
+            commands::uninstall_ctx_read_hook_claude,
+            commands::check_ctx_read_hook_claude,
             // Home screen
             commands::get_home_facts,
             // Garden

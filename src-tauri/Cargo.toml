@@ -50,3 +50,7 @@ regex = "1"
 # Token counting for shell compression
 tiktoken-rs = "0.6"
 
+# ctx_read: file cache diffing and hashing
+similar = "2"
+md-5 = "0.10"
+

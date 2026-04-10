@@ -12,14 +12,16 @@ pub struct TokenSavingSettings {
     /// Shell compression: compress shell command output before it reaches the agent
     #[serde(default)]
     pub shell_compression: bool,
-    // Future features can be added here as new bool fields
+    /// File read caching: cache file reads and return compact stubs for unchanged re-reads
+    #[serde(default)]
+    pub ctx_read: bool,
 }
 
 impl TokenSavingSettings {
     /// Returns true if any token saving feature is enabled
     #[allow(dead_code)]
     pub fn any_enabled(&self) -> bool {
-        self.shell_compression
+        self.shell_compression || self.ctx_read
     }
 }
 

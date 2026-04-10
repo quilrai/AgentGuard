@@ -35,10 +35,13 @@ export function parseSettings(settingsJson) {
       dlp_enabled: settings.dlp_enabled !== false,
       max_tokens_in_a_request: settings.max_tokens_in_a_request || 0,
       action_for_max_tokens_in_a_request: settings.action_for_max_tokens_in_a_request || 'block',
-      token_saving: { shell_compression: tokenSaving.shell_compression || false },
+      token_saving: {
+        shell_compression: tokenSaving.shell_compression || false,
+        ctx_read: tokenSaving.ctx_read || false,
+      },
     };
   } catch {
-    return { dlp_enabled: true, max_tokens_in_a_request: 0, action_for_max_tokens_in_a_request: 'block', token_saving: { shell_compression: false } };
+    return { dlp_enabled: true, max_tokens_in_a_request: 0, action_for_max_tokens_in_a_request: 'block', token_saving: { shell_compression: false, ctx_read: false } };
   }
 }
 

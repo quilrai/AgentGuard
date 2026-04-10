@@ -251,7 +251,7 @@
               <i data-lucide="arrow-left"></i> Back
             </button>
             <h1 class="page-title">Token Saver</h1>
-            <p class="page-lede">Compress shell output before it reaches your agent's context window. Saves 60–90% of tokens from verbose tool output.</p>
+            <p class="page-lede">Reduce tokens reaching your agent's context window. Shell compression saves 60–90% on verbose tool output; file read caching eliminates re-reads of unchanged files.</p>
           </div>
 
           <section class="settings-section">
@@ -273,6 +273,18 @@
                       <td class="ts-agent-col">
                         <label class="toggle-switch">
                           <input type="checkbox" id="ts-claude-shell" disabled />
+                          <span class="toggle-slider"></span>
+                        </label>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td class="ts-feature-col">
+                        <span class="ts-feature-name">File read caching</span>
+                        <span class="ts-feature-desc">Caches file reads and returns compact stubs for unchanged re-reads</span>
+                      </td>
+                      <td class="ts-agent-col">
+                        <label class="toggle-switch">
+                          <input type="checkbox" id="ts-claude-ctx-read" disabled />
                           <span class="toggle-slider"></span>
                         </label>
                       </td>

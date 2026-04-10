@@ -15,6 +15,7 @@
 
 use crate::claude_hooks::create_claude_hooks_router;
 use crate::codex_hooks::create_codex_hooks_router;
+use crate::ctx_read::cache::SessionCache;
 use crate::cursor_hooks::create_cursor_hooks_router;
 use crate::database::Database;
 use crate::dlp_pattern_config::get_db_path;
@@ -26,14 +27,18 @@ use tauri::{AppHandle, Emitter};
 
 use axum::{
     body::{Body, Bytes},
+    extract::State,
     http::StatusCode,
     response::{IntoResponse, Response},
     routing::{get, post},
     Router,
 };
 use std::net::SocketAddr;
+use std::sync::{Arc, Mutex};
 use tokio::net::TcpListener;
 use tokio::sync::watch;
+
+type SharedCache = Arc<Mutex<SessionCache>>;
 
 async fn health_handler() -> impl IntoResponse {
     Response::builder()
@@ -200,6 +205,421 @@ async fn cli_compression_handler(body: Bytes) -> impl IntoResponse {
 }
 
 // ============================================================================
+// Context-aware file read endpoints (ctx_read / ctx_smart_read)
+// ============================================================================
+
+async fn ctx_read_handler(State(cache): State<SharedCache>, body: Bytes) -> impl IntoResponse {
+    let body_str = String::from_utf8_lossy(&body).to_string();
+    let parsed: serde_json::Value = match serde_json::from_str(&body_str) {
+        Ok(v) => v,
+        Err(e) => {
+            return Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .header("Content-Type", "text/plain")
+                .body(Body::from(format!("Invalid JSON: {e}")))
+                .unwrap();
+        }
+    };
+
+    let path = match parsed.get("path").and_then(|v| v.as_str()) {
+        Some(p) => p.to_string(),
+        None => {
+            return Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .header("Content-Type", "text/plain")
+                .body(Body::from("Missing 'path' field"))
+                .unwrap();
+        }
+    };
+
+    let mode = parsed
+        .get("mode")
+        .and_then(|v| v.as_str())
+        .unwrap_or("full")
+        .to_string();
+    let fresh = parsed
+        .get("fresh")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    // Rewrite start_line to lines:N-999999
+    let mode = if let Some(start) = parsed.get("start_line").and_then(|v| v.as_u64()) {
+        format!("lines:{start}-999999")
+    } else {
+        mode
+    };
+
+    let backend_name = parsed
+        .get("backend")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+
+    let cache_clone = cache.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        let mut cache = cache_clone.lock().unwrap();
+        let start = std::time::Instant::now();
+        let read_result = crate::ctx_read::read(&mut cache, &path, &mode, fresh);
+        let duration_ms = start.elapsed().as_millis() as u64;
+        (read_result, duration_ms)
+    })
+    .await;
+
+    let (read_result, duration_ms) = match result {
+        Ok(r) => r,
+        Err(e) => {
+            return Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .header("Content-Type", "text/plain")
+                .body(Body::from(format!("Execution failed: {e}")))
+                .unwrap();
+        }
+    };
+
+    let original_tokens = read_result.original_tokens;
+    let sent_tokens = read_result.sent_tokens;
+    let tokens_saved = original_tokens.saturating_sub(sent_tokens) as i32;
+
+    // Log to database
+    if let Ok(db) = Database::new(&get_db_path()) {
+        let req_meta = crate::requestresponsemetadata::RequestMetadata {
+            model: None,
+            has_system_prompt: false,
+            has_tools: false,
+            user_message_count: 0,
+            assistant_message_count: 0,
+        };
+        let resp_meta = ResponseMetadata {
+            input_tokens: original_tokens as i32,
+            output_tokens: sent_tokens as i32,
+            cache_read_tokens: 0,
+            cache_creation_tokens: 0,
+            stop_reason: Some("ok".to_string()),
+            has_thinking: false,
+            tool_calls: vec![],
+        };
+        let meta_json = if tokens_saved > 0 {
+            Some(format!("{{\"ctx_read\":{tokens_saved}}}"))
+        } else {
+            None
+        };
+        let log_backend = if backend_name.is_empty() {
+            "ctx_read"
+        } else {
+            &backend_name
+        };
+        let _ = db.log_request(
+            log_backend,
+            "POST",
+            "/ctx/read",
+            "/ctx/read",
+            &body_str,
+            &read_result.output,
+            200,
+            false,
+            duration_ms,
+            &req_meta,
+            &resp_meta,
+            None,
+            None,
+            None,
+            0,
+            tokens_saved,
+            meta_json.as_deref(),
+        );
+    }
+
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("Content-Type", "text/plain")
+        .header("X-Tokens-Saved", tokens_saved.to_string())
+        .body(Body::from(read_result.output))
+        .unwrap()
+}
+
+async fn ctx_smart_read_handler(
+    State(cache): State<SharedCache>,
+    body: Bytes,
+) -> impl IntoResponse {
+    let body_str = String::from_utf8_lossy(&body).to_string();
+    let parsed: serde_json::Value = match serde_json::from_str(&body_str) {
+        Ok(v) => v,
+        Err(e) => {
+            return Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .header("Content-Type", "text/plain")
+                .body(Body::from(format!("Invalid JSON: {e}")))
+                .unwrap();
+        }
+    };
+
+    let path = match parsed.get("path").and_then(|v| v.as_str()) {
+        Some(p) => p.to_string(),
+        None => {
+            return Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .header("Content-Type", "text/plain")
+                .body(Body::from("Missing 'path' field"))
+                .unwrap();
+        }
+    };
+
+    let backend_name = parsed
+        .get("backend")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+
+    let cache_clone = cache.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        let mut cache = cache_clone.lock().unwrap();
+        let start = std::time::Instant::now();
+        let read_result = crate::ctx_read::smart_read(&mut cache, &path);
+        let duration_ms = start.elapsed().as_millis() as u64;
+        (read_result, duration_ms)
+    })
+    .await;
+
+    let (read_result, duration_ms) = match result {
+        Ok(r) => r,
+        Err(e) => {
+            return Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .header("Content-Type", "text/plain")
+                .body(Body::from(format!("Execution failed: {e}")))
+                .unwrap();
+        }
+    };
+
+    let original_tokens = read_result.original_tokens;
+    let sent_tokens = read_result.sent_tokens;
+    let tokens_saved = original_tokens.saturating_sub(sent_tokens) as i32;
+
+    // Log to database
+    if let Ok(db) = Database::new(&get_db_path()) {
+        let req_meta = crate::requestresponsemetadata::RequestMetadata {
+            model: None,
+            has_system_prompt: false,
+            has_tools: false,
+            user_message_count: 0,
+            assistant_message_count: 0,
+        };
+        let resp_meta = ResponseMetadata {
+            input_tokens: original_tokens as i32,
+            output_tokens: sent_tokens as i32,
+            cache_read_tokens: 0,
+            cache_creation_tokens: 0,
+            stop_reason: Some("ok".to_string()),
+            has_thinking: false,
+            tool_calls: vec![],
+        };
+        let meta_json = if tokens_saved > 0 {
+            Some(format!("{{\"ctx_smart_read\":{tokens_saved}}}"))
+        } else {
+            None
+        };
+        let log_backend = if backend_name.is_empty() {
+            "ctx_smart_read"
+        } else {
+            &backend_name
+        };
+        let _ = db.log_request(
+            log_backend,
+            "POST",
+            "/ctx/smart_read",
+            "/ctx/smart_read",
+            &body_str,
+            &read_result.output,
+            200,
+            false,
+            duration_ms,
+            &req_meta,
+            &resp_meta,
+            None,
+            None,
+            None,
+            0,
+            tokens_saved,
+            meta_json.as_deref(),
+        );
+    }
+
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("Content-Type", "text/plain")
+        .header("X-Tokens-Saved", tokens_saved.to_string())
+        .body(Body::from(read_result.output))
+        .unwrap()
+}
+
+/// PreToolUse hook endpoint for Read tool interception.
+///
+/// Returns:
+///   200 + stub body  — file cached and unchanged, hook should redirect Read
+///   204 No Content   — allow the native Read through (first read or changed)
+async fn ctx_pre_read_handler(
+    State(cache): State<SharedCache>,
+    body: Bytes,
+) -> impl IntoResponse {
+    let parsed: serde_json::Value = match serde_json::from_str(&String::from_utf8_lossy(&body)) {
+        Ok(v) => v,
+        Err(_) => {
+            return Response::builder()
+                .status(StatusCode::NO_CONTENT)
+                .body(Body::empty())
+                .unwrap();
+        }
+    };
+
+    let path = match parsed.get("path").and_then(|v| v.as_str()) {
+        Some(p) => p.to_string(),
+        None => {
+            return Response::builder()
+                .status(StatusCode::NO_CONTENT)
+                .body(Body::empty())
+                .unwrap();
+        }
+    };
+
+    // Check if file exists on disk
+    let disk_content = match std::fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(_) => {
+            return Response::builder()
+                .status(StatusCode::NO_CONTENT)
+                .body(Body::empty())
+                .unwrap();
+        }
+    };
+
+    let mut cache = cache.lock().unwrap();
+
+    // Check if file is cached
+    if let Some(cached) = cache.get(&path) {
+        let disk_hash = crate::ctx_read::cache::compute_md5(&disk_content);
+        if cached.hash == disk_hash {
+            // Cached and unchanged — return compact stub
+            let file_ref = cache.get_file_ref(&path);
+            let short = crate::ctx_read::protocol::shorten_path(&path);
+            let entry = cache.get(&path).unwrap();
+            let stub = format!(
+                "{file_ref}={short} cached {}t {}L",
+                entry.read_count, entry.line_count
+            );
+
+            // Record stats
+            let original_tokens = entry.original_tokens;
+            cache.record_cache_hit(&path);
+            let sent = crate::shell_compression::tokens::count_tokens(&stub);
+            cache.record_sent_tokens(sent);
+
+            // Log savings
+            let tokens_saved = original_tokens.saturating_sub(sent) as i32;
+            let backend_name = parsed
+                .get("backend")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            if let Ok(db) = Database::new(&get_db_path()) {
+                let req_meta = crate::requestresponsemetadata::RequestMetadata {
+                    model: None,
+                    has_system_prompt: false,
+                    has_tools: false,
+                    user_message_count: 0,
+                    assistant_message_count: 0,
+                };
+                let resp_meta = ResponseMetadata {
+                    input_tokens: original_tokens as i32,
+                    output_tokens: sent as i32,
+                    cache_read_tokens: 0,
+                    cache_creation_tokens: 0,
+                    stop_reason: Some("cache_hit".to_string()),
+                    has_thinking: false,
+                    tool_calls: vec![],
+                };
+                let meta_json = if tokens_saved > 0 {
+                    Some(format!("{{\"ctx_read\":{tokens_saved}}}"))
+                } else {
+                    None
+                };
+                let log_backend = if backend_name.is_empty() {
+                    "ctx_read"
+                } else {
+                    backend_name
+                };
+                let _ = db.log_request(
+                    log_backend,
+                    "POST",
+                    "/ctx/pre_read",
+                    "/ctx/pre_read",
+                    &String::from_utf8_lossy(&body),
+                    &stub,
+                    200,
+                    false,
+                    0,
+                    &req_meta,
+                    &resp_meta,
+                    None,
+                    None,
+                    None,
+                    0,
+                    tokens_saved,
+                    meta_json.as_deref(),
+                );
+            }
+
+            return Response::builder()
+                .status(StatusCode::OK)
+                .header("Content-Type", "text/plain")
+                .header("X-Tokens-Saved", tokens_saved.to_string())
+                .body(Body::from(stub))
+                .unwrap();
+        }
+    }
+
+    // Not cached or changed — store in cache for future hits, allow Read through
+    cache.store(&path, disk_content);
+
+    Response::builder()
+        .status(StatusCode::NO_CONTENT)
+        .body(Body::empty())
+        .unwrap()
+}
+
+async fn ctx_cache_invalidate_handler(
+    State(cache): State<SharedCache>,
+    body: Bytes,
+) -> impl IntoResponse {
+    let parsed: serde_json::Value = match serde_json::from_str(&String::from_utf8_lossy(&body)) {
+        Ok(v) => v,
+        Err(e) => {
+            return Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .body(Body::from(format!("Invalid JSON: {e}")))
+                .unwrap();
+        }
+    };
+
+    let path = parsed.get("path").and_then(|v| v.as_str()).unwrap_or("");
+    let mut cache = cache.lock().unwrap();
+
+    if path.is_empty() {
+        let count = cache.clear();
+        return Response::builder()
+            .status(StatusCode::OK)
+            .header("Content-Type", "application/json")
+            .body(Body::from(format!("{{\"cleared\":{count}}}")))
+            .unwrap();
+    }
+
+    let removed = cache.invalidate(path);
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("Content-Type", "application/json")
+        .body(Body::from(format!("{{\"invalidated\":{removed}}}")))
+        .unwrap()
+}
+
+// ============================================================================
 // Server bootstrap
 // ============================================================================
 
@@ -271,10 +691,20 @@ pub async fn start_server(app_handle: AppHandle) {
         // Build shell compression router
         let cli_compression_router = Router::new().route("/", post(cli_compression_handler));
 
+        // Build ctx_read router with shared session cache
+        let session_cache: SharedCache = Arc::new(Mutex::new(SessionCache::new()));
+        let ctx_read_router = Router::new()
+            .route("/read", post(ctx_read_handler))
+            .route("/smart_read", post(ctx_smart_read_handler))
+            .route("/pre_read", post(ctx_pre_read_handler))
+            .route("/invalidate", post(ctx_cache_invalidate_handler))
+            .with_state(session_cache);
+
         // Build app
         let app = Router::new()
             .route("/", get(health_handler))
             .nest("/cli_compression", cli_compression_router)
+            .nest("/ctx", ctx_read_router)
             .nest("/cursor_hook", cursor_hooks_router)
             .nest("/claude_hook", claude_hooks_router)
             .nest("/codex_hook", codex_hooks_router);

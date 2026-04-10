@@ -278,10 +278,7 @@ pub fn install_compression_hook_claude() -> Result<String, String> {
         .and_then(|v| v.as_array_mut())
         .ok_or("Failed to access PreToolUse array")?;
 
-    // Remove any existing compress hook entry so we can re-add it at the end.
-    // This guarantees the compress hook always runs AFTER the pre-bash hook
-    // (which does DLP/logging) so that our command rewrite is the final output
-    // Claude Code sees.
+    // Remove any existing compress hook entry so we can re-add a fresh one.
     pre_tool_use.retain(|entry| {
         let is_ours = entry.get("hooks")
             .and_then(|h| h.as_array())
@@ -295,7 +292,6 @@ pub fn install_compression_hook_claude() -> Result<String, String> {
         !is_ours
     });
 
-    // Always append at the end so it runs last.
     pre_tool_use.push(serde_json::json!({
         "matcher": "Bash|bash",
         "hooks": [{
@@ -303,6 +299,14 @@ pub fn install_compression_hook_claude() -> Result<String, String> {
             "command": script_path_str
         }]
     }));
+
+    // Enforce canonical ordering (DLP → ctx_read → compression).
+    {
+        let hooks = obj.get_mut("hooks")
+            .and_then(|v| v.as_object_mut())
+            .ok_or("Failed to access hooks object")?;
+        super::hook_ordering::enforce_pretooluse_order(hooks);
+    }
 
     write_claude_settings(&settings)?;
 
