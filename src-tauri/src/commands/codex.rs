@@ -250,13 +250,20 @@ fn is_codex_hooks_feature_enabled() -> bool {
 // Forwarder script generation
 // ============================================================================
 
-/// Per-event forwarder script. Reads stdin once, POSTs to the local server, and
-/// pipes the response body back to stdout. Fail-open: if curl can't reach the
-/// server, exit 0 with no output so the agent isn't bricked when the Tauri app
-/// is closed.
-fn generate_forwarder_script(port: u16, endpoint: &str) -> String {
-    format!(
-        r#"#!/usr/bin/env bash
+/// Per-event forwarder script. Reads stdin once, POSTs to the local server.
+///
+/// When `print_response` is true (PreToolUse, UserPromptSubmit) the script
+/// pipes the response body back to stdout so Codex can act on it (e.g. deny).
+/// When false (PostToolUse, Stop, SessionStart) the script is fire-and-forget —
+/// Codex does not accept structured output from these hooks and will error if
+/// anything is printed to stdout.
+///
+/// In both modes the script fail-opens: if curl can't reach the server, exit 0
+/// with no output so the agent isn't bricked when the Tauri app is closed.
+fn generate_forwarder_script(port: u16, endpoint: &str, print_response: bool) -> String {
+    if print_response {
+        format!(
+            r#"#!/usr/bin/env bash
 # LLMwatcher Codex CLI hook forwarder ({endpoint})
 # Reads stdin JSON, POSTs to the local server, prints the response.
 set -u
@@ -277,9 +284,29 @@ fi
 
 printf '%s' "$RESPONSE"
 "#,
-        port = port,
-        endpoint = endpoint,
-    )
+            port = port,
+            endpoint = endpoint,
+        )
+    } else {
+        format!(
+            r#"#!/usr/bin/env bash
+# LLMwatcher Codex CLI hook forwarder ({endpoint})
+# Fire-and-forget: Codex does not accept output from this hook type.
+set -u
+
+INPUT=$(cat)
+
+printf '%s' "$INPUT" | curl -sS --max-time 10 \
+    -H 'Content-Type: application/json' \
+    -d @- \
+    "http://localhost:{port}/codex_hook/{endpoint}" >/dev/null 2>/dev/null
+
+exit 0
+"#,
+            port = port,
+            endpoint = endpoint,
+        )
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -288,14 +315,18 @@ struct ScriptSpec {
     file_name: &'static str,
     /// Endpoint after `/codex_hook/`.
     endpoint: &'static str,
+    /// Whether the script should print the server's response to stdout.
+    /// true for hooks that can block (PreToolUse, UserPromptSubmit),
+    /// false for fire-and-forget hooks (PostToolUse, Stop, SessionStart).
+    print_response: bool,
 }
 
 const SCRIPT_SPECS: &[ScriptSpec] = &[
-    ScriptSpec { file_name: "llmwatcher-codex-user-prompt-submit.sh", endpoint: "user_prompt_submit" },
-    ScriptSpec { file_name: "llmwatcher-codex-pre-bash.sh",          endpoint: "pre_bash" },
-    ScriptSpec { file_name: "llmwatcher-codex-post-tool.sh",         endpoint: "post_tool" },
-    ScriptSpec { file_name: "llmwatcher-codex-stop.sh",              endpoint: "stop" },
-    ScriptSpec { file_name: "llmwatcher-codex-session-start.sh",     endpoint: "session_start" },
+    ScriptSpec { file_name: "llmwatcher-codex-user-prompt-submit.sh", endpoint: "user_prompt_submit", print_response: true },
+    ScriptSpec { file_name: "llmwatcher-codex-pre-bash.sh",          endpoint: "pre_bash",            print_response: true },
+    ScriptSpec { file_name: "llmwatcher-codex-post-tool.sh",         endpoint: "post_tool",           print_response: false },
+    ScriptSpec { file_name: "llmwatcher-codex-stop.sh",              endpoint: "stop",                print_response: false },
+    ScriptSpec { file_name: "llmwatcher-codex-session-start.sh",     endpoint: "session_start",       print_response: false },
 ];
 
 fn write_script(spec: &ScriptSpec, port: u16) -> Result<String, String> {
@@ -305,7 +336,7 @@ fn write_script(spec: &ScriptSpec, port: u16) -> Result<String, String> {
             .map_err(|e| format!("Failed to create hooks directory: {}", e))?;
     }
     let path = dir.join(spec.file_name);
-    let content = generate_forwarder_script(port, spec.endpoint);
+    let content = generate_forwarder_script(port, spec.endpoint, spec.print_response);
     fs::write(&path, content)
         .map_err(|e| format!("Failed to write {}: {}", spec.file_name, e))?;
 
@@ -425,6 +456,7 @@ fn add_hook_entry(
         serde_json::json!([{
             "type": "command",
             "command": script_path,
+            "silent": true,
         }]),
     );
     arr.push(serde_json::Value::Object(new_entry));

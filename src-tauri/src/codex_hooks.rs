@@ -470,12 +470,13 @@ async fn user_prompt_submit_handler(
     (StatusCode::OK, Json(response))
 }
 
-/// Build the standard PreToolUse "deny" or "allow" response.
-fn pre_tool_response(blocked: bool, reason: Option<String>) -> PreToolUseResponse {
+/// Build the PreToolUse "deny" response. Only used for the blocked path —
+/// Codex's allowed path expects empty stdout (exit 0, no JSON).
+fn pre_tool_deny_response(reason: Option<String>) -> PreToolUseResponse {
     PreToolUseResponse {
         hook_specific_output: PreToolUseHookOutput {
             hook_event_name: "PreToolUse",
-            permission_decision: if blocked { "deny".to_string() } else { "allow".to_string() },
+            permission_decision: "deny".to_string(),
             permission_decision_reason: reason,
         },
     }
@@ -485,12 +486,15 @@ fn pre_tool_response(blocked: bool, reason: Option<String>) -> PreToolUseRespons
 /// surface doesn't yet expose Read/Write/MCP). Computes token-limit /
 /// DLP and logs the row keyed on `tool_use_id` (or a synthesized
 /// session+tool key if absent).
+/// Returns `Some(deny_response)` when blocked, `None` when allowed.
+/// Codex expects empty stdout on the allowed path, so callers must
+/// return an empty HTTP body when this returns `None`.
 fn handle_pre_tool(
     state: &CodexHooksState,
     input: &PreToolUseInput,
     scanned_text: &str,
     log_as_tool_call: bool,
-) -> PreToolUseResponse {
+) -> Option<PreToolUseResponse> {
     let token_count = estimate_tokens(scanned_text);
     let request_body_json = serde_json::to_string(&input).unwrap_or_default();
 
@@ -515,7 +519,7 @@ fn handle_pre_tool(
     // Token limit
     let (token_allowed, token_error) = check_codex_token_limit(token_count, &state.settings);
     if !token_allowed {
-        let response = pre_tool_response(true, token_error.clone());
+        let response = pre_tool_deny_response(token_error.clone());
         let response_body_json = serde_json::to_string(&response).unwrap_or_default();
         let _ = state.db.log_agent_hook_request(
             BACKEND,
@@ -532,7 +536,7 @@ fn handle_pre_tool(
             None,
             DLP_ACTION_RATELIMITED,
         );
-        return response;
+        return Some(response);
     }
 
     // DLP
@@ -544,11 +548,14 @@ fn handle_pre_tool(
     let is_blocked = !detections.is_empty();
 
     let response = if is_blocked {
-        pre_tool_response(true, Some(format_detection_message(&detections)))
+        Some(pre_tool_deny_response(Some(format_detection_message(&detections))))
     } else {
-        pre_tool_response(false, None)
+        None
     };
-    let response_body_json = serde_json::to_string(&response).unwrap_or_default();
+    let response_body_json = response
+        .as_ref()
+        .map(|r| serde_json::to_string(r).unwrap_or_default())
+        .unwrap_or_else(|| "{}".to_string());
 
     let response_status = if is_blocked { 403 } else { 200 };
     let dlp_action = if is_blocked { DLP_ACTION_BLOCKED } else { DLP_ACTION_PASSED };
@@ -585,21 +592,26 @@ fn handle_pre_tool(
 }
 
 /// POST /codex_hook/pre_bash
+/// Returns deny JSON when blocked, empty body when allowed (Codex expects no
+/// stdout on the success path).
 async fn pre_bash_handler(
     State(state): State<CodexHooksState>,
     Json(raw_json): Json<Value>,
-) -> impl IntoResponse {
+) -> axum::response::Response {
     let input: PreToolUseInput = match serde_json::from_value(raw_json) {
         Ok(v) => v,
         Err(e) => {
             println!("[CODEX_HOOK] pre_bash parse error: {}", e);
-            return (StatusCode::OK, Json(pre_tool_response(false, None)));
+            // Fail-open: empty body so Codex proceeds.
+            return (StatusCode::OK, "").into_response();
         }
     };
     let command = json_str(&input.tool_input, "command").unwrap_or_default();
     println!("[CODEX_HOOK] pre_bash - command: {}", command);
-    let response = handle_pre_tool(&state, &input, &command, true);
-    (StatusCode::OK, Json(response))
+    match handle_pre_tool(&state, &input, &command, true) {
+        Some(deny) => (StatusCode::OK, Json(deny)).into_response(),
+        None => (StatusCode::OK, "").into_response(),
+    }
 }
 
 /// POST /codex_hook/post_tool
