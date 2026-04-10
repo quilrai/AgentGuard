@@ -16,10 +16,14 @@ pub struct ShellCompressionResult {
 /// output (e.g. appending `[exit: N]`) before sending it to the agent, so it
 /// recomputes the saved count from `original_tokens`/`compressed_tokens` after
 /// any mutation.
-pub fn compress_command(command: &str, cwd: Option<&str>) -> ShellCompressionResult {
+pub fn compress_command(
+    command: &str,
+    cwd: Option<&str>,
+    flags: &crate::compression::AdvancedCompressionFlags,
+) -> ShellCompressionResult {
     let cmd_result = executor::run_command(command, cwd);
 
-    let comp = compress::compress_and_measure(command, &cmd_result.stdout, &cmd_result.stderr);
+    let comp = compress::compress_and_measure(command, &cmd_result.stdout, &cmd_result.stderr, flags);
 
     ShellCompressionResult {
         output: comp.output,

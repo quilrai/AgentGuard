@@ -38,10 +38,14 @@ export function parseSettings(settingsJson) {
       token_saving: {
         shell_compression: tokenSaving.shell_compression || false,
         ctx_read: tokenSaving.ctx_read || false,
+        search_compressor: tokenSaving.search_compressor || false,
+        diff_compressor: tokenSaving.diff_compressor || false,
+        tool_crusher: tokenSaving.tool_crusher || false,
+        compression_cache: tokenSaving.compression_cache || false,
       },
     };
   } catch {
-    return { dlp_enabled: true, max_tokens_in_a_request: 0, action_for_max_tokens_in_a_request: 'block', token_saving: { shell_compression: false, ctx_read: false } };
+    return { dlp_enabled: true, max_tokens_in_a_request: 0, action_for_max_tokens_in_a_request: 'block', token_saving: { shell_compression: false, ctx_read: false, search_compressor: false, diff_compressor: false, tool_crusher: false, compression_cache: false } };
   }
 }
 

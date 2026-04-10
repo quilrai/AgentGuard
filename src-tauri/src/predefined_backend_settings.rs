@@ -15,13 +15,37 @@ pub struct TokenSavingSettings {
     /// File read caching: cache file reads and return compact stubs for unchanged re-reads
     #[serde(default)]
     pub ctx_read: bool,
+    /// Advanced: structured grep/rg output compression
+    #[serde(default)]
+    pub search_compressor: bool,
+    /// Advanced: unified diff compression (keeps all +/- lines, trims context)
+    #[serde(default)]
+    pub diff_compressor: bool,
+    /// Advanced: conservative JSON truncation (arrays, strings, depth)
+    #[serde(default)]
+    pub tool_crusher: bool,
+    /// Advanced: content-hash cache for compressed outputs
+    #[serde(default)]
+    pub compression_cache: bool,
 }
 
 impl TokenSavingSettings {
     /// Returns true if any token saving feature is enabled
     #[allow(dead_code)]
     pub fn any_enabled(&self) -> bool {
-        self.shell_compression || self.ctx_read
+        self.shell_compression
+            || self.ctx_read
+            || self.search_compressor
+            || self.diff_compressor
+            || self.tool_crusher
+            || self.compression_cache
+    }
+
+    /// Returns true if any advanced compressor is enabled
+    pub fn any_advanced_enabled(&self) -> bool {
+        self.search_compressor
+            || self.diff_compressor
+            || self.tool_crusher
     }
 }
 

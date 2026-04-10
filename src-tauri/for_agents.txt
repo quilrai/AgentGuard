@@ -1,0 +1,88 @@
+LLMwatcher — local DLP + observability layer for AI coding agents.
+
+Tauri desktop app (Rust backend, web frontend). Runs a local HTTP server
+on localhost:8008. Agent CLIs/IDEs install hook scripts that POST to this
+server. No proxy — everything is hook-driven.
+
+================================================================================
+SUPPORTED AGENTS
+================================================================================
+
+  Cursor IDE       /cursor_hook/*     cursor_hooks.rs    commands/cursor.rs
+  Claude Code      /claude_hook/*     claude_hooks.rs    commands/claude.rs
+  Codex CLI        /codex_hook/*      codex_hooks.rs     commands/codex.rs
+
+Each agent has:
+  - Hook receiver (axum routes in *_hooks.rs)
+  - Install/uninstall commands (commands/*.rs that write hook scripts + config)
+
+================================================================================
+FEATURES
+================================================================================
+
+DLP (Data Loss Prevention)
+  - Regex + keyword pattern matching against prompts, tool inputs, file reads
+  - Patterns stored in SQLite, configurable per-backend
+  - Can block or pass — detections logged with full context
+  - Files: dlp.rs, builtin_patterns.rs, pattern_utils.rs, dlp_pattern_config.rs
+
+Token Limit
+  - Per-backend max_tokens_in_a_request, blocks if exceeded
+  - Settings: predefined_backend_settings.rs
+
+Shell Compression (token saving)
+  - Intercepts shell command output, compresses before agent sees it
+  - Endpoint: POST /cli_compression
+  - Files: shell_compression/ (mod.rs, compress.rs, executor.rs, patterns.rs)
+  - Enabled per-backend via token_saving.shell_compression setting
+  - NOT applicable to Codex (different hook flow)
+
+Context-Aware File Read Caching (token saving)
+  - Session file cache with stable refs (F1, F2, ...)
+  - Modes: full, diff, lines:N-M — auto-picks best via ctx_smart_read
+  - Files: ctx_read/ (cache.rs, ctx_read.rs, ctx_smart_read.rs, protocol.rs)
+  - Enabled per-backend via token_saving.ctx_read setting
+
+Logging / Observability
+  - All hook events logged to SQLite: prompts, tool calls, DLP detections, usage
+  - Correlation: prompt rows keyed by turn/session, tool rows by tool_use_id
+  - database.rs handles all persistence
+
+================================================================================
+HOOK LIFECYCLE PER AGENT
+================================================================================
+
+                    Cursor              Claude Code         Codex CLI
+                    ------              -----------         ---------
+Prompt submit       beforeSubmitPrompt  UserPromptSubmit    UserPromptSubmit
+Pre tool use        beforeShell/Read/   PreToolUse          PreToolUse (Bash only)
+                    Tab/MCP             (Bash/Read/Write/
+                                        Edit/MCP/Notebook)
+Post tool use       afterAgent*         PostToolUse         PostToolUse
+Stop/End            —                   Stop + SessionEnd   Stop
+Session start       —                   SessionStart        SessionStart
+
+Codex quirks:
+  - PreToolUse allowed path = empty stdout (not JSON). Deny = JSON with
+    permissionDecision:"deny". See codex_hooks.rs pre_tool_deny_response.
+  - PostToolUse, Stop, SessionStart are fire-and-forget (no stdout).
+  - Hook scripts use silent:true in hooks.json to suppress TUI banners.
+  - Shell compression / ctx_read token saving NOT used for Codex.
+
+================================================================================
+KEY FILES
+================================================================================
+
+  src/lib.rs                          App entry, tray icon, window management
+  src/server.rs                       Axum server setup, route mounting
+  src/database.rs                     SQLite: logging, settings, DLP storage
+  src/predefined_backend_settings.rs  Per-backend settings shape (DLP, tokens)
+  src/commands/mod.rs                 Tauri command re-exports
+  src/commands/hook_ordering.rs       Hook install ordering logic
+
+Hook scripts live at:
+  Claude:  ~/.claude/settings.json (hooks section)
+  Codex:   ~/.codex/hooks.json + ~/.codex/hooks/*.sh
+  Cursor:  ~/.cursor/hooks/ (managed by Cursor IDE)
+
+Database: ~/Library/Application Support/llmwatcher/llmwatcher.db (macOS)

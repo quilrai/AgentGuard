@@ -80,8 +80,8 @@ async fn cli_compression_handler(body: Bytes) -> impl IntoResponse {
     let cwd = parsed.get("cwd").and_then(|v| v.as_str()).map(|s| s.to_string());
     let backend_name = parsed.get("backend").and_then(|v| v.as_str()).unwrap_or("").to_string();
 
-    // Look up per-backend shell_compression setting (predefined backends only)
-    let compression_enabled = if !backend_name.is_empty() {
+    // Look up per-backend token saving settings (predefined backends only)
+    let token_saving = if !backend_name.is_empty() {
         let settings_json = if let Ok(db) = Database::new(&get_db_path()) {
             db.get_predefined_backend_settings(&backend_name)
                 .ok()
@@ -90,16 +90,18 @@ async fn cli_compression_handler(body: Bytes) -> impl IntoResponse {
             "{}".to_string()
         };
         let settings: CustomBackendSettings = serde_json::from_str(&settings_json).unwrap_or_default();
-        settings.token_saving.shell_compression
+        settings.token_saving
     } else {
-        // No backend specified — default to disabled
-        false
+        Default::default()
     };
+
+    let compression_enabled = token_saving.shell_compression;
+    let flags = crate::compression::AdvancedCompressionFlags::from(&token_saving);
 
     // Run in blocking task since shell execution is synchronous
     let result = tokio::task::spawn_blocking(move || {
         if compression_enabled {
-            shell_compression::compress_command(&command, cwd.as_deref())
+            shell_compression::compress_command(&command, cwd.as_deref(), &flags)
         } else {
             shell_compression::run_command_raw(&command, cwd.as_deref())
         }

@@ -1,5 +1,6 @@
 use super::patterns;
 use super::tokens::count_tokens;
+use crate::compression::AdvancedCompressionFlags;
 
 pub struct CompressionResult {
     pub output: String,
@@ -7,9 +8,14 @@ pub struct CompressionResult {
     pub compressed_tokens: usize,
 }
 
-pub fn compress_and_measure(command: &str, stdout: &str, stderr: &str) -> CompressionResult {
-    let compressed_stdout = compress_if_beneficial(command, stdout);
-    let compressed_stderr = compress_if_beneficial(command, stderr);
+pub fn compress_and_measure(
+    command: &str,
+    stdout: &str,
+    stderr: &str,
+    flags: &AdvancedCompressionFlags,
+) -> CompressionResult {
+    let compressed_stdout = compress_if_beneficial(command, stdout, flags);
+    let compressed_stderr = compress_if_beneficial(command, stderr, flags);
 
     let mut result = String::new();
     if !compressed_stdout.is_empty() {
@@ -34,7 +40,7 @@ pub fn compress_and_measure(command: &str, stdout: &str, stderr: &str) -> Compre
     }
 }
 
-fn compress_if_beneficial(command: &str, output: &str) -> String {
+fn compress_if_beneficial(command: &str, output: &str, flags: &AdvancedCompressionFlags) -> String {
     if output.trim().is_empty() {
         return String::new();
     }
@@ -45,6 +51,21 @@ fn compress_if_beneficial(command: &str, output: &str) -> String {
         return output.to_string();
     }
 
+    // Try advanced compressors FIRST for commands they handle (diff, search,
+    // JSON). This path goes through CompressionCache (cache lookup + store)
+    // and produces named footers like [diff_compressor: ...].
+    let db_path = crate::dlp_pattern_config::get_db_path();
+    if let Some(result) = crate::compression::try_advanced_compress(output, Some(command), db_path, flags) {
+        let saved = result.original_tokens - result.compressed_tokens;
+        let pct = (saved as f64 / result.original_tokens as f64 * 100.0).round() as usize;
+        let compressor = result.compressor.unwrap_or("advanced");
+        return format!(
+            "{}\n[{compressor}: {}\u{2192}{} tok, -{pct}%]",
+            result.output, result.original_tokens, result.compressed_tokens
+        );
+    }
+
+    // Then try legacy domain-specific patterns (git status, npm install, etc.)
     if let Some(compressed) = patterns::compress_output(command, output) {
         if !compressed.trim().is_empty() {
             let compressed_tokens = count_tokens(&compressed);

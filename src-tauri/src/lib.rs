@@ -9,6 +9,7 @@ mod builtin_patterns;
 mod claude_hooks;
 mod codex_hooks;
 mod commands;
+mod compression;
 mod ctx_read;
 mod cursor_hooks;
 mod database;
