@@ -331,7 +331,7 @@
         <div id="garden-tab" class="tab-content">
           <div class="garden-page">
 
-            <!-- Top bar: scrollable garden names + time filter + health + help -->
+            <!-- Top bar: scrollable garden names + help -->
             <div class="garden-topbar" id="garden-topbar">
               <div class="garden-names-scroll" id="garden-names-scroll">
                 <!-- Filled dynamically with garden name pills -->
@@ -348,6 +348,9 @@
                   <svg id="garden-svg" class="garden-svg" viewBox="0 0 1200 700" preserveAspectRatio="xMidYMid meet"></svg>
                   <!-- Hover tooltip -->
                   <div class="garden-tooltip" id="garden-tooltip" style="display:none;"></div>
+
+                  <!-- Coin rows (input token spend, gold/copper) — HTML overlay so it stays in sync with Quilly's positioning regardless of scene scaling -->
+                  <div class="garden-coin-rows" id="garden-coin-rows"></div>
 
                   <!-- Quilly mascot (toggles stats panel) (top-right) -->
                   <div class="quilly-area" id="quilly-area">

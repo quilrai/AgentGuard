@@ -236,7 +236,6 @@ pub fn run() {
             // Garden
             commands::get_garden_stats,
             commands::get_garden_detail,
-            commands::get_garden_live,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

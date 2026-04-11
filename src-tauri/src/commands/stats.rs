@@ -1144,73 +1144,6 @@ pub struct GardenProjectList {
     pub projects: Vec<GardenProject>,
 }
 
-/// Per-session breakdown within a single project garden.
-#[derive(Serialize, Clone)]
-pub struct GardenSession {
-    pub session_id: String,
-    pub output_tokens: i64,
-    pub input_tokens: i64,
-    pub request_count: i64,
-    pub last_active: String,
-    pub model: String,
-    pub backend: String,
-    /// Largest context (input + cache_read + cache_creation) the session has
-    /// ever carried in a single request. Drives the tree-height visual and
-    /// the prune/oversized-context warnings.
-    ///
-    /// Why MAX and not "the most recent request": rows are inserted with
-    /// `input_tokens = <user prompt word count>` and `cache_read = cache_creation
-    /// = 0`, then overwritten when the Stop hook backfills real usage from
-    /// the transcript. If the transcript can't be parsed, the fallback path
-    /// keeps those placeholder values, so the latest row is unreliable.
-    /// MAX is robust to fallback rows.
-    pub peak_context_tokens: i64,
-}
-
-/// A file that was read or written during the session and exceeds the
-/// large-file threshold. `est_tokens` is the same words*1.5 estimate the
-/// hooks use, so it lines up with the rest of the token bookkeeping.
-#[derive(Serialize, Clone)]
-pub struct LargeFile {
-    pub path: String,
-    pub lines: u64,
-    pub est_tokens: u64,
-    /// How many times this file was touched (read/edit/write tool calls)
-    /// in the selected time range.
-    pub touch_count: u64,
-}
-
-/// Full detail for one project's garden scene.
-#[derive(Serialize)]
-pub struct GardenDetail {
-    pub cwd: String,
-    pub display_name: String,
-    /// Per-session trees
-    pub sessions: Vec<GardenSession>,
-    /// Aggregate totals
-    pub total_input: i64,
-    pub total_output: i64,
-    pub cache_read: i64,
-    pub cache_creation: i64,
-    pub request_count: i64,
-    /// Source files exceeding a line-count threshold
-    pub large_files: Vec<LargeFile>,
-}
-
-/// Recent activity for live rain/watering.
-#[derive(Serialize, Clone)]
-pub struct GardenActivity {
-    pub session_id: String,
-    pub timestamp: String,
-    pub input_tokens: i64,
-    pub output_tokens: i64,
-}
-
-#[derive(Serialize)]
-pub struct GardenLive {
-    pub recent: Vec<GardenActivity>,
-}
-
 /// List all projects (for the garden picker).
 #[tauri::command]
 pub fn get_garden_stats(time_range: String) -> Result<GardenProjectList, String> {
@@ -1274,78 +1207,342 @@ pub fn get_garden_stats(time_range: String) -> Result<GardenProjectList, String>
     Ok(GardenProjectList { projects })
 }
 
-/// Get detailed breakdown for a single project's garden.
+// ========================================================================
+// Garden View — project-level file/module breakdown
+// ========================================================================
+//
+// Each project is a garden. Files touched by the agent render as trees,
+// grouped into groves by top-level module (first path segment). Sizes,
+// touches, and per-backend breakdowns come out of this one command; the
+// frontend takes it from there.
+
+/// A single file that has been touched by an agent in this project.
+#[derive(Serialize, Clone)]
+pub struct GardenFile {
+    /// Path, relative to project cwd if it lives inside.
+    pub path: String,
+    /// Line count of the file on disk (0 if the file no longer exists).
+    pub lines: u64,
+    /// Estimated token cost of the file's content (words * 1.5 — matches
+    /// the hook-side heuristic). 0 if the file no longer exists.
+    pub est_tokens: u64,
+    /// Number of requests that touched this path in the time range.
+    pub touch_count: u64,
+    /// Most recent timestamp the file was touched.
+    pub last_touched: String,
+    /// Per-backend touch counts (e.g. [("claude-code", 12), ("codex", 3)]).
+    pub backend_touches: Vec<(String, u64)>,
+    /// False if the file no longer exists on disk — the frontend draws
+    /// these as dead/leafless trees so stale references are visible.
+    pub exists: bool,
+}
+
+/// Project-level detail for the Garden view.
+#[derive(Serialize)]
+pub struct GardenDetail {
+    pub cwd: String,
+    pub display_name: String,
+    pub files: Vec<GardenFile>,
+    // Project-wide aggregates.
+    pub total_input: i64,
+    pub total_output: i64,
+    pub cache_read: i64,
+    pub cache_creation: i64,
+    pub request_count: i64,
+}
+
+/// Tokenize a shell command into whitespace-separated pieces, keeping
+/// single- and double-quoted strings together. Not a real shell parser —
+/// just enough to pull out bare filename arguments from the kinds of
+/// commands Codex agents run (sed/nl/cat/wc/python/grep/…).
+fn tokenize_bash(cmd: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut cur = String::new();
+    let mut in_single = false;
+    let mut in_double = false;
+    for c in cmd.chars() {
+        if c == '\'' && !in_double {
+            in_single = !in_single;
+            cur.push(c);
+            continue;
+        }
+        if c == '"' && !in_single {
+            in_double = !in_double;
+            cur.push(c);
+            continue;
+        }
+        if c.is_whitespace() && !in_single && !in_double {
+            if !cur.is_empty() {
+                out.push(std::mem::take(&mut cur));
+            }
+            continue;
+        }
+        cur.push(c);
+    }
+    if !cur.is_empty() {
+        out.push(cur);
+    }
+    out
+}
+
+/// Does `s` end with something that looks like a file extension
+/// (`.py`, `.rs`, `.md`, …)? Used to pick bare filenames that would
+/// otherwise get skipped by the "contains `/`" heuristic.
+fn has_file_extension(s: &str) -> bool {
+    if let Some(dot) = s.rfind('.') {
+        let ext = &s[dot + 1..];
+        !ext.is_empty() && ext.len() <= 6 && ext.chars().all(|c| c.is_ascii_alphanumeric())
+    } else {
+        false
+    }
+}
+
+/// Pull out tokens that resolve to real files under `cwd` from a shell
+/// command string. Codex-style backends only log `Bash` tool calls, so
+/// this is how we learn which files the agent actually touched.
+///
+/// The rules are deliberately strict (only paths that exist on disk
+/// get through) so we don't hallucinate trees from random CLI arguments.
+fn extract_paths_from_bash(cmd: &str, cwd: &std::path::Path) -> Vec<String> {
+    use std::collections::HashSet;
+    let mut out: HashSet<String> = HashSet::new();
+
+    for raw in tokenize_bash(cmd) {
+        // Strip matching surrounding quotes (the tokenizer keeps them).
+        let trimmed = raw
+            .trim_start_matches(|c| c == '\'' || c == '"')
+            .trim_end_matches(|c| c == '\'' || c == '"');
+        if trimmed.is_empty() {
+            continue;
+        }
+        // Flags.
+        if trimmed.starts_with('-') {
+            continue;
+        }
+        // Shell operators.
+        if matches!(
+            trimmed,
+            "|" | "||" | "&" | "&&" | ";" | ">" | ">>" | "<" | "2>" | "2>&1" | "&>" | "1>" | "1>&2"
+        ) {
+            continue;
+        }
+        // Anything with other shell metacharacters can't be a bare path.
+        if trimmed.contains(|c: char| {
+            matches!(c, '|' | '&' | ';' | '<' | '>' | '`' | '$' | '*' | '?')
+        }) {
+            continue;
+        }
+        // Has to look path-ish: either contains `/`, or ends with a
+        // plausible extension. Skips command names, numeric args,
+        // `foo:123` grep output refs, URLs (they contain `:` / `?`).
+        let looks_like_path = trimmed.contains('/') || has_file_extension(trimmed);
+        if !looks_like_path {
+            continue;
+        }
+
+        // Resolve against cwd and verify it's a real file.
+        let p = std::path::Path::new(trimmed);
+        let abs = if p.is_absolute() {
+            std::path::PathBuf::from(trimmed)
+        } else {
+            cwd.join(trimmed)
+        };
+        if abs.is_file() {
+            // Insert the *original* token (possibly relative) — the
+            // downstream code path resolves it against cwd again so
+            // both forms work identically.
+            out.insert(trimmed.to_string());
+        }
+    }
+    out.into_iter().collect()
+}
+
+/// Project-level file breakdown for the Garden view.
 #[tauri::command]
 pub fn get_garden_detail(cwd: String, time_range: String) -> Result<GardenDetail, String> {
-    let conn = open_connection().map_err(|e| e.to_string())?;
+    use std::collections::HashMap;
+    use std::fs;
+    use std::path::{Path, PathBuf};
 
+    let conn = open_connection().map_err(|e| e.to_string())?;
     let hours = time_range_to_hours(&time_range);
     let cutoff_ts = get_cutoff_timestamp(hours);
 
-    // Per-session breakdown (trees).
-    //
-    // total_input represents the FULL context sent to the model across the
-    // whole session (uncached input + cache reads + cache creation), since
-    // the garden's warnings only make sense against the total context the
-    // session is carrying, not the sliver of strictly-uncached input.
-    //
-    // peak_context_tokens is MAX(input + cache_read + cache_creation) over
-    // the session's rows. Picking the *latest* row instead doesn't work:
-    // rows are inserted with `input_tokens = <user prompt word count>` and
-    // `cache_read = cache_creation = 0`, then overwritten when the Stop
-    // hook backfills real usage from the transcript. The fallback path
-    // (transcript unparseable) leaves those placeholder values in place,
-    // so the latest row can read e.g. "9 context tokens" when the user
-    // typed a 9-word prompt and the parse fell back. MAX is robust to
-    // those fallback rows and gives the largest context the session has
-    // ever carried — which is exactly what the prune / oversized warnings
-    // care about.
-    let mut sess_stmt = conn
-        .prepare(
-            "SELECT
-                COALESCE(json_extract(extra_metadata, '$.session_id'), 'unknown') as sid,
-                COALESCE(SUM(output_tokens), 0) as total_output,
-                COALESCE(SUM(input_tokens + cache_read_tokens + cache_creation_tokens), 0) as total_input,
-                COUNT(*) as req_count,
-                MAX(timestamp) as last_active,
-                COALESCE(model, 'unknown') as model,
+    // Aggregate state per raw path: touches, per-backend touches, latest ts.
+    struct Agg {
+        touch_count: u64,
+        backend_touches: HashMap<String, u64>,
+        last_touched: String,
+    }
+    let mut touches: HashMap<String, Agg> = HashMap::new();
+
+    let push = |raw_path: String, backend: String, ts: String,
+                touches: &mut HashMap<String, Agg>| {
+        let entry = touches.entry(raw_path).or_insert_with(|| Agg {
+            touch_count: 0,
+            backend_touches: HashMap::new(),
+            last_touched: String::new(),
+        });
+        entry.touch_count += 1;
+        *entry.backend_touches.entry(backend).or_insert(0) += 1;
+        if ts > entry.last_touched {
+            entry.last_touched = ts;
+        }
+    };
+
+    // Source 1: Claude Code — file_path lives in requests.extra_metadata.
+    if let Ok(mut stmt) = conn.prepare(
+        "SELECT json_extract(extra_metadata, '$.file_path') as fp,
                 backend,
-                COALESCE(MAX(input_tokens + cache_read_tokens + cache_creation_tokens), 0) as peak_context_tokens
-             FROM requests
-             WHERE timestamp >= ?1
-               AND extra_metadata IS NOT NULL
-               AND json_extract(extra_metadata, '$.cwd') = ?2
-             GROUP BY sid
-             ORDER BY last_active DESC"
-        )
-        .map_err(|e| e.to_string())?;
+                timestamp
+         FROM requests
+         WHERE timestamp >= ?1
+           AND extra_metadata IS NOT NULL
+           AND json_extract(extra_metadata, '$.cwd') = ?2
+           AND fp IS NOT NULL
+           AND fp != ''",
+    ) {
+        let rows = stmt.query_map(rusqlite::params![&cutoff_ts, &cwd], |row| {
+            let fp: String = row.get(0)?;
+            let backend: String = row.get(1)?;
+            let ts: String = row.get(2)?;
+            Ok((fp, backend, ts))
+        });
+        if let Ok(rows) = rows {
+            for (fp, backend, ts) in rows.filter_map(|r| r.ok()) {
+                push(fp, backend, ts, &mut touches);
+            }
+        }
+    }
 
-    let sessions: Vec<GardenSession> = sess_stmt
-        .query_map(rusqlite::params![&cutoff_ts, &cwd], |row| {
-            Ok(GardenSession {
-                session_id: row.get(0)?,
-                output_tokens: row.get(1)?,
-                input_tokens: row.get(2)?,
-                request_count: row.get(3)?,
-                last_active: row.get(4)?,
-                model: row.get(5)?,
-                backend: row.get(6)?,
-                peak_context_tokens: row.get(7)?,
-            })
-        })
-        .map_err(|e| e.to_string())?
-        .filter_map(|r| r.ok())
-        // Drop sessions whose rows have never been backfilled with real
-        // usage (mid-flight, killed, or no transcript). Without a real
-        // backfill, peak_context_tokens collapses to the user-prompt
-        // word-count estimate, which isn't meaningful as "context".
-        .filter(|s: &GardenSession| s.peak_context_tokens > 0)
-        .collect();
+    // Source 2: Codex / Cursor / anything that logs through tool_calls —
+    // the path lives in tool_input JSON under file_path / path / notebook_path.
+    if let Ok(mut stmt) = conn.prepare(
+        "SELECT COALESCE(
+                    json_extract(t.tool_input, '$.file_path'),
+                    json_extract(t.tool_input, '$.path'),
+                    json_extract(t.tool_input, '$.notebook_path')
+                ) as fp,
+                r.backend,
+                r.timestamp
+         FROM tool_calls t
+         JOIN requests r ON r.id = t.request_id
+         WHERE r.timestamp >= ?1
+           AND r.extra_metadata IS NOT NULL
+           AND json_extract(r.extra_metadata, '$.cwd') = ?2
+           AND fp IS NOT NULL
+           AND fp != ''",
+    ) {
+        let rows = stmt.query_map(rusqlite::params![&cutoff_ts, &cwd], |row| {
+            let fp: String = row.get(0)?;
+            let backend: String = row.get(1)?;
+            let ts: String = row.get(2)?;
+            Ok((fp, backend, ts))
+        });
+        if let Ok(rows) = rows {
+            for (fp, backend, ts) in rows.filter_map(|r| r.ok()) {
+                push(fp, backend, ts, &mut touches);
+            }
+        }
+    }
 
-    // Aggregate totals.
-    // total_input is the FULL context sent (uncached + cache_read + cache_creation),
-    // matching the per-session semantics above so the cache hit ratio
-    // (cache_read / total_input) is meaningful.
+    // Source 3: Bash tool calls — Codex only logs Bash, and file paths
+    // live inside the command string (`sed -n '1,240p' foo.py`, `cat bar.md`,
+    // `nl -ba baz.rs`, `python -m qux run`, etc.). We tokenize the command
+    // and accept any token that either contains a path separator or
+    // resolves to an existing file under the project cwd — this keeps
+    // noise low while catching the common cases.
+    if let Ok(mut stmt) = conn.prepare(
+        "SELECT json_extract(t.tool_input, '$.command') as cmd,
+                r.backend,
+                r.timestamp
+         FROM tool_calls t
+         JOIN requests r ON r.id = t.request_id
+         WHERE r.timestamp >= ?1
+           AND r.extra_metadata IS NOT NULL
+           AND json_extract(r.extra_metadata, '$.cwd') = ?2
+           AND t.tool_name = 'Bash'
+           AND cmd IS NOT NULL
+           AND cmd != ''",
+    ) {
+        let rows = stmt.query_map(rusqlite::params![&cutoff_ts, &cwd], |row| {
+            let cmd: String = row.get(0)?;
+            let backend: String = row.get(1)?;
+            let ts: String = row.get(2)?;
+            Ok((cmd, backend, ts))
+        });
+        if let Ok(rows) = rows {
+            let cwd_pb = std::path::PathBuf::from(&cwd);
+            for (cmd, backend, ts) in rows.filter_map(|r| r.ok()) {
+                for fp in extract_paths_from_bash(&cmd, &cwd_pb) {
+                    push(fp, backend.clone(), ts.clone(), &mut touches);
+                }
+            }
+        }
+    }
+
+    // Stat each touched path and build GardenFile records. Files that no
+    // longer exist are kept (exists=false, lines=0, tokens=0) so the
+    // frontend can render them as dead trees.
+    let cwd_path = PathBuf::from(&cwd);
+    let mut files: Vec<GardenFile> = Vec::with_capacity(touches.len());
+
+    for (raw_path, agg) in touches {
+        let abs_path = if Path::new(&raw_path).is_absolute() {
+            PathBuf::from(&raw_path)
+        } else {
+            cwd_path.join(&raw_path)
+        };
+
+        let (lines, est_tokens, exists) = match fs::read_to_string(&abs_path) {
+            Ok(content) => {
+                let lines = content.lines().count() as u64;
+                let words = content.split_whitespace().count() as u64;
+                let est_tokens = (words as f64 * 1.5) as u64;
+                (lines, est_tokens, true)
+            }
+            Err(_) => (0, 0, false),
+        };
+
+        // Skip directories / weird non-file paths entirely — they add noise
+        // but produce no useful tree.
+        if !exists && raw_path.ends_with('/') {
+            continue;
+        }
+
+        let display_path = abs_path
+            .strip_prefix(&cwd_path)
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|_| abs_path.to_string_lossy().to_string());
+
+        // Sort backend_touches descending so the frontend can just take [0].
+        let mut backend_touches: Vec<(String, u64)> = agg.backend_touches.into_iter().collect();
+        backend_touches.sort_by(|a, b| b.1.cmp(&a.1));
+
+        files.push(GardenFile {
+            path: display_path,
+            lines,
+            est_tokens,
+            touch_count: agg.touch_count,
+            last_touched: agg.last_touched,
+            backend_touches,
+            exists,
+        });
+    }
+
+    // Rank by estimated "Claude work weight" — tokens * touches. This
+    // surfaces the files that are both big AND hot, which is what a
+    // developer cares about. Fall back to raw tokens, then touches.
+    files.sort_by(|a, b| {
+        let aw = a.est_tokens.saturating_mul(a.touch_count.max(1));
+        let bw = b.est_tokens.saturating_mul(b.touch_count.max(1));
+        bw.cmp(&aw)
+            .then_with(|| b.est_tokens.cmp(&a.est_tokens))
+            .then_with(|| b.touch_count.cmp(&a.touch_count))
+    });
+    files.truncate(200);
+
+    // Project-wide aggregates.
     let (total_input, total_output, cache_read, cache_creation, request_count): (i64, i64, i64, i64, i64) = conn
         .query_row(
             "SELECT
@@ -1365,190 +1562,15 @@ pub fn get_garden_detail(cwd: String, time_range: String) -> Result<GardenDetail
 
     let display_name = cwd.rsplit('/').next().unwrap_or(&cwd).to_string();
 
-    // Find files actually read or written in this project's sessions
-    // (not a recursive workspace walk) and report ones that look large.
-    let large_files = find_touched_large_files(&conn, &cwd, &cutoff_ts, 500, 5_000);
-
     Ok(GardenDetail {
         cwd,
         display_name,
-        sessions,
+        files,
         total_input,
         total_output,
         cache_read,
         cache_creation,
         request_count,
-        large_files,
     })
 }
 
-/// Find the files that were read/edited/written by an agent during this
-/// project's sessions in the selected time range, then report ones that
-/// look "large" by either line count or estimated tokens.
-///
-/// Files are pulled from two sources:
-///   1. `requests.extra_metadata.file_path` — Claude Code hooks set this
-///      directly on every Read/Write/Edit/MultiEdit/NotebookEdit row.
-///   2. `tool_calls.tool_input.{file_path,path,notebook_path}` — covers
-///      Codex / Cursor and any backend that logs through `log_tool_calls`.
-///
-/// Only the touched paths get stat'd, so this is bounded by the agent's
-/// actual activity rather than walking the whole workspace.
-fn find_touched_large_files(
-    conn: &rusqlite::Connection,
-    cwd: &str,
-    cutoff_ts: &str,
-    line_threshold: u64,
-    token_threshold: u64,
-) -> Vec<LargeFile> {
-    use std::collections::HashMap;
-    use std::fs;
-    use std::path::{Path, PathBuf};
-
-    // path -> touch count. Counts each request that touched the path,
-    // not strictly each tool call, but that's close enough for the UI.
-    let mut touches: HashMap<String, u64> = HashMap::new();
-
-    // Source 1: Claude metadata.file_path
-    if let Ok(mut stmt) = conn.prepare(
-        "SELECT json_extract(extra_metadata, '$.file_path') as fp
-         FROM requests
-         WHERE timestamp >= ?1
-           AND extra_metadata IS NOT NULL
-           AND json_extract(extra_metadata, '$.cwd') = ?2
-           AND fp IS NOT NULL
-           AND fp != ''",
-    ) {
-        let rows = stmt.query_map(rusqlite::params![cutoff_ts, cwd], |row| {
-            let fp: String = row.get(0)?;
-            Ok(fp)
-        });
-        if let Ok(rows) = rows {
-            for fp in rows.filter_map(|r| r.ok()) {
-                *touches.entry(fp).or_insert(0) += 1;
-            }
-        }
-    }
-
-    // Source 2: tool_calls.tool_input — covers Codex/Cursor and any other
-    // backend that calls log_tool_calls.
-    if let Ok(mut stmt) = conn.prepare(
-        "SELECT COALESCE(
-                    json_extract(t.tool_input, '$.file_path'),
-                    json_extract(t.tool_input, '$.path'),
-                    json_extract(t.tool_input, '$.notebook_path')
-                ) as fp
-         FROM tool_calls t
-         JOIN requests r ON r.id = t.request_id
-         WHERE r.timestamp >= ?1
-           AND r.extra_metadata IS NOT NULL
-           AND json_extract(r.extra_metadata, '$.cwd') = ?2
-           AND fp IS NOT NULL
-           AND fp != ''",
-    ) {
-        let rows = stmt.query_map(rusqlite::params![cutoff_ts, cwd], |row| {
-            let fp: String = row.get(0)?;
-            Ok(fp)
-        });
-        if let Ok(rows) = rows {
-            for fp in rows.filter_map(|r| r.ok()) {
-                *touches.entry(fp).or_insert(0) += 1;
-            }
-        }
-    }
-
-    if touches.is_empty() {
-        return Vec::new();
-    }
-
-    let cwd_path = PathBuf::from(cwd);
-    let mut results: Vec<LargeFile> = Vec::new();
-
-    for (raw_path, touch_count) in touches {
-        // Resolve relative paths against the project's cwd.
-        let abs_path = if Path::new(&raw_path).is_absolute() {
-            PathBuf::from(&raw_path)
-        } else {
-            cwd_path.join(&raw_path)
-        };
-
-        // Read the file and compute lines + word count. Skip silently if
-        // the file no longer exists or isn't a regular file (could have
-        // been deleted, or be a directory passed to a path-style tool).
-        let content = match fs::read_to_string(&abs_path) {
-            Ok(c) => c,
-            Err(_) => continue,
-        };
-
-        let lines = content.lines().count() as u64;
-        let words = content.split_whitespace().count() as u64;
-        // Same heuristic the hook side uses (words * 1.5).
-        let est_tokens = (words as f64 * 1.5) as u64;
-
-        if lines < line_threshold && est_tokens < token_threshold {
-            continue;
-        }
-
-        // Display path: relative to cwd if it's inside, otherwise absolute.
-        let display_path = abs_path
-            .strip_prefix(&cwd_path)
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_else(|_| abs_path.to_string_lossy().to_string());
-
-        results.push(LargeFile {
-            path: display_path,
-            lines,
-            est_tokens,
-            touch_count,
-        });
-    }
-
-    // Largest first by token estimate (the actual cost driver), then lines.
-    results.sort_by(|a, b| {
-        b.est_tokens
-            .cmp(&a.est_tokens)
-            .then_with(|| b.lines.cmp(&a.lines))
-    });
-    results.truncate(10);
-    results
-}
-
-/// Recent activity within a specific project for live rain animation.
-#[tauri::command]
-pub fn get_garden_live(cwd: String) -> Result<GardenLive, String> {
-    let conn = open_connection().map_err(|e| e.to_string())?;
-
-    let cutoff = chrono::Utc::now() - chrono::Duration::seconds(30);
-    let cutoff_ts = cutoff.to_rfc3339();
-
-    let mut stmt = conn
-        .prepare(
-            "SELECT
-                COALESCE(json_extract(extra_metadata, '$.session_id'), 'unknown'),
-                timestamp,
-                input_tokens,
-                output_tokens
-             FROM requests
-             WHERE timestamp >= ?1
-               AND extra_metadata IS NOT NULL
-               AND json_extract(extra_metadata, '$.cwd') = ?2
-             ORDER BY timestamp DESC
-             LIMIT 20"
-        )
-        .map_err(|e| e.to_string())?;
-
-    let recent: Vec<GardenActivity> = stmt
-        .query_map(rusqlite::params![&cutoff_ts, &cwd], |row| {
-            Ok(GardenActivity {
-                session_id: row.get(0)?,
-                timestamp: row.get(1)?,
-                input_tokens: row.get(2)?,
-                output_tokens: row.get(3)?,
-            })
-        })
-        .map_err(|e| e.to_string())?
-        .filter_map(|r| r.ok())
-        .collect();
-
-    Ok(GardenLive { recent })
-}

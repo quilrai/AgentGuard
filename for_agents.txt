@@ -48,6 +48,25 @@ Logging / Observability
   - Correlation: prompt rows keyed by turn/session, tool rows by tool_use_id
   - database.rs handles all persistence
 
+Garden (project-level file/module view)
+  - "Each project is a garden": groves = modules (first path segment),
+    trees = files the agent has actually touched. Tree height tracks est
+    tokens, canopy density tracks touch count, bark color tracks top
+    backend, dead trees mark files no longer on disk.
+  - Backend: stats.rs `get_garden_stats` (project picker) and
+    `get_garden_detail` (per-project file breakdown, structs GardenFile /
+    GardenDetail).
+  - File paths come from three sources inside `get_garden_detail`:
+      1. requests.extra_metadata.file_path      — Claude Code hooks
+      2. tool_calls.tool_input.{file_path,path,notebook_path} — Cursor
+      3. Bash tool_input.command parsing        — Codex (Bash-only)
+  - Source 3 uses `extract_paths_from_bash` (tokenize → drop flags/
+    operators/metachar tokens → keep tokens that are path-ish AND resolve
+    to real files under cwd). This is why Codex projects show any trees
+    at all — the paths are buried in `sed`/`nl`/`cat`/`wc` invocations.
+  - Frontend: src/garden.js (self-contained SVG renderer + project picker).
+    No session-based view remains; the Garden tab is only this file view.
+
 ================================================================================
 HOOK LIFECYCLE PER AGENT
 ================================================================================
@@ -76,13 +95,18 @@ KEY FILES
   src/lib.rs                          App entry, tray icon, window management
   src/server.rs                       Axum server setup, route mounting
   src/database.rs                     SQLite: logging, settings, DLP storage
+  src/dlp_pattern_config.rs           DB path resolution (~/.quilrdlpapp)
   src/predefined_backend_settings.rs  Per-backend settings shape (DLP, tokens)
   src/commands/mod.rs                 Tauri command re-exports
   src/commands/hook_ordering.rs       Hook install ordering logic
+  src/commands/stats.rs               Dashboard, logs, tool calls, Garden
+  ../src/garden.js                    Frontend Garden view (file/module SVG)
 
 Hook scripts live at:
   Claude:  ~/.claude/settings.json (hooks section)
   Codex:   ~/.codex/hooks.json + ~/.codex/hooks/*.sh
   Cursor:  ~/.cursor/hooks/ (managed by Cursor IDE)
 
-Database: ~/Library/Application Support/llmwatcher/llmwatcher.db (macOS)
+Database: ~/.quilrdlpapp/proxy_requests.db  (resolved in dlp_pattern_config.rs::get_db_path)
+  Tables: requests, tool_calls, dlp_detections, dlp_patterns,
+          compression_cache, settings, predefined_backend_settings

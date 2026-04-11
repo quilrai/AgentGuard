@@ -17,7 +17,7 @@ import { initSettings, loadDetections } from './settings.js';
 import { initBackends, loadPredefinedBackends, refreshGuardianHooks } from './backends.js';
 import { initTokenSaving, refreshTokenSaver } from './token-saving.js';
 import { initHome, loadHome, suspendHome, resumeHome } from './home.js';
-import { initGarden, loadGarden, startGardenPolling, stopGardenPolling } from './garden.js';
+import { initGarden, loadGarden } from './garden.js';
 
 const { openUrl } = window.__TAURI__.opener;
 
@@ -101,9 +101,6 @@ window.addEventListener('DOMContentLoaded', () => {
 
     if (route === 'garden') {
       loadGarden();
-      startGardenPolling();
-    } else {
-      stopGardenPolling();
     }
 
     if (route === 'analytics') {
