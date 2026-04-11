@@ -429,6 +429,113 @@
   border-top: 1px solid rgba(113, 208, 131, 0.12);
 }
 
+/* ============ Detections Modal ============ */
+
+.detections-modal-content {
+  max-width: 440px;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(113, 208, 131, 0.06) 0%, transparent 55%),
+    linear-gradient(180deg, #1F2328 0%, #181B1E 100%);
+  border: 1px solid rgba(113, 208, 131, 0.18);
+}
+
+.detections-modal-body {
+  padding: 16px 20px 8px;
+}
+
+.detections-modal-summary {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: #7a8086;
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.detections-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 420px;
+  overflow-y: auto;
+  margin: 0 -6px;
+  padding: 0 6px;
+}
+
+.detections-empty {
+  font-size: 0.82rem;
+  color: #6c7278;
+  text-align: center;
+  padding: 24px 0;
+  margin: 0;
+}
+
+.detections-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 9px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.detections-row:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.detections-row-check {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  cursor: pointer;
+  accent-color: #71D083;
+}
+
+.detections-row-name {
+  flex: 1;
+  font-size: 0.83rem;
+  color: #e8e8e8;
+  font-weight: 500;
+  letter-spacing: 0.005em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.detections-row input:not(:checked) ~ .detections-row-name {
+  color: #6c7278;
+}
+
+.detections-modal-footer {
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 20px 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.detections-bulk-btn {
+  flex: 1;
+  padding: 9px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 9px;
+  color: #d8dde2;
+  font-family: inherit;
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+.detections-bulk-btn:hover {
+  background: rgba(113, 208, 131, 0.08);
+  border-color: rgba(113, 208, 131, 0.24);
+  color: #f3f4f5;
+}
+
 /* Warning Modal Content */
 .warning-content {
   display: flex;

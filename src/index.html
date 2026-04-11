@@ -142,19 +142,38 @@
             </button>
             <div class="page-header-row">
               <h1 class="page-title">Guardian Agent</h1>
-              <div class="page-tabs" role="tablist">
-                <button class="page-tab active" data-guardian-tab="setup" type="button" role="tab" aria-selected="true">
-                  <i data-lucide="plug"></i> Setup
+              <div class="guardian-protection-wrap">
+                <button class="guardian-protection-btn" id="guardian-protection-btn" type="button" aria-haspopup="true" aria-expanded="false">
+                  <i data-lucide="sliders-horizontal"></i>
+                  <span>Data Protection</span>
                 </button>
-                <button class="page-tab" data-guardian-tab="config" type="button" role="tab" aria-selected="false">
-                  <i data-lucide="sliders-horizontal"></i> Rules
-                </button>
+                <div class="guardian-protection-sub" id="guardian-protection-count">—</div>
+
+                <!-- Protection popover -->
+                <div class="guardian-protection-popover" id="guardian-protection-popover" hidden>
+                  <div class="guardian-protection-popover-arrow"></div>
+                  <div class="guardian-protection-popover-head">
+                    <span class="guardian-protection-popover-title">Detections</span>
+                    <button class="guardian-protection-popover-close" id="guardian-protection-popover-close" type="button" aria-label="Close">&times;</button>
+                  </div>
+                  <p class="guardian-protection-popover-hint">
+                    <span id="guardian-protection-summary">0 / 0 enabled</span>
+                  </p>
+                  <div class="guardian-protection-popover-actions">
+                    <button class="guardian-protection-popover-btn" id="guardian-protection-enable-all" type="button">Enable all</button>
+                    <button class="guardian-protection-popover-btn" id="guardian-protection-disable-all" type="button">Disable all</button>
+                  </div>
+                  <button class="guardian-protection-popover-open" id="guardian-protection-open" type="button">
+                    <span>Open detections</span>
+                    <i data-lucide="arrow-right"></i>
+                  </button>
+                </div>
               </div>
             </div>
           </div>
 
           <!-- ====== Setup ====== -->
-          <div class="guardian-tab-panel active" id="guardian-panel-setup">
+          <div id="guardian-panel-setup">
             <div class="agent-setup-grid">
 
               <div class="agent-add-label">Add guardian to</div>
@@ -217,30 +236,6 @@
               </div>
 
             </div>
-          </div>
-
-          <!-- ====== Guardian Configuration ====== -->
-          <div class="guardian-tab-panel" id="guardian-panel-config">
-            <!-- Detection Rules -->
-            <section class="settings-section">
-              <h2 class="section-heading">Detection rules</h2>
-              <p class="section-subtitle">Patterns the guardian uses to find sensitive data inside prompts and file reads.</p>
-              <div class="card">
-                <div class="card-body">
-                  <div class="dlp-section">
-                    <div class="dlp-section-header">
-                      <h4 class="dlp-section-title">Patterns</h4>
-                      <button id="add-pattern-btn" class="btn btn-secondary btn-sm">
-                        <i data-lucide="plus"></i> Add pattern
-                      </button>
-                    </div>
-                    <div class="dlp-pattern-list" id="dlp-patterns">
-                      <p class="empty-text">Loading patterns...</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </section>
           </div>
         </div>
 
@@ -342,10 +337,6 @@
                 <!-- Filled dynamically with garden name pills -->
               </div>
               <div class="garden-topbar-right">
-                <div class="garden-health" id="garden-health">
-                  <span class="garden-health-dot"></span>
-                  <span class="garden-health-label"></span>
-                </div>
                 <button class="garden-help-btn" id="garden-help-btn" type="button" title="Toggle element labels">?</button>
               </div>
             </div>
@@ -358,34 +349,16 @@
                   <!-- Hover tooltip -->
                   <div class="garden-tooltip" id="garden-tooltip" style="display:none;"></div>
 
-                  <!-- Quilly mascot + suggestion bubble + health panel (top-right) -->
+                  <!-- Quilly mascot (toggles stats panel) (top-right) -->
                   <div class="quilly-area" id="quilly-area">
-                    <!-- Speech bubble (one suggestion at a time) -->
-                    <div class="quilly-bubble" id="quilly-bubble">
-                      <div class="quilly-bubble-text" id="quilly-bubble-text"></div>
-                      <div class="quilly-bubble-nav">
-                        <span class="quilly-bubble-dots" id="quilly-bubble-dots"></span>
-                        <button class="quilly-bubble-next" id="quilly-bubble-next" type="button">next</button>
-                      </div>
-                      <div class="quilly-bubble-tail"></div>
-                    </div>
-                    <!-- Quilly icon -->
-                    <button class="quilly-icon" id="quilly-icon" type="button" title="Garden advisor">
+                    <!-- Quilly icon — clicking toggles the stats panel -->
+                    <button class="quilly-icon" id="quilly-icon" type="button" title="Show garden stats">
                       <svg viewBox="0 0 32 32" fill="none">
                         <path d="M16 2C14.5 8 11 14 8 18c-2 2.5-3 4-3.5 6-.4 1.5.2 3 1.5 3.8 1.5 1 3.5.6 4.5-.5 1.5-1.8 2.5-4 3.5-6.3.8-2 1.5-4 2-6z" fill="#71D083" opacity="0.85"/>
                         <path d="M16 2c.8 5 2 10 4.5 14.5 1.5 2.8 3.2 5 4.5 6.5 1 1.2.5 3-.8 3.5-1.5.6-3.2-.2-4-1.5-1.5-2.5-2.5-5.5-3.2-8.5-.5-2.5-1-5-1-6.5z" fill="#4a8a3a" opacity="0.75"/>
                         <path d="M15.5 2c0 0 .3 4 .5 8s0 8-.5 12" stroke="#2d5a1e" stroke-width="1.2" stroke-linecap="round" opacity="0.6"/>
                         <circle cx="16" cy="28" r="2.5" fill="#5a3a20"/>
                       </svg>
-                    </button>
-                    <!-- Stats button -->
-                    <button class="quilly-health-btn" id="quilly-health-btn" type="button" title="Show stats">
-                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" class="quilly-stats-icon">
-                        <rect x="1" y="8" width="3" height="5" rx="0.8" fill="currentColor" opacity="0.5"/>
-                        <rect x="5.5" y="4" width="3" height="9" rx="0.8" fill="currentColor" opacity="0.7"/>
-                        <rect x="10" y="1" width="3" height="12" rx="0.8" fill="currentColor"/>
-                      </svg>
-                      <span class="garden-health-dot" id="quilly-health-dot"></span>
                     </button>
                     <!-- Stats panel (hidden by default) -->
                     <div class="quilly-stats-panel" id="quilly-stats-panel" style="display:none;">
@@ -480,101 +453,22 @@
         <!-- ============ MODALS ============ -->
 
 
-        <!-- Add/Edit Pattern Modal -->
-        <div id="pattern-modal" class="modal">
-          <div class="modal-content modal-content-lg">
+        <!-- Detections Modal -->
+        <div id="detections-modal" class="modal">
+          <div class="modal-content detections-modal-content">
             <div class="modal-header">
-              <h3 id="pattern-modal-title">Add Pattern</h3>
-              <button class="modal-close" id="close-pattern-modal">&times;</button>
+              <h3>Detections</h3>
+              <button class="modal-close" id="close-detections-modal">&times;</button>
             </div>
-            <div class="modal-body">
-              <input type="hidden" id="pattern-id" value="" />
-
-              <div class="form-group">
-                <label for="pattern-name">Name</label>
-                <input type="text" id="pattern-name" class="form-input" placeholder="e.g., AWS Secrets" />
+            <div class="modal-body detections-modal-body">
+              <div class="detections-modal-summary" id="detections-modal-summary">0 / 0 enabled</div>
+              <div class="detections-list" id="detections-list">
+                <p class="detections-empty">Loading…</p>
               </div>
-
-              <div class="form-row">
-                <div class="form-group form-group-half">
-                  <label>Pattern Type</label>
-                  <div class="radio-group">
-                    <label class="radio-item">
-                      <input type="radio" name="pattern-type" value="keyword" checked />
-                      <span>Keywords</span>
-                    </label>
-                    <label class="radio-item">
-                      <input type="radio" name="pattern-type" value="regex" />
-                      <span>Regex</span>
-                    </label>
-                  </div>
-                  <p class="form-hint" id="pattern-type-hint">Keywords: case-insensitive literal match. Regex: raw regex patterns (case-sensitive).</p>
-                </div>
-                <div class="form-group form-group-half">
-                  <label>Validation</label>
-                  <div class="form-inline">
-                    <div class="form-inline-item">
-                      <label for="min-unique-chars" class="form-label-sm">Min Unique Chars</label>
-                      <input type="number" id="min-unique-chars" class="form-input form-input-sm" min="0" value="0" title="Reject matches with fewer distinct characters (e.g., 'aaa' has 1 unique char)" />
-                    </div>
-                    <div class="form-inline-item">
-                      <label for="min-occurrences" class="form-label-sm">Min Occurrences</label>
-                      <input type="number" id="min-occurrences" class="form-input form-input-sm" min="1" value="1" title="Require at least this many matches before flagging" />
-                    </div>
-                  </div>
-                  <p class="form-hint">Filters to reduce false positives.</p>
-                </div>
-              </div>
-
-              <div class="form-group">
-                <label for="pattern-values">Patterns <span class="form-hint">(one per line)</span></label>
-                <textarea id="pattern-values" class="form-textarea" rows="4" placeholder="Enter keywords or regex patterns, one per line"></textarea>
-              </div>
-
-              <details class="form-details">
-                <summary>Negative Patterns (Exclusions)</summary>
-                <div class="form-details-content">
-                  <p class="form-hint" style="margin-bottom: 12px;">Context-aware exclusion: each match is checked with 30 characters before and after. If a negative pattern appears within that context window, the specific match is excluded.</p>
-                  <p class="form-hint" style="margin-bottom: 12px;"><strong>Example:</strong> Pattern <code>sk-[a-z0-9]+</code> with negative <code>test</code> will catch <code>sk-prod456</code> but exclude <code>sk-test123</code> when "test" appears nearby.</p>
-                  <div class="form-group">
-                    <label>Negative Pattern Type</label>
-                    <div class="radio-group">
-                      <label class="radio-item">
-                        <input type="radio" name="negative-pattern-type" value="" checked />
-                        <span>None</span>
-                      </label>
-                      <label class="radio-item">
-                        <input type="radio" name="negative-pattern-type" value="keyword" />
-                        <span>Keywords</span>
-                      </label>
-                      <label class="radio-item">
-                        <input type="radio" name="negative-pattern-type" value="regex" />
-                        <span>Regex</span>
-                      </label>
-                    </div>
-                  </div>
-                  <div class="form-group">
-                    <label for="negative-pattern-values">Negative Patterns <span class="form-hint">(one per line)</span></label>
-                    <textarea id="negative-pattern-values" class="form-textarea" rows="3" placeholder="e.g., test, example, dummy"></textarea>
-                  </div>
-                </div>
-              </details>
-
-              <details class="form-details">
-                <summary>Test Pattern</summary>
-                <div class="form-details-content">
-                  <div class="form-group">
-                    <label for="test-text">Sample Text</label>
-                    <textarea id="test-text" class="form-textarea" rows="3" placeholder="Enter text to test your pattern against"></textarea>
-                  </div>
-                  <button type="button" class="btn btn-secondary btn-sm" id="test-pattern-btn">Test</button>
-                  <div id="test-results" class="test-results" style="display: none; margin-top: 12px;"></div>
-                </div>
-              </details>
             </div>
-            <div class="modal-footer">
-              <button class="btn btn-secondary" id="cancel-pattern-btn">Cancel</button>
-              <button class="btn btn-primary" id="save-pattern-btn">Save</button>
+            <div class="modal-footer detections-modal-footer">
+              <button class="detections-bulk-btn" id="detections-enable-all" type="button">Enable all</button>
+              <button class="detections-bulk-btn" id="detections-disable-all" type="button">Disable all</button>
             </div>
           </div>
         </div>

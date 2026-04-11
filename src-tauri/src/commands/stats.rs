@@ -1154,15 +1154,30 @@ pub struct GardenSession {
     pub last_active: String,
     pub model: String,
     pub backend: String,
-    /// Input tokens of the most recent request in this session (tree height).
-    pub last_input_tokens: i64,
+    /// Largest context (input + cache_read + cache_creation) the session has
+    /// ever carried in a single request. Drives the tree-height visual and
+    /// the prune/oversized-context warnings.
+    ///
+    /// Why MAX and not "the most recent request": rows are inserted with
+    /// `input_tokens = <user prompt word count>` and `cache_read = cache_creation
+    /// = 0`, then overwritten when the Stop hook backfills real usage from
+    /// the transcript. If the transcript can't be parsed, the fallback path
+    /// keeps those placeholder values, so the latest row is unreliable.
+    /// MAX is robust to fallback rows.
+    pub peak_context_tokens: i64,
 }
 
-/// A source file that exceeds a size threshold.
+/// A file that was read or written during the session and exceeds the
+/// large-file threshold. `est_tokens` is the same words*1.5 estimate the
+/// hooks use, so it lines up with the rest of the token bookkeeping.
 #[derive(Serialize, Clone)]
 pub struct LargeFile {
     pub path: String,
     pub lines: u64,
+    pub est_tokens: u64,
+    /// How many times this file was touched (read/edit/write tool calls)
+    /// in the selected time range.
+    pub touch_count: u64,
 }
 
 /// Full detail for one project's garden scene.
@@ -1204,11 +1219,14 @@ pub fn get_garden_stats(time_range: String) -> Result<GardenProjectList, String>
     let hours = time_range_to_hours(&time_range);
     let cutoff_ts = get_cutoff_timestamp(hours);
 
+    // input_tokens here is the TOTAL context sent to the model
+    // (uncached input + cache reads + cache creation), since the warnings
+    // in the UI are based on this number.
     let mut stmt = conn
         .prepare(
             "SELECT
                 json_extract(extra_metadata, '$.cwd') as cwd,
-                COALESCE(SUM(input_tokens), 0),
+                COALESCE(SUM(input_tokens + cache_read_tokens + cache_creation_tokens), 0),
                 COALESCE(SUM(output_tokens), 0),
                 COALESCE(SUM(cache_read_tokens), 0),
                 COALESCE(SUM(cache_creation_tokens), 0),
@@ -1264,41 +1282,41 @@ pub fn get_garden_detail(cwd: String, time_range: String) -> Result<GardenDetail
     let hours = time_range_to_hours(&time_range);
     let cutoff_ts = get_cutoff_timestamp(hours);
 
-    // Per-session breakdown (trees)
-    // last_input_tokens = input tokens from the most recent request in each session
+    // Per-session breakdown (trees).
+    //
+    // total_input represents the FULL context sent to the model across the
+    // whole session (uncached input + cache reads + cache creation), since
+    // the garden's warnings only make sense against the total context the
+    // session is carrying, not the sliver of strictly-uncached input.
+    //
+    // peak_context_tokens is MAX(input + cache_read + cache_creation) over
+    // the session's rows. Picking the *latest* row instead doesn't work:
+    // rows are inserted with `input_tokens = <user prompt word count>` and
+    // `cache_read = cache_creation = 0`, then overwritten when the Stop
+    // hook backfills real usage from the transcript. The fallback path
+    // (transcript unparseable) leaves those placeholder values in place,
+    // so the latest row can read e.g. "9 context tokens" when the user
+    // typed a 9-word prompt and the parse fell back. MAX is robust to
+    // those fallback rows and gives the largest context the session has
+    // ever carried — which is exactly what the prune / oversized warnings
+    // care about.
     let mut sess_stmt = conn
         .prepare(
             "SELECT
-                s.sid,
-                s.total_output,
-                s.total_input,
-                s.req_count,
-                s.last_active,
-                s.model,
-                s.backend,
-                COALESCE(r.input_tokens, 0) as last_input_tokens
-             FROM (
-                SELECT
-                    COALESCE(json_extract(extra_metadata, '$.session_id'), 'unknown') as sid,
-                    COALESCE(SUM(output_tokens), 0) as total_output,
-                    COALESCE(SUM(input_tokens), 0) as total_input,
-                    COUNT(*) as req_count,
-                    MAX(timestamp) as last_active,
-                    COALESCE(model, 'unknown') as model,
-                    backend
-                FROM requests
-                WHERE timestamp >= ?1
-                  AND extra_metadata IS NOT NULL
-                  AND json_extract(extra_metadata, '$.cwd') = ?2
-                GROUP BY sid
-             ) s
-             LEFT JOIN requests r
-               ON COALESCE(json_extract(r.extra_metadata, '$.session_id'), 'unknown') = s.sid
-               AND r.timestamp = s.last_active
-               AND r.extra_metadata IS NOT NULL
-               AND json_extract(r.extra_metadata, '$.cwd') = ?2
-             ORDER BY s.last_active DESC
-             LIMIT 20"
+                COALESCE(json_extract(extra_metadata, '$.session_id'), 'unknown') as sid,
+                COALESCE(SUM(output_tokens), 0) as total_output,
+                COALESCE(SUM(input_tokens + cache_read_tokens + cache_creation_tokens), 0) as total_input,
+                COUNT(*) as req_count,
+                MAX(timestamp) as last_active,
+                COALESCE(model, 'unknown') as model,
+                backend,
+                COALESCE(MAX(input_tokens + cache_read_tokens + cache_creation_tokens), 0) as peak_context_tokens
+             FROM requests
+             WHERE timestamp >= ?1
+               AND extra_metadata IS NOT NULL
+               AND json_extract(extra_metadata, '$.cwd') = ?2
+             GROUP BY sid
+             ORDER BY last_active DESC"
         )
         .map_err(|e| e.to_string())?;
 
@@ -1312,18 +1330,26 @@ pub fn get_garden_detail(cwd: String, time_range: String) -> Result<GardenDetail
                 last_active: row.get(4)?,
                 model: row.get(5)?,
                 backend: row.get(6)?,
-                last_input_tokens: row.get(7)?,
+                peak_context_tokens: row.get(7)?,
             })
         })
         .map_err(|e| e.to_string())?
         .filter_map(|r| r.ok())
+        // Drop sessions whose rows have never been backfilled with real
+        // usage (mid-flight, killed, or no transcript). Without a real
+        // backfill, peak_context_tokens collapses to the user-prompt
+        // word-count estimate, which isn't meaningful as "context".
+        .filter(|s: &GardenSession| s.peak_context_tokens > 0)
         .collect();
 
-    // Aggregate totals
+    // Aggregate totals.
+    // total_input is the FULL context sent (uncached + cache_read + cache_creation),
+    // matching the per-session semantics above so the cache hit ratio
+    // (cache_read / total_input) is meaningful.
     let (total_input, total_output, cache_read, cache_creation, request_count): (i64, i64, i64, i64, i64) = conn
         .query_row(
             "SELECT
-                COALESCE(SUM(input_tokens), 0),
+                COALESCE(SUM(input_tokens + cache_read_tokens + cache_creation_tokens), 0),
                 COALESCE(SUM(output_tokens), 0),
                 COALESCE(SUM(cache_read_tokens), 0),
                 COALESCE(SUM(cache_creation_tokens), 0),
@@ -1339,8 +1365,9 @@ pub fn get_garden_detail(cwd: String, time_range: String) -> Result<GardenDetail
 
     let display_name = cwd.rsplit('/').next().unwrap_or(&cwd).to_string();
 
-    // Scan for large source files (>500 lines)
-    let large_files = scan_large_files(&cwd, 500);
+    // Find files actually read or written in this project's sessions
+    // (not a recursive workspace walk) and report ones that look large.
+    let large_files = find_touched_large_files(&conn, &cwd, &cutoff_ts, 500, 5_000);
 
     Ok(GardenDetail {
         cwd,
@@ -1355,75 +1382,134 @@ pub fn get_garden_detail(cwd: String, time_range: String) -> Result<GardenDetail
     })
 }
 
-/// Walk a project directory and find source files exceeding a line threshold.
-/// Skips hidden dirs, node_modules, target, .git, vendor, dist, build.
-fn scan_large_files(cwd: &str, threshold: u64) -> Vec<LargeFile> {
+/// Find the files that were read/edited/written by an agent during this
+/// project's sessions in the selected time range, then report ones that
+/// look "large" by either line count or estimated tokens.
+///
+/// Files are pulled from two sources:
+///   1. `requests.extra_metadata.file_path` — Claude Code hooks set this
+///      directly on every Read/Write/Edit/MultiEdit/NotebookEdit row.
+///   2. `tool_calls.tool_input.{file_path,path,notebook_path}` — covers
+///      Codex / Cursor and any backend that logs through `log_tool_calls`.
+///
+/// Only the touched paths get stat'd, so this is bounded by the agent's
+/// actual activity rather than walking the whole workspace.
+fn find_touched_large_files(
+    conn: &rusqlite::Connection,
+    cwd: &str,
+    cutoff_ts: &str,
+    line_threshold: u64,
+    token_threshold: u64,
+) -> Vec<LargeFile> {
+    use std::collections::HashMap;
     use std::fs;
-    use std::io::{BufRead, BufReader};
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
 
-    let source_exts: &[&str] = &[
-        "rs", "js", "ts", "tsx", "jsx", "py", "go", "java", "c", "cpp", "h", "hpp",
-        "rb", "swift", "kt", "scala", "cs", "vue", "svelte", "css", "scss", "html",
-    ];
-    let skip_dirs: &[&str] = &[
-        "node_modules", "target", ".git", "vendor", "dist", "build", "__pycache__",
-        ".next", ".nuxt", "coverage", ".turbo",
-    ];
+    // path -> touch count. Counts each request that touched the path,
+    // not strictly each tool call, but that's close enough for the UI.
+    let mut touches: HashMap<String, u64> = HashMap::new();
 
-    let mut results = Vec::new();
-    let root = Path::new(cwd);
-    if !root.is_dir() {
-        return results;
-    }
-
-    fn walk(dir: &Path, root: &Path, exts: &[&str], skip: &[&str], threshold: u64, out: &mut Vec<LargeFile>) {
-        let entries = match std::fs::read_dir(dir) {
-            Ok(e) => e,
-            Err(_) => return,
-        };
-        for entry in entries.filter_map(|e| e.ok()) {
-            let path = entry.path();
-            let name = entry.file_name();
-            let name_str = name.to_string_lossy();
-
-            if name_str.starts_with('.') {
-                continue;
-            }
-
-            if path.is_dir() {
-                if skip.contains(&name_str.as_ref()) {
-                    continue;
-                }
-                // Limit depth to 6 levels
-                let depth = path.strip_prefix(root).map(|p| p.components().count()).unwrap_or(0);
-                if depth < 6 {
-                    walk(&path, root, exts, skip, threshold, out);
-                }
-                continue;
-            }
-
-            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-            if !exts.contains(&ext) {
-                continue;
-            }
-
-            // Count lines
-            if let Ok(file) = fs::File::open(&path) {
-                let lines = BufReader::new(file).lines().count() as u64;
-                if lines > threshold {
-                    let rel = path.strip_prefix(root)
-                        .map(|p| p.to_string_lossy().to_string())
-                        .unwrap_or_else(|_| path.to_string_lossy().to_string());
-                    out.push(LargeFile { path: rel, lines });
-                }
+    // Source 1: Claude metadata.file_path
+    if let Ok(mut stmt) = conn.prepare(
+        "SELECT json_extract(extra_metadata, '$.file_path') as fp
+         FROM requests
+         WHERE timestamp >= ?1
+           AND extra_metadata IS NOT NULL
+           AND json_extract(extra_metadata, '$.cwd') = ?2
+           AND fp IS NOT NULL
+           AND fp != ''",
+    ) {
+        let rows = stmt.query_map(rusqlite::params![cutoff_ts, cwd], |row| {
+            let fp: String = row.get(0)?;
+            Ok(fp)
+        });
+        if let Ok(rows) = rows {
+            for fp in rows.filter_map(|r| r.ok()) {
+                *touches.entry(fp).or_insert(0) += 1;
             }
         }
     }
 
-    walk(root, root, source_exts, skip_dirs, threshold, &mut results);
-    results.sort_by(|a, b| b.lines.cmp(&a.lines));
-    results.truncate(10); // Top 10 largest
+    // Source 2: tool_calls.tool_input — covers Codex/Cursor and any other
+    // backend that calls log_tool_calls.
+    if let Ok(mut stmt) = conn.prepare(
+        "SELECT COALESCE(
+                    json_extract(t.tool_input, '$.file_path'),
+                    json_extract(t.tool_input, '$.path'),
+                    json_extract(t.tool_input, '$.notebook_path')
+                ) as fp
+         FROM tool_calls t
+         JOIN requests r ON r.id = t.request_id
+         WHERE r.timestamp >= ?1
+           AND r.extra_metadata IS NOT NULL
+           AND json_extract(r.extra_metadata, '$.cwd') = ?2
+           AND fp IS NOT NULL
+           AND fp != ''",
+    ) {
+        let rows = stmt.query_map(rusqlite::params![cutoff_ts, cwd], |row| {
+            let fp: String = row.get(0)?;
+            Ok(fp)
+        });
+        if let Ok(rows) = rows {
+            for fp in rows.filter_map(|r| r.ok()) {
+                *touches.entry(fp).or_insert(0) += 1;
+            }
+        }
+    }
+
+    if touches.is_empty() {
+        return Vec::new();
+    }
+
+    let cwd_path = PathBuf::from(cwd);
+    let mut results: Vec<LargeFile> = Vec::new();
+
+    for (raw_path, touch_count) in touches {
+        // Resolve relative paths against the project's cwd.
+        let abs_path = if Path::new(&raw_path).is_absolute() {
+            PathBuf::from(&raw_path)
+        } else {
+            cwd_path.join(&raw_path)
+        };
+
+        // Read the file and compute lines + word count. Skip silently if
+        // the file no longer exists or isn't a regular file (could have
+        // been deleted, or be a directory passed to a path-style tool).
+        let content = match fs::read_to_string(&abs_path) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+
+        let lines = content.lines().count() as u64;
+        let words = content.split_whitespace().count() as u64;
+        // Same heuristic the hook side uses (words * 1.5).
+        let est_tokens = (words as f64 * 1.5) as u64;
+
+        if lines < line_threshold && est_tokens < token_threshold {
+            continue;
+        }
+
+        // Display path: relative to cwd if it's inside, otherwise absolute.
+        let display_path = abs_path
+            .strip_prefix(&cwd_path)
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|_| abs_path.to_string_lossy().to_string());
+
+        results.push(LargeFile {
+            path: display_path,
+            lines,
+            est_tokens,
+            touch_count,
+        });
+    }
+
+    // Largest first by token estimate (the actual cost driver), then lines.
+    results.sort_by(|a, b| {
+        b.est_tokens
+            .cmp(&a.est_tokens)
+            .then_with(|| b.lines.cmp(&a.lines))
+    });
+    results.truncate(10);
     results
 }
 

@@ -299,18 +299,229 @@
   color: #1FD8A4;
 }
 
-.guardian-tab-panel {
+/* ============================================================================
+ * Guardian — Data Protection button + popover
+ * ========================================================================= */
+
+.guardian-protection-wrap {
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.guardian-protection-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 14px 9px 12px;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(113, 208, 131, 0.10) 0%, transparent 55%),
+    linear-gradient(180deg, #1F2328 0%, #181B1E 100%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 11px;
+  color: #e8e8e8;
+  font-family: inherit;
+  font-size: 0.83rem;
+  font-weight: 500;
+  letter-spacing: 0.005em;
+  cursor: pointer;
+  transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.25s ease;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.04) inset,
+    0 8px 24px -18px rgba(0, 0, 0, 0.6);
+}
+
+.guardian-protection-btn:hover {
+  border-color: rgba(113, 208, 131, 0.32);
+  transform: translateY(-1px);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.05) inset,
+    0 14px 32px -20px rgba(0, 0, 0, 0.65),
+    0 0 0 1px rgba(113, 208, 131, 0.06);
+}
+
+.guardian-protection-btn[aria-expanded="true"] {
+  border-color: rgba(113, 208, 131, 0.38);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.06) inset,
+    0 0 0 1px rgba(113, 208, 131, 0.22),
+    0 0 22px -4px rgba(31, 216, 164, 0.28);
+}
+
+.guardian-protection-btn svg {
+  width: 15px;
+  height: 15px;
+  color: #1FD8A4;
+  stroke-width: 2;
+}
+
+.guardian-protection-sub {
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: #7a8086;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+  padding-right: 2px;
+}
+
+.guardian-protection-sub.is-off {
+  color: #6c7278;
+}
+
+/* Popover */
+
+.guardian-protection-popover {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 200;
+  width: 280px;
+  padding: 14px 14px 12px;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(113, 208, 131, 0.08) 0%, transparent 55%),
+    linear-gradient(180deg, #1F2328 0%, #181B1E 100%);
+  border: 1px solid rgba(113, 208, 131, 0.18);
+  border-radius: 14px;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.05) inset,
+    0 24px 60px -20px rgba(0, 0, 0, 0.7),
+    0 0 0 1px rgba(113, 208, 131, 0.04);
+  opacity: 0;
+  transform: translateY(-6px) scale(0.98);
+  transform-origin: top right;
+  transition: opacity 0.18s ease, transform 0.18s cubic-bezier(0.2, 0.8, 0.2, 1);
+  pointer-events: none;
+}
+
+.guardian-protection-popover.show {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  pointer-events: auto;
+}
+
+.guardian-protection-popover[hidden] {
   display: none;
-  animation: guardian-panel-fade 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-.guardian-tab-panel.active {
-  display: block;
+.guardian-protection-popover-arrow {
+  position: absolute;
+  top: -6px;
+  right: 22px;
+  width: 12px;
+  height: 12px;
+  background: #1F2328;
+  border-left: 1px solid rgba(113, 208, 131, 0.18);
+  border-top: 1px solid rgba(113, 208, 131, 0.18);
+  transform: rotate(45deg);
 }
 
-@keyframes guardian-panel-fade {
-  from { opacity: 0; transform: translateY(6px); }
-  to   { opacity: 1; transform: translateY(0); }
+.guardian-protection-popover-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 2px;
+}
+
+.guardian-protection-popover-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #e8e8e8;
+  letter-spacing: 0.01em;
+}
+
+.guardian-protection-popover-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: #6c7278;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.2s, background 0.2s;
+}
+
+.guardian-protection-popover-close:hover {
+  color: #e8e8e8;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.guardian-protection-popover-hint {
+  font-size: 0.75rem;
+  color: #7a8086;
+  margin: 0 0 12px;
+}
+
+#guardian-protection-summary {
+  color: #d8dde2;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.guardian-protection-popover-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.guardian-protection-popover-btn {
+  flex: 1;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  color: #d8dde2;
+  font-family: inherit;
+  font-size: 0.76rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+.guardian-protection-popover-btn:hover {
+  background: rgba(113, 208, 131, 0.08);
+  border-color: rgba(113, 208, 131, 0.24);
+  color: #f3f4f5;
+}
+
+.guardian-protection-popover-open {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 9px 12px;
+  background: linear-gradient(180deg, rgba(113, 208, 131, 0.14) 0%, rgba(31, 216, 164, 0.05) 100%);
+  border: 1px solid rgba(113, 208, 131, 0.28);
+  border-radius: 9px;
+  color: #f3f4f5;
+  font-family: inherit;
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background 0.25s ease, transform 0.2s ease;
+}
+
+.guardian-protection-popover-open:hover {
+  border-color: rgba(113, 208, 131, 0.42);
+  transform: translateY(-1px);
+}
+
+.guardian-protection-popover-open svg {
+  width: 14px;
+  height: 14px;
+  color: #1FD8A4;
+  stroke-width: 2;
+  transition: transform 0.2s ease;
+}
+
+.guardian-protection-popover-open:hover svg {
+  transform: translateX(2px);
 }
 
 /* ============================================================================

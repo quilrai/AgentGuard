@@ -1,4 +1,11 @@
 import { invoke, escapeHtml } from './utils.js';
+import {
+  loadDetections,
+  getDetections,
+  onDetectionsChanged,
+  setAllDetections,
+  showDetectionsModal,
+} from './settings.js';
 
 let predefinedBackends = [];
 
@@ -161,26 +168,113 @@ export async function refreshGuardianHooks() {
 function showSetupCallout() {}
 
 // ============================================================================
-// Guardian tabs
+// Data Protection button + popover
 // ============================================================================
 
-function initGuardianTabs() {
-  const tabs = document.querySelectorAll('#guardian-tab .page-tab');
-  const panels = document.querySelectorAll('#guardian-tab .guardian-tab-panel');
-  if (!tabs.length || !panels.length) return;
-  tabs.forEach(tab => {
-    tab.addEventListener('click', () => {
-      const target = tab.dataset.guardianTab;
-      tabs.forEach(t => {
-        const active = t === tab;
-        t.classList.toggle('active', active);
-        t.setAttribute('aria-selected', active ? 'true' : 'false');
-      });
-      panels.forEach(p => {
-        p.classList.toggle('active', p.id === `guardian-panel-${target}`);
-      });
+function updateProtectionSummary() {
+  const detections = getDetections();
+  const total = detections.length;
+  const enabled = detections.filter(d => d.enabled).length;
+
+  const countEl = document.getElementById('guardian-protection-count');
+  if (countEl) {
+    countEl.textContent = total > 0 ? `${enabled}/${total} enabled` : '—';
+    countEl.classList.toggle('is-off', total > 0 && enabled === 0);
+  }
+
+  const summaryEl = document.getElementById('guardian-protection-summary');
+  if (summaryEl) {
+    summaryEl.textContent = `${enabled} / ${total} enabled`;
+  }
+}
+
+function openProtectionPopover() {
+  const popover = document.getElementById('guardian-protection-popover');
+  const btn = document.getElementById('guardian-protection-btn');
+  if (!popover) return;
+  popover.hidden = false;
+  requestAnimationFrame(() => popover.classList.add('show'));
+  if (btn) btn.setAttribute('aria-expanded', 'true');
+}
+
+function closeProtectionPopover() {
+  const popover = document.getElementById('guardian-protection-popover');
+  const btn = document.getElementById('guardian-protection-btn');
+  if (!popover) return;
+  popover.classList.remove('show');
+  if (btn) btn.setAttribute('aria-expanded', 'false');
+  setTimeout(() => { popover.hidden = true; }, 180);
+}
+
+function toggleProtectionPopover() {
+  const popover = document.getElementById('guardian-protection-popover');
+  if (!popover) return;
+  if (popover.hidden) openProtectionPopover();
+  else closeProtectionPopover();
+}
+
+function initProtectionControls() {
+  const btn = document.getElementById('guardian-protection-btn');
+  const popover = document.getElementById('guardian-protection-popover');
+  const closeBtn = document.getElementById('guardian-protection-popover-close');
+  const enableAll = document.getElementById('guardian-protection-enable-all');
+  const disableAll = document.getElementById('guardian-protection-disable-all');
+  const openBtn = document.getElementById('guardian-protection-open');
+
+  if (btn) {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleProtectionPopover();
     });
+  }
+  if (closeBtn) {
+    closeBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      closeProtectionPopover();
+    });
+  }
+  if (popover) {
+    popover.addEventListener('click', (e) => e.stopPropagation());
+  }
+  if (enableAll) {
+    enableAll.addEventListener('click', (e) => {
+      e.stopPropagation();
+      setAllDetections(true);
+    });
+  }
+  if (disableAll) {
+    disableAll.addEventListener('click', (e) => {
+      e.stopPropagation();
+      setAllDetections(false);
+    });
+  }
+  if (openBtn) {
+    openBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      closeProtectionPopover();
+      showDetectionsModal();
+    });
+  }
+
+  // Close popover on outside click
+  document.addEventListener('click', (e) => {
+    const pop = document.getElementById('guardian-protection-popover');
+    if (!pop || pop.hidden) return;
+    if (pop.contains(e.target)) return;
+    if (e.target.closest('#guardian-protection-btn')) return;
+    closeProtectionPopover();
   });
+
+  // Close popover on Escape
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    const pop = document.getElementById('guardian-protection-popover');
+    if (pop && !pop.hidden) closeProtectionPopover();
+  });
+
+  // Keep counts in sync
+  onDetectionsChanged(updateProtectionSummary);
+  updateProtectionSummary();
 }
 
 // ============================================================================
@@ -209,71 +303,45 @@ function renderSettingsIntoCards() {
     const dlpOn = settings.dlp_enabled;
     const tokenVal = settings.max_tokens_in_a_request;
     const tokenAction = settings.action_for_max_tokens_in_a_request;
-
-    const tokenDisplay = tokenVal > 0
-      ? `${tokenVal.toLocaleString()} \u00b7 ${tokenAction === 'block' ? 'Block' : 'Notify'}`
-      : 'Not set';
-    const blockSel = tokenAction === 'block' ? 'selected' : '';
-    const notifySel = tokenAction === 'notify' ? 'selected' : '';
-    const dlpNudge = !dlpOn ? 'needs-setup' : '';
+    const blockActive = tokenAction === 'block' ? 'is-active' : '';
+    const notifyActive = tokenAction === 'notify' ? 'is-active' : '';
     const tokenNudge = tokenVal === 0 ? 'needs-setup' : '';
 
     container.innerHTML = `
       <div class="agent-tiles">
-        <button class="agent-tile ${dlpOn ? 'tile-active' : 'tile-muted'} ${dlpNudge}" data-tile="dlp" type="button">
-          <span class="agent-tile-dot"></span>
-          <span class="agent-tile-body">
+        <div class="agent-tile tile-protection ${dlpOn ? 'tile-active' : 'tile-muted'}">
+          <div class="agent-tile-head">
+            <span class="agent-tile-dot"></span>
             <span class="agent-tile-label">Protection</span>
             <span class="agent-tile-val">${dlpOn ? 'Active' : 'Off'}</span>
-          </span>
-        </button>
-        <button class="agent-tile ${tokenNudge}" data-tile="token" type="button">
-          <i data-lucide="coins"></i>
-          <span class="agent-tile-body">
-            <span class="agent-tile-label">Token Cap</span>
-            <span class="agent-tile-val">${tokenDisplay}</span>
-          </span>
-        </button>
-      </div>
-
-      <div class="agent-editor" data-editor="dlp">
-        <div class="agent-editor-panel">
-          <div class="agent-editor-head">
-            <i data-lucide="shield-check"></i>
-            <span>Data Protection</span>
           </div>
-          <p class="agent-editor-hint">Catches API keys, tokens, and secrets before they leave your machine. Keeps your credentials safe while coding with AI.</p>
-          <div class="agent-editor-row-toggle">
-            <span class="agent-editor-status">${dlpOn ? 'Scanning active' : 'Scanning disabled'}</span>
-            <label class="toggle-switch toggle-sm">
-              <input type="checkbox" class="backend-dlp-toggle" ${dlpOn ? 'checked' : ''} />
-              <span class="toggle-slider"></span>
-            </label>
-          </div>
+          <button class="agent-tile-action backend-dlp-btn" type="button">
+            ${dlpOn ? 'Disable' : 'Enable'}
+          </button>
         </div>
-      </div>
 
-      <div class="agent-editor" data-editor="token">
-        <div class="agent-editor-panel">
-          <div class="agent-editor-head">
+        <div class="agent-tile tile-token ${tokenNudge}">
+          <div class="agent-tile-head">
             <i data-lucide="coins"></i>
-            <span>Token Cap</span>
+            <span class="agent-tile-label">Token Cap</span>
           </div>
-          <p class="agent-editor-hint">Prevents runaway prompts from burning your budget. <strong>200,000</strong> is a safe default for most workflows.</p>
-          <div class="agent-editor-field">
-            <label class="agent-editor-flabel">Max tokens</label>
-            <input type="number" class="agent-editor-input backend-max-tokens" min="0" value="${tokenVal}" placeholder="200000" />
-          </div>
-          <div class="agent-editor-field">
-            <label class="agent-editor-flabel">When exceeded</label>
-            <select class="agent-editor-select backend-max-tokens-action">
-              <option value="block" ${blockSel}>Block request</option>
-              <option value="notify" ${notifySel}>Notify only</option>
-            </select>
-          </div>
-          <div class="agent-editor-foot">
-            <button class="agent-editor-btn agent-editor-btn--ghost backend-reset-btn" type="button">Reset</button>
-            <button class="agent-editor-btn agent-editor-btn--accent backend-save-btn" type="button">Save</button>
+          <div class="agent-tile-fields">
+            <label class="agent-tile-field">
+              <span class="agent-tile-flabel-row">
+                <span class="agent-tile-flabel">Max tokens</span>
+                <button type="button" class="agent-tile-suggest backend-suggest-btn">Use suggested</button>
+              </span>
+              <input type="number" class="agent-tile-input backend-max-tokens" min="0" value="${tokenVal || ''}" placeholder="200000" />
+            </label>
+            <div class="agent-tile-field">
+              <span class="agent-tile-flabel-row">
+                <span class="agent-tile-flabel">When exceeded</span>
+              </span>
+              <div class="agent-tile-seg" role="group" aria-label="When exceeded">
+                <button type="button" class="agent-tile-seg-btn backend-action-btn ${blockActive}" data-action="block">Block</button>
+                <button type="button" class="agent-tile-seg-btn backend-action-btn ${notifyActive}" data-action="notify">Notify</button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -281,65 +349,57 @@ function renderSettingsIntoCards() {
 
     lucide.createIcons({ nodes: [container] });
 
-    // Tile click handlers — toggle corresponding editor
-    container.querySelectorAll('.agent-tile').forEach(tile => {
-      tile.addEventListener('click', (e) => {
+    // Protection: single click toggles enable/disable
+    const dlpBtn = container.querySelector('.backend-dlp-btn');
+    dlpBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleDlp(container, backendName);
+    });
+
+    // Token Cap: max tokens — save on blur (or Enter)
+    const maxInput = container.querySelector('.backend-max-tokens');
+    maxInput.addEventListener('click', (e) => e.stopPropagation());
+    maxInput.addEventListener('blur', () => saveLimits(container, backendName));
+    maxInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); maxInput.blur(); }
+    });
+
+    // Token Cap: action segmented buttons — click to select + save
+    container.querySelectorAll('.backend-action-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
         e.stopPropagation();
-        const setting = tile.dataset.tile;
-        const editor = container.querySelector(`.agent-editor[data-editor="${setting}"]`);
-        const isOpen = editor.classList.contains('open');
-
-        // Close all editors across all cards
-        document.querySelectorAll('.agent-editor.open').forEach(ed => ed.classList.remove('open'));
-        document.querySelectorAll('.agent-tile.tile-expanded').forEach(t => t.classList.remove('tile-expanded'));
-
-        if (!isOpen) {
-          editor.classList.add('open');
-          tile.classList.add('tile-expanded');
-        }
+        if (btn.classList.contains('is-active')) return;
+        container.querySelectorAll('.backend-action-btn').forEach(b => b.classList.remove('is-active'));
+        btn.classList.add('is-active');
+        saveLimits(container, backendName);
       });
     });
 
-    // DLP toggle — save immediately
-    const dlpToggle = container.querySelector('.backend-dlp-toggle');
-    dlpToggle.addEventListener('click', (e) => e.stopPropagation());
-    dlpToggle.addEventListener('change', () => saveDlpToggle(container, backendName));
-
-    // Prevent clicks inside editor panels from bubbling
-    container.querySelectorAll('.agent-editor-panel').forEach(panel => {
-      panel.addEventListener('click', (e) => e.stopPropagation());
-    });
-
-    // Save limits
-    container.querySelector('.backend-save-btn').addEventListener('click', (e) => {
+    // Token Cap: "Use suggested" — autofill 200k and save
+    const suggestBtn = container.querySelector('.backend-suggest-btn');
+    suggestBtn.addEventListener('click', (e) => {
+      e.preventDefault();
       e.stopPropagation();
+      maxInput.value = '200000';
       saveLimits(container, backendName);
-    });
-
-    // Reset
-    container.querySelector('.backend-reset-btn').addEventListener('click', (e) => {
-      e.stopPropagation();
-      resetBackend(container, backendName);
     });
   }
 }
-
-// Close editors on outside click
-document.addEventListener('click', () => {
-  document.querySelectorAll('.agent-editor.open').forEach(ed => ed.classList.remove('open'));
-  document.querySelectorAll('.agent-tile.tile-expanded').forEach(t => t.classList.remove('tile-expanded'));
-});
 
 // ============================================================================
 // Save / Reset
 // ============================================================================
 
-async function saveDlpToggle(container, backendName) {
-  const dlpEnabled = container.querySelector('.backend-dlp-toggle').checked;
+async function toggleDlp(container, backendName) {
   const existing = predefinedBackends.find(b => b.name === backendName);
   const s = existing ? parseSettings(existing.settings) : parseSettings('{}');
+  const dlpEnabled = !s.dlp_enabled;
 
   const settings = buildSettingsJson(dlpEnabled, s.max_tokens_in_a_request, s.action_for_max_tokens_in_a_request, s.token_saving);
+
+  const btn = container.querySelector('.backend-dlp-btn');
+  if (btn) btn.disabled = true;
 
   try {
     await invoke('update_predefined_backend', { name: backendName, settings });
@@ -347,46 +407,32 @@ async function saveDlpToggle(container, backendName) {
     loadPredefinedBackends();
   } catch (error) {
     alert(`Failed to save: ${error}`);
+    if (btn) btn.disabled = false;
   }
 }
 
 async function saveLimits(container, backendName) {
-  const maxTokens = parseInt(container.querySelector('.backend-max-tokens').value) || 0;
-  const maxTokensAction = container.querySelector('.backend-max-tokens-action').value || 'block';
+  const maxInput = container.querySelector('.backend-max-tokens');
+  const activeActionBtn = container.querySelector('.backend-action-btn.is-active');
+  const maxTokens = parseInt(maxInput.value) || 0;
+  const maxTokensAction = activeActionBtn?.dataset.action || 'block';
 
   const existing = predefinedBackends.find(b => b.name === backendName);
   const s = existing ? parseSettings(existing.settings) : parseSettings('{}');
 
-  const settings = buildSettingsJson(s.dlp_enabled, maxTokens, maxTokensAction, s.token_saving);
+  // Skip if nothing actually changed — avoids an unnecessary server restart
+  if (maxTokens === s.max_tokens_in_a_request && maxTokensAction === s.action_for_max_tokens_in_a_request) {
+    return;
+  }
 
-  const saveBtn = container.querySelector('.backend-save-btn');
-  saveBtn.disabled = true;
-  saveBtn.textContent = 'Saving…';
+  const settings = buildSettingsJson(s.dlp_enabled, maxTokens, maxTokensAction, s.token_saving);
 
   try {
     await invoke('update_predefined_backend', { name: backendName, settings });
     await invoke('restart_server');
-    container.querySelectorAll('.agent-editor.open').forEach(ed => ed.classList.remove('open'));
-    container.querySelectorAll('.agent-tile.tile-expanded').forEach(t => t.classList.remove('tile-expanded'));
     loadPredefinedBackends();
   } catch (error) {
     alert(`Failed to save: ${error}`);
-  } finally {
-    saveBtn.disabled = false;
-    saveBtn.textContent = 'Save';
-  }
-}
-
-async function resetBackend(container, backendName) {
-  if (!confirm('Reset settings to defaults?')) return;
-  try {
-    await invoke('reset_predefined_backend', { name: backendName });
-    await invoke('restart_server');
-    container.querySelectorAll('.agent-editor.open').forEach(ed => ed.classList.remove('open'));
-    container.querySelectorAll('.agent-tile.tile-expanded').forEach(t => t.classList.remove('tile-expanded'));
-    loadPredefinedBackends();
-  } catch (error) {
-    alert(`Failed to reset: ${error}`);
   }
 }
 
@@ -396,7 +442,7 @@ async function resetBackend(container, backendName) {
 
 export function initBackends() {
   AGENTS.forEach(attachAgentHandler);
-  initGuardianTabs();
+  initProtectionControls();
   refreshGuardianHooks();
   loadPredefinedBackends();
 }

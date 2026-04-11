@@ -668,6 +668,10 @@ pub async fn start_server(app_handle: AppHandle) {
             cursor_hooks_settings,
         );
 
+        // Create shared ctx_read session cache (shared with agent hook routers
+        // so they can clear it on SessionStart)
+        let session_cache: SharedCache = Arc::new(Mutex::new(SessionCache::new()));
+
         // Load claude-hooks settings and build its router.
         let claude_hooks_settings_json = db
             .get_predefined_backend_settings("claude")
@@ -677,6 +681,7 @@ pub async fn start_server(app_handle: AppHandle) {
         let claude_hooks_router = create_claude_hooks_router(
             db.clone(),
             claude_hooks_settings,
+            Some(session_cache.clone()),
         );
 
         // Load codex-hooks settings and build its router.
@@ -692,9 +697,6 @@ pub async fn start_server(app_handle: AppHandle) {
 
         // Build shell compression router
         let cli_compression_router = Router::new().route("/", post(cli_compression_handler));
-
-        // Build ctx_read router with shared session cache
-        let session_cache: SharedCache = Arc::new(Mutex::new(SessionCache::new()));
         let ctx_read_router = Router::new()
             .route("/read", post(ctx_read_handler))
             .route("/smart_read", post(ctx_smart_read_handler))

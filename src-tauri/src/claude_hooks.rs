@@ -46,7 +46,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 // ============================================================================
 // Common Input Fields (present in every Claude Code hook payload)
@@ -232,6 +232,7 @@ struct ClaudeHookMetadata {
 pub struct ClaudeHooksState {
     pub db: Database,
     pub settings: Arc<CustomBackendSettings>,
+    pub ctx_read_cache: Option<Arc<Mutex<crate::ctx_read::cache::SessionCache>>>,
 }
 
 const BACKEND: &str = "claude-hooks";
@@ -883,6 +884,16 @@ async fn session_start_handler(
         input.session_id, input.source
     );
 
+    // Clear ctx_read cache so the new conversation gets fresh file reads
+    if let Some(ref cache) = state.ctx_read_cache {
+        if let Ok(mut c) = cache.lock() {
+            let cleared = c.clear();
+            if cleared > 0 {
+                println!("[CLAUDE_HOOK] session_start - cleared {} ctx_read cache entries", cleared);
+            }
+        }
+    }
+
     let request_body_json = serde_json::to_string(&input).unwrap_or_default();
     // Use session_id + ":start" so the prompt-row keyed on `session_id` doesn't
     // collide with this metadata row in the upsert path.
@@ -977,10 +988,12 @@ async fn session_end_handler(
 pub fn create_claude_hooks_router(
     db: Database,
     settings: CustomBackendSettings,
+    ctx_read_cache: Option<Arc<Mutex<crate::ctx_read::cache::SessionCache>>>,
 ) -> Router {
     let state = ClaudeHooksState {
         db,
         settings: Arc::new(settings),
+        ctx_read_cache,
     };
 
     Router::new()

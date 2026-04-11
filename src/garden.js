@@ -2,16 +2,15 @@
 //
 // View 1: Project picker — cards showing all projects with mini previews.
 // View 2: Garden scene — rich SVG scene for one project:
-//   - Trees     = sessions (height = output tokens)
-//   - Pond      = input tokens (size = total input)
-//   - Sun       = cache read (brightness = cache hit ratio)
-//   - Mushrooms = cache creation (count scales with new cache)
+//   - Trees     = sessions (height = full context on the most recent request)
+//   - Pond      = total context sent across all sessions (cached + uncached)
+//   - Sun       = cache hit ratio (cache_read / total context sent)
+//   - Mushrooms = cache creation (count scales with first-time cache writes)
 //   - Rain      = live activity (drops fall when requests are active)
 //
 // Features:
 //   - Hover tooltips explain every element
-//   - Garden Advisor sidebar with contextual suggestions
-//   - Garden Health Score (thriving / needs attention / overgrown)
+//   - Quilly mascot toggles a stats panel (pictogram bar + raw numbers)
 //   - Pictogram legend bar with clickable icons
 //   - Tree inspector panel on click
 //   - Help mode toggle ("?") labels all elements
@@ -29,8 +28,6 @@ let liveTimer = null;
 let rainTimers = new Map();
 let helpMode = false;
 let expandedSessionId = null; // which tree is currently expanded
-let advisorSuggestions = [];  // current suggestions list
-let advisorIndex = 0;         // which suggestion is showing
 
 // ---- Public API ----
 
@@ -72,16 +69,8 @@ export function initGarden() {
     });
   }
 
-  // Quilly: click icon or "next" to cycle suggestions
+  // Quilly: clicking the mascot toggles the stats panel
   document.getElementById('quilly-icon')?.addEventListener('click', () => {
-    cycleSuggestion();
-  });
-  document.getElementById('quilly-bubble-next')?.addEventListener('click', () => {
-    cycleSuggestion();
-  });
-
-  // Quilly: health button toggles stats panel
-  document.getElementById('quilly-health-btn')?.addEventListener('click', () => {
     const panel = document.getElementById('quilly-stats-panel');
     if (panel) {
       const showing = panel.style.display !== 'none';
@@ -172,8 +161,6 @@ function loadGardenDetail(cwd) {
       renderGardenScene();
       renderStatsRow();
       renderPictogramBar();
-      renderHealthScore();
-      renderAdvisor();
     })
     .catch(e => console.error('[garden]', e));
 }
@@ -182,8 +169,10 @@ function renderStatsRow() {
   const row = document.getElementById('garden-stats-row');
   if (!row || !gardenDetail) return;
   const d = gardenDetail;
-  const cacheRatio = d.total_input + d.cache_read > 0
-    ? Math.round((d.cache_read / (d.total_input + d.cache_read)) * 100)
+  // total_input is the FULL context sent to the model (uncached + cache_read + cache_creation),
+  // so the cache hit ratio is simply cache_read / total_input.
+  const cacheRatio = d.total_input > 0
+    ? Math.round((d.cache_read / d.total_input) * 100)
     : 0;
   row.innerHTML = `
     <div class="garden-stat"><span class="garden-stat-label">Output</span><span class="garden-stat-value">${formatNumber(d.total_output)}</span></div>
@@ -202,8 +191,8 @@ function renderPictogramBar() {
   const bar = document.getElementById('garden-pictogram-bar');
   if (!bar || !gardenDetail) return;
   const d = gardenDetail;
-  const cacheRatio = d.total_input + d.cache_read > 0
-    ? Math.round((d.cache_read / (d.total_input + d.cache_read)) * 100)
+  const cacheRatio = d.total_input > 0
+    ? Math.round((d.cache_read / d.total_input) * 100)
     : 0;
   const activeSessions = rainTimers.size;
 
@@ -212,17 +201,17 @@ function renderPictogramBar() {
       <svg class="garden-pictogram-icon" viewBox="0 0 16 16"><rect x="7" y="6" width="2" height="10" rx="1" fill="#5a3a20"/><circle cx="8" cy="5" r="5" fill="#4a8a3a"/></svg>
       <span class="garden-pictogram-value">${d.sessions.length}</span> sessions
     </span>
-    <span class="garden-pictogram" data-target="pond" title="The pond represents input tokens sent.">
+    <span class="garden-pictogram" data-target="pond" title="Total context (cached + uncached) sent to the model across all sessions in this project.">
       <svg class="garden-pictogram-icon" viewBox="0 0 16 16"><ellipse cx="8" cy="10" rx="7" ry="4" fill="#1a3a5a"/><ellipse cx="6" cy="9" rx="2" ry="1" fill="#4a90d9" opacity="0.5"/></svg>
-      <span class="garden-pictogram-value">${formatNumber(d.total_input)}</span> input
+      <span class="garden-pictogram-value">${formatNumber(d.total_input)}</span> sent
     </span>
-    <span class="garden-pictogram" data-target="sun" title="The sun shows cache read efficiency.">
+    <span class="garden-pictogram" data-target="sun" title="Share of context served from the prompt cache (cache_read / total context sent).">
       <svg class="garden-pictogram-icon" viewBox="0 0 16 16"><circle cx="8" cy="8" r="4" fill="#f5c542"/><line x1="8" y1="1" x2="8" y2="3" stroke="#f5c542" stroke-width="1.5" stroke-linecap="round"/><line x1="8" y1="13" x2="8" y2="15" stroke="#f5c542" stroke-width="1.5" stroke-linecap="round"/><line x1="1" y1="8" x2="3" y2="8" stroke="#f5c542" stroke-width="1.5" stroke-linecap="round"/><line x1="13" y1="8" x2="15" y2="8" stroke="#f5c542" stroke-width="1.5" stroke-linecap="round"/></svg>
-      <span class="garden-pictogram-value">${cacheRatio}%</span> cache
+      <span class="garden-pictogram-value">${cacheRatio}%</span> cache hit
     </span>
-    <span class="garden-pictogram" data-target="mushroom" title="Mushrooms sprout when new cache entries are created.">
+    <span class="garden-pictogram" data-target="mushroom" title="Tokens written to the prompt cache for the first time (cache creation).">
       <svg class="garden-pictogram-icon" viewBox="0 0 16 16"><rect x="7" y="10" width="2" height="5" rx="1" fill="#d4c8b0"/><ellipse cx="8" cy="10" rx="5" ry="3.5" fill="#c084fc"/><circle cx="6" cy="9" r="1" fill="#fff" opacity="0.5"/></svg>
-      <span class="garden-pictogram-value">${formatNumber(d.cache_creation)}</span> cached
+      <span class="garden-pictogram-value">${formatNumber(d.cache_creation)}</span> new cache
     </span>
     <span class="garden-pictogram" data-target="rain" title="Rain falls on active sessions.">
       <svg class="garden-pictogram-icon" viewBox="0 0 16 16"><line x1="4" y1="3" x2="4" y2="7" stroke="#5b9bd5" stroke-width="1.5" stroke-linecap="round"/><line x1="8" y1="1" x2="8" y2="5" stroke="#5b9bd5" stroke-width="1.5" stroke-linecap="round"/><line x1="12" y1="4" x2="12" y2="8" stroke="#5b9bd5" stroke-width="1.5" stroke-linecap="round"/><line x1="6" y1="8" x2="6" y2="12" stroke="#5b9bd5" stroke-width="1.5" stroke-linecap="round"/><line x1="10" y1="6" x2="10" y2="10" stroke="#5b9bd5" stroke-width="1.5" stroke-linecap="round"/></svg>
@@ -263,205 +252,6 @@ function pulseElements(type) {
   });
 }
 
-// ============ Garden Health Score ============
-
-function renderHealthScore() {
-  const btn = document.getElementById('quilly-health-btn');
-  if (!btn || !gardenDetail) return;
-  const d = gardenDetail;
-  const cacheRatio = d.total_input + d.cache_read > 0
-    ? d.cache_read / (d.total_input + d.cache_read)
-    : 0;
-
-  let issues = 0;
-
-  const maxLastInput = Math.max(...d.sessions.map(s => s.last_input_tokens || 0), 0);
-  if (maxLastInput > 150000) issues += 2;
-  else if (maxLastInput > 80000) issues += 1;
-
-  if (d.cache_read > 0 || d.total_input > 10000) {
-    if (cacheRatio < 0.2) issues += 2;
-    else if (cacheRatio < 0.5) issues += 1;
-  }
-
-  if (d.total_input > 0 && d.total_output > 0) {
-    const ioRatio = d.total_input / d.total_output;
-    if (ioRatio > 10) issues += 1;
-  }
-
-  let level, label;
-  if (issues === 0) { level = 'thriving'; label = 'Stats'; }
-  else if (issues <= 2) { level = 'attention'; label = 'Stats'; }
-  else { level = 'overgrown'; label = 'Stats'; }
-
-  btn.dataset.level = level;
-  const lbl = document.getElementById('quilly-health-label');
-  if (lbl) lbl.textContent = label;
-
-  // Also update the topbar health indicator
-  const topHealth = document.getElementById('garden-health');
-  if (topHealth) {
-    topHealth.dataset.level = level;
-    const topLbl = topHealth.querySelector('.garden-health-label');
-    if (topLbl) topLbl.textContent = label;
-  }
-}
-
-// ============ Garden Advisor ============
-
-function renderAdvisor() {
-  if (!gardenDetail) return;
-  const d = gardenDetail;
-  const suggestions = [];
-
-  const cacheRatio = d.total_input + d.cache_read > 0
-    ? d.cache_read / (d.total_input + d.cache_read)
-    : 0;
-  const maxLastInput = Math.max(...d.sessions.map(s => s.last_input_tokens || 0), 0);
-  const maxSession = d.sessions.find(s => (s.last_input_tokens || 0) === maxLastInput);
-
-  // --- Oversized context ---
-  if (maxLastInput > 150000 && maxSession) {
-    suggestions.push({
-      severity: 'bad',
-      icon: '\u2702\uFE0F',
-      text: `Time to <strong>prune the tree</strong> \u2014 session <code>${shortId(maxSession.session_id)}</code> is carrying ${formatNumber(maxLastInput)} context tokens.`,
-      hint: 'The conversation has grown very large. Consider starting a fresh session or trimming unnecessary context.',
-    });
-  } else if (maxLastInput > 80000 && maxSession) {
-    suggestions.push({
-      severity: 'warn',
-      icon: '\u2702\uFE0F',
-      text: `A tall tree is growing \u2014 session <code>${shortId(maxSession.session_id)}</code> has ${formatNumber(maxLastInput)} context tokens.`,
-      hint: 'Keep an eye on it. As context grows, responses may slow down and costs increase.',
-    });
-  }
-
-  // --- Many small sessions ---
-  if (d.sessions.length > 8 && maxLastInput < 20000) {
-    suggestions.push({
-      severity: 'warn',
-      icon: '\uD83C\uDF3F',
-      text: 'Your garden is <strong>bushy</strong> \u2014 lots of small sessions.',
-      hint: 'You might get better results with fewer, longer conversations.',
-    });
-  }
-
-  // --- Input-heavy (pond flooding) ---
-  if (d.total_input > 0 && d.total_output > 0) {
-    const ioRatio = d.total_input / d.total_output;
-    if (ioRatio > 10) {
-      suggestions.push({
-        severity: 'warn',
-        icon: '\uD83C\uDF0A',
-        text: 'Your <strong>pond is flooding</strong> \u2014 sending a lot of input but getting little output.',
-        hint: 'Check if you\'re sending unnecessary context in your prompts.',
-      });
-    }
-  }
-
-  // --- Cache performance ---
-  if (d.cache_read > 0 || d.total_input > 10000) {
-    if (cacheRatio >= 0.7) {
-      suggestions.push({
-        severity: 'good',
-        icon: '\u2600\uFE0F',
-        text: '<strong>Beautiful sunny day!</strong> Great cache reuse at ' + Math.round(cacheRatio * 100) + '%.',
-        hint: 'You\'re being cost-efficient. Keep reusing conversation threads.',
-      });
-    } else if (cacheRatio < 0.2) {
-      suggestions.push({
-        severity: 'bad',
-        icon: '\u2601\uFE0F',
-        text: 'The <strong>sun is hiding</strong> \u2014 cache hit rate is only ' + Math.round(cacheRatio * 100) + '%.',
-        hint: 'Try reusing conversation threads instead of starting fresh to save costs.',
-      });
-    } else if (cacheRatio < 0.5) {
-      suggestions.push({
-        severity: 'warn',
-        icon: '\u26C5',
-        text: 'Partly cloudy \u2014 cache hit rate is ' + Math.round(cacheRatio * 100) + '%.',
-        hint: 'There\'s room to improve. Longer sessions tend to reuse cache better.',
-      });
-    }
-  }
-
-  // --- Mushroom overload ---
-  if (d.cache_creation > 100000) {
-    suggestions.push({
-      severity: 'warn',
-      icon: '\uD83C\uDF44',
-      text: '<strong>Mushroom overload</strong> \u2014 ' + formatNumber(d.cache_creation) + ' tokens of new cache created.',
-      hint: 'Lots of fresh contexts being cached. This means many new conversations are being started.',
-    });
-  }
-
-  // --- Single tree dominates ---
-  if (d.sessions.length > 1 && maxSession) {
-    const totalLastInput = d.sessions.reduce((s, x) => s + (x.last_input_tokens || 0), 0);
-    if (totalLastInput > 0 && maxLastInput / totalLastInput > 0.7) {
-      suggestions.push({
-        severity: 'info',
-        icon: '\uD83C\uDF33',
-        text: `One tree is <strong>overshadowing</strong> the others \u2014 <code>${shortId(maxSession.session_id)}</code> carries ${Math.round(maxLastInput / totalLastInput * 100)}% of total context.`,
-        hint: 'Most of the context weight is concentrated in a single session.',
-      });
-    }
-  }
-
-  // --- No activity ---
-  if (d.sessions.length === 0) {
-    suggestions.push({
-      severity: 'info',
-      icon: '\uD83C\uDF19',
-      text: 'The garden is <strong>quiet</strong>. No sessions yet.',
-      hint: 'Start a new coding session to grow your garden.',
-    });
-  }
-
-  // --- All healthy ---
-  if (suggestions.length === 0) {
-    suggestions.push({
-      severity: 'good',
-      icon: '\uD83C\uDF31',
-      text: 'Your garden is <strong>healthy</strong>!',
-      hint: 'Everything looks balanced. Keep up the good work.',
-    });
-  }
-
-  advisorSuggestions = suggestions;
-  advisorIndex = 0;
-  showSuggestion();
-}
-
-function showSuggestion() {
-  const bubble = document.getElementById('quilly-bubble');
-  const textEl = document.getElementById('quilly-bubble-text');
-  const dotsEl = document.getElementById('quilly-bubble-dots');
-  if (!bubble || !textEl || advisorSuggestions.length === 0) return;
-
-  const s = advisorSuggestions[advisorIndex];
-  bubble.dataset.severity = s.severity;
-  textEl.innerHTML = `<span>${s.icon}</span> ${s.text}<br><span style="color:#666;font-size:10px;">${s.hint}</span>`;
-
-  // Render dots
-  if (dotsEl) {
-    dotsEl.innerHTML = advisorSuggestions.map((_, i) =>
-      `<span class="quilly-bubble-dot${i === advisorIndex ? ' active' : ''}"></span>`
-    ).join('');
-  }
-
-  // Hide "next" if only one suggestion
-  const nextBtn = document.getElementById('quilly-bubble-next');
-  if (nextBtn) nextBtn.style.display = advisorSuggestions.length <= 1 ? 'none' : '';
-}
-
-function cycleSuggestion() {
-  if (advisorSuggestions.length <= 1) return;
-  advisorIndex = (advisorIndex + 1) % advisorSuggestions.length;
-  showSuggestion();
-}
-
 // ============ Expand Tree In-Place ============
 
 function toggleTreeExpand(session) {
@@ -476,7 +266,7 @@ function toggleTreeExpand(session) {
 /** Draw info annotations around an expanded tree (signposts hanging from branches, sign at base). */
 function drawTreeInfo(group, cx, groundY, session, treeH, trunkTop, canopyR) {
   const accent = backendColor(session.backend);
-  const lastInput = session.last_input_tokens || 0;
+  const peakContext = session.peak_context_tokens || 0;
   const infoG = el('g');
   infoG.setAttribute('class', 'garden-tree-info');
 
@@ -498,7 +288,7 @@ function drawTreeInfo(group, cx, groundY, session, treeH, trunkTop, canopyR) {
 
   // --- Tags hanging from branches (left side) ---
   const tags = [
-    { label: 'Context', value: formatNumber(lastInput), color: '#71D083' },
+    { label: 'Peak ctx', value: formatNumber(peakContext), color: '#71D083' },
     { label: 'Output', value: formatNumber(session.output_tokens), color: '#f5c542' },
     { label: 'Requests', value: String(session.request_count), color: '#5b9bd5' },
     { label: 'Backend', value: session.backend, color: accent },
@@ -537,7 +327,7 @@ function drawTreeInfo(group, cx, groundY, session, treeH, trunkTop, canopyR) {
   const meterX = cx + canopyR + 16;
   const meterH = Math.min(treeH * 0.7, 140);
   const meterY = trunkTop + treeH * 0.15;
-  const fillRatio = Math.min(lastInput / 200000, 1);
+  const fillRatio = Math.min(peakContext / 200000, 1);
   const fillH = meterH * fillRatio;
 
   // Meter track
@@ -560,14 +350,14 @@ function drawTreeInfo(group, cx, groundY, session, treeH, trunkTop, canopyR) {
   // Meter value at bottom
   const meterVal = el('text');
   setA(meterVal, { x: meterX + 4, y: meterY + meterH + 14, 'text-anchor': 'middle', fill: fillColor, 'font-size': 9, 'font-weight': 600, 'font-family': '-apple-system, sans-serif' });
-  meterVal.textContent = formatNumber(lastInput);
+  meterVal.textContent = formatNumber(peakContext);
   infoG.appendChild(meterVal);
 
   // --- Suggestion sign (if applicable) ---
   let suggestion = null;
-  if (lastInput > 150000) {
+  if (peakContext > 150000) {
     suggestion = { icon: '\u2702\uFE0F', text: 'Time to prune!', color: '#f87171' };
-  } else if (lastInput > 80000) {
+  } else if (peakContext > 80000) {
     suggestion = { icon: '\uD83C\uDF3F', text: 'Growing fast...', color: '#facc15' };
   } else if (session.request_count > 30) {
     suggestion = { icon: '\uD83C\uDF3F', text: 'Very branchy', color: '#facc15' };
@@ -712,13 +502,13 @@ function renderGardenScene() {
     svg.appendChild(b);
   }
 
-  // ---- Pond (input tokens) ----
+  // ---- Pond (total context sent) ----
   drawPond(svg, gardenDetail, W, GROUND_Y);
 
   // ---- Trees (sessions) ----
-  // Tree height = last message's input tokens (how much context the session carries)
+  // Tree height = peak context the session has carried on any single request.
   const sessions = gardenDetail.sessions;
-  const maxLastInput = Math.max(...sessions.map(s => s.last_input_tokens || 0), 1);
+  const maxPeakContext = Math.max(...sessions.map(s => s.peak_context_tokens || 0), 1);
 
   const treeZoneW = W * 0.7;
   const treeZoneStart = 60;
@@ -763,7 +553,7 @@ function renderGardenScene() {
     }
 
     const scale = (isExpanded && isThisExpanded) ? 1.3 : (isExpanded ? 0.6 : 1.0);
-    const treeResult = drawTree(g, cx, GROUND_Y, sess, maxLastInput, scale);
+    const treeResult = drawTree(g, cx, GROUND_Y, sess, maxPeakContext, scale);
 
     // Draw info annotations on expanded tree
     if (isThisExpanded && treeResult) {
@@ -775,19 +565,18 @@ function renderGardenScene() {
       const helpLbl = el('text');
       helpLbl.setAttribute('class', 'garden-help-label');
       setA(helpLbl, { x: cx, y: GROUND_Y - 10 });
-      helpLbl.textContent = `Context: ${formatNumber(sess.last_input_tokens || 0)} tokens`;
+      helpLbl.textContent = `Peak ctx: ${formatNumber(sess.peak_context_tokens || 0)} tokens`;
       g.appendChild(helpLbl);
     }
 
     // Hover tooltip
     g.addEventListener('mouseenter', () => {
       if (isThisExpanded) return; // expanded tree shows info directly
-      const bCount = Math.min(Math.floor(sess.request_count / 5) + 1, 6);
-      const lastInput = sess.last_input_tokens || 0;
+      const peakContext = sess.peak_context_tokens || 0;
       showTooltip(
         `Session: ${shortId(sess.session_id)}`,
-        `${formatNumber(lastInput)} context tokens \u00B7 ${sess.request_count} requests`,
-        `Tree height = last message\u2019s input tokens (${formatNumber(lastInput)}), showing how much context this session carries. ${bCount} branch${bCount !== 1 ? 'es' : ''} from ${sess.request_count} requests. Backend: ${sess.backend}.`
+        `${formatNumber(peakContext)} peak context tokens \u00B7 ${sess.request_count} requests`,
+        `Tree height reflects the largest context (cached + uncached) this session has ever carried on a single request \u2014 ${formatNumber(peakContext)} tokens. Branches scale with request count (${sess.request_count}). Backend: ${sess.backend}.`
       );
     });
     g.addEventListener('mouseleave', hideTooltip);
@@ -818,8 +607,9 @@ function renderGardenScene() {
 // ---- Sun: cache read ratio ----
 
 function drawSun(svg, detail) {
-  const total = detail.total_input + detail.cache_read;
-  const ratio = total > 0 ? detail.cache_read / total : 0;
+  // total_input already includes cache_read + cache_creation, so the
+  // hit ratio is cache_read / total_input.
+  const ratio = detail.total_input > 0 ? detail.cache_read / detail.total_input : 0;
   const sunR = 20 + ratio * 30;
   const opacity = 0.3 + ratio * 0.7;
   const cx = 100, cy = 100;
@@ -883,12 +673,12 @@ function drawSun(svg, detail) {
   sunGroup.addEventListener('mouseenter', () => {
     showTooltip(
       'Sun \u2014 Cache Read',
-      `${Math.round(ratio * 100)}% hit rate \u00B7 ${formatNumber(detail.cache_read)} tokens`,
+      `${Math.round(ratio * 100)}% hit rate \u00B7 ${formatNumber(detail.cache_read)} tokens served from cache`,
       ratio >= 0.7
-        ? 'Bright sun! Your prompts are reusing cached context efficiently, saving cost.'
+        ? 'Bright sun! Most of the context the model sees is being served from the prompt cache, which is the cheapest way to send tokens.'
         : ratio >= 0.3
-          ? 'Moderate cache reuse. Longer sessions and reusing threads will make the sun brighter.'
-          : 'Low cache reuse. Most prompts are starting fresh. Try reusing conversation threads to save costs.'
+          ? 'Moderate cache reuse. Continuing existing sessions instead of starting fresh ones will push more reads through the cache.'
+          : 'Low cache reuse. Most context is being sent uncached or freshly cached, which is the most expensive path. Try continuing existing sessions when possible.'
     );
   });
   sunGroup.addEventListener('mouseleave', hideTooltip);
@@ -896,10 +686,13 @@ function drawSun(svg, detail) {
   svg.appendChild(sunGroup);
 }
 
-// ---- Pond: input tokens ----
+// ---- Pond: total context sent to the model ----
 
 function drawPond(svg, detail, W, groundY) {
-  const inputRatio = Math.min(detail.total_input / 500000, 1);
+  // total_input includes cache reads + cache creation + uncached input,
+  // so it can grow into the millions for active projects. Scale against
+  // 5M tokens so the pond fills gradually instead of maxing out instantly.
+  const inputRatio = Math.min(detail.total_input / 5_000_000, 1);
   const pondW = 80 + inputRatio * 160;
   const pondH = 20 + inputRatio * 30;
   const cx = W - pondW / 2 - 80;
@@ -933,25 +726,25 @@ function drawPond(svg, detail, W, groundY) {
   const lbl = el('text');
   lbl.setAttribute('class', 'garden-label-dim');
   setA(lbl, { x: cx, y: cy + pondH / 2 + 14 });
-  lbl.textContent = `${formatNumber(detail.total_input)} input`;
+  lbl.textContent = `${formatNumber(detail.total_input)} sent`;
   pondGroup.appendChild(lbl);
 
   // Help-mode label
   const helpLbl = el('text');
   helpLbl.setAttribute('class', 'garden-help-label');
   setA(helpLbl, { x: cx, y: cy + pondH / 2 + 28 });
-  helpLbl.textContent = 'Pond = input tokens sent';
+  helpLbl.textContent = 'Pond = total context sent';
   pondGroup.appendChild(helpLbl);
 
   // Tooltip
-  const outputRatio = detail.total_output > 0
+  const ioRatio = detail.total_output > 0
     ? (detail.total_input / detail.total_output).toFixed(1)
     : 'N/A';
   pondGroup.addEventListener('mouseenter', () => {
     showTooltip(
-      'Pond \u2014 Input Tokens',
-      `${formatNumber(detail.total_input)} tokens \u00B7 ${outputRatio}x input/output ratio`,
-      `The pond represents all input tokens sent to the model. A larger pond means more context is being sent. ${inputRatio > 0.6 ? 'This is a big pond \u2014 consider if all that context is necessary.' : 'Pond size looks reasonable.'}`
+      'Pond \u2014 Context Sent',
+      `${formatNumber(detail.total_input)} tokens \u00B7 ${ioRatio}\u00D7 sent vs. output`,
+      `Total context (cached + uncached input) sent to the model across every request in this project. A bigger pond means more tokens are flowing in${ioRatio !== 'N/A' && parseFloat(ioRatio) > 30 ? ' \u2014 the in/out ratio is high, so most of those tokens are repeated context being re-sent each turn.' : '.'}`
     );
   });
   pondGroup.addEventListener('mouseleave', hideTooltip);
@@ -961,10 +754,14 @@ function drawPond(svg, detail, W, groundY) {
 
 // ---- Tree per session ----
 
-function drawTree(group, cx, groundY, session, maxLastInput, scale = 1.0) {
-  // Tree height based on last message's input tokens (context size)
-  const lastInput = session.last_input_tokens || 0;
-  const ratio = Math.max(lastInput / maxLastInput, 0.12);
+function drawTree(group, cx, groundY, session, maxPeakContext, scale = 1.0) {
+  // Tree height tracks the largest context (uncached input + cache reads +
+  // cache creation) the session has carried on any single request. We use
+  // the peak rather than the latest because rows are inserted with placeholder
+  // token values and only get backfilled when the Stop hook fires; the latest
+  // row can be a placeholder that hasn't been overwritten yet.
+  const peakContext = session.peak_context_tokens || 0;
+  const ratio = Math.max(peakContext / maxPeakContext, 0.12);
   const treeH = (60 + ratio * 220) * scale;
   const trunkW = (5 + ratio * 14) * scale;
   const canopyR = (22 + ratio * 55) * scale;
@@ -1038,11 +835,11 @@ function drawTree(group, cx, groundY, session, maxLastInput, scale = 1.0) {
   lbl.textContent = shortId(session.session_id);
   group.appendChild(lbl);
 
-  // Context size label (last input tokens)
+  // Context size label (peak context the session has carried)
   const sub = el('text');
   sub.setAttribute('class', 'garden-label-dim');
   setA(sub, { x: cx, y: groundY + 30 });
-  sub.textContent = `${formatNumber(lastInput)} ctx`;
+  sub.textContent = `${formatNumber(peakContext)} peak`;
   group.appendChild(sub);
 
   return { treeH, trunkTop, canopyR };
@@ -1087,7 +884,7 @@ function drawMushrooms(svg, detail, W, groundY) {
       const helpLbl = el('text');
       helpLbl.setAttribute('class', 'garden-help-label');
       setA(helpLbl, { x: mx, y: my + 10 });
-      helpLbl.textContent = 'Mushroom = new cache entry';
+      helpLbl.textContent = 'Mushroom = first-time cache write';
       g.appendChild(helpLbl);
     }
 
@@ -1095,8 +892,8 @@ function drawMushrooms(svg, detail, W, groundY) {
     g.addEventListener('mouseenter', () => {
       showTooltip(
         'Mushroom \u2014 Cache Creation',
-        `${formatNumber(detail.cache_creation)} tokens cached`,
-        `Mushrooms sprout when new cache entries are created. ${count} mushroom${count !== 1 ? 's' : ''} = ~${formatNumber(detail.cache_creation)} tokens of fresh context being cached. More mushrooms means more new conversations.`
+        `${formatNumber(detail.cache_creation)} tokens written to cache`,
+        `Cache creation tokens are content the model saw for the first time and wrote into the prompt cache. ${count} mushroom${count !== 1 ? 's' : ''} \u2248 ${formatNumber(detail.cache_creation)} tokens. Lots of mushrooms usually means new prompts, new files being read in, or system-prompt changes that invalidated previous cache prefixes.`
       );
     });
     g.addEventListener('mouseleave', hideTooltip);

@@ -31,7 +31,7 @@ async function loadGuardianCard() {
     if (isActive) {
       stats.innerHTML = `
         <div class="home-card-stat-line">${protectedCount} backend${protectedCount === 1 ? '' : 's'} protected</div>
-        <div class="home-card-stat-line">${patternCount} detection rule${patternCount === 1 ? '' : 's'}</div>
+        <div class="home-card-stat-line">${patternCount} detection${patternCount === 1 ? '' : 's'}</div>
       `;
     } else {
       stats.innerHTML = `

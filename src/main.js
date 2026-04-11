@@ -13,7 +13,7 @@ import {
   initLogsSearch,
   initLogsExport
 } from './logs.js';
-import { initSettings } from './settings.js';
+import { initSettings, loadDetections } from './settings.js';
 import { initBackends, loadPredefinedBackends, refreshGuardianHooks } from './backends.js';
 import { initTokenSaving, refreshTokenSaver } from './token-saving.js';
 import { initHome, loadHome, suspendHome, resumeHome } from './home.js';
@@ -92,6 +92,7 @@ window.addEventListener('DOMContentLoaded', () => {
     if (route === 'guardian') {
       loadPredefinedBackends();
       refreshGuardianHooks();
+      loadDetections();
     }
 
     if (route === 'token-saver') {
