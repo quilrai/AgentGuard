@@ -197,14 +197,13 @@
   color: #666;
 }
 
-.agent-badge-icon {
-  width: 11px;
-  height: 11px;
-  stroke-width: 2.5;
+.agent-badge-status {
+  opacity: 0.7;
 }
 
 .agent-badge-name {
   white-space: nowrap;
+  font-weight: 700;
 }
 
 /* Card title */

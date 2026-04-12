@@ -19,11 +19,10 @@ const TOKEN_SAVER_AGENTS = [
 function renderAgentBadges(container, agents) {
   container.innerHTML = agents.map(a => `
     <span class="agent-badge ${a.installed ? 'agent-badge--installed' : 'agent-badge--missing'}">
-      <i data-lucide="${a.installed ? 'check' : 'x'}" class="agent-badge-icon"></i>
+      <span class="agent-badge-status">${a.installed ? 'Added for' : 'Not added for'}</span>
       <span class="agent-badge-name">${a.name}</span>
     </span>
   `).join('');
-  if (window.lucide) window.lucide.createIcons({ nodes: [container] });
 }
 
 // ============================================================================
@@ -36,28 +35,14 @@ async function loadGuardianCard() {
   if (!agentsEl || !stats) return;
 
   try {
-    const [facts, ...installed] = await Promise.all([
-      invoke('get_home_facts'),
-      ...GUARDIAN_AGENTS.map(a => invoke(a.checkCmd).catch(() => false)),
-    ]);
+    const installed = await Promise.all(
+      GUARDIAN_AGENTS.map(a => invoke(a.checkCmd).catch(() => false)),
+    );
 
     const agents = GUARDIAN_AGENTS.map((a, i) => ({ ...a, installed: installed[i] }));
     renderAgentBadges(agentsEl, agents);
 
-    const patternCount = facts.enabled_pattern_count || 0;
-    const installedCount = agents.filter(a => a.installed).length;
-
-    if (installedCount > 0) {
-      stats.innerHTML = `
-        <div class="home-card-stat-line">${installedCount} agent${installedCount === 1 ? '' : 's'} connected</div>
-        <div class="home-card-stat-line">${patternCount} detection${patternCount === 1 ? '' : 's'}</div>
-      `;
-    } else {
-      stats.innerHTML = `
-        <div class="home-card-stat-line">No agents connected yet</div>
-        <div class="home-card-stat-line">Click to set up</div>
-      `;
-    }
+    stats.innerHTML = '';
   } catch (e) {
     console.error('Failed to load guardian card:', e);
     agentsEl.innerHTML = '';
