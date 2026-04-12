@@ -71,35 +71,21 @@
 }
 
 .topbar-logo {
-  font-size: 1rem;
-  font-weight: 600;
-  color: #fff;
-  letter-spacing: -0.005em;
   display: flex;
-  align-items: baseline;
-  gap: 6px;
-}
-
-.topbar-byline {
-  font-size: 0.7rem;
-  font-weight: 400;
-  color: rgba(255, 255, 255, 0.45);
-}
-
-.topbar-byline .made-by {
-  color: rgba(255, 255, 255, 0.4);
-}
-
-.topbar-byline a {
-  color: #71D083;
+  align-items: center;
   text-decoration: none;
-  font-weight: 500;
-  margin-left: 2px;
-  transition: color 0.2s;
 }
 
-.topbar-byline a:hover {
-  color: #7DD38D;
+.topbar-icon {
+  height: 32px;
+  width: auto;
+  display: block;
+  opacity: 0.92;
+  transition: opacity 0.2s;
+}
+
+.topbar-logo:hover .topbar-icon {
+  opacity: 1;
 }
 
 .topbar-nav {
@@ -111,17 +97,26 @@
 
 .topbar-nav-item {
   position: relative;
-  padding: 8px 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
   background: transparent;
   border: none;
   color: #888;
   font-family: inherit;
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   font-weight: 500;
   letter-spacing: 0.01em;
   cursor: pointer;
   border-radius: 6px;
   transition: color 0.2s, background 0.2s;
+}
+
+.topbar-nav-item svg {
+  width: 15px;
+  height: 15px;
+  stroke-width: 1.8;
 }
 
 .topbar-nav-item:hover {
@@ -135,13 +130,20 @@
 .topbar-nav-item.active::after {
   content: '';
   position: absolute;
-  left: 18px;
-  right: 18px;
+  left: 16px;
+  right: 16px;
   bottom: 2px;
   height: 2px;
   background: #71D083;
   border-radius: 1px;
   box-shadow: 0 0 8px rgba(113, 208, 131, 0.5);
+}
+
+.topbar-nav-sep {
+  width: 1px;
+  height: 18px;
+  background: rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
 }
 
 .topbar-right {

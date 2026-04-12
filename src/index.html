@@ -9,7 +9,7 @@
     <link rel="stylesheet" href="pages-garden.css" />
     <link rel="stylesheet" href="dark-mode.css" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>LLMwatcher</title>
+    <title>Vibefriend</title>
     <script src="lib/chart.min.js"></script>
     <script src="lib/lucide.min.js"></script>
     <script type="module" src="/main.js" defer></script>
@@ -20,16 +20,47 @@
       <!-- Top Bar -->
       <header class="topbar">
         <div class="topbar-left">
-          <h2 class="topbar-logo">
-            LLMwatcher
-            <span class="topbar-byline"><span class="made-by">by</span> <a href="https://quilr.ai" target="_blank">QuilrAI</a></span>
-          </h2>
+          <a class="topbar-logo" href="https://quilr.ai" target="_blank" title="Quilr.ai">
+            <svg class="topbar-icon" xmlns="http://www.w3.org/2000/svg" viewBox="60 330 880 400">
+              <defs>
+                <filter id="tl" x="-10%" y="-800%" width="120%" height="1700%">
+                  <feGaussianBlur in="SourceAlpha" stdDeviation="5" result="blur"/>
+                  <feColorMatrix in="blur" type="matrix" values="0 0 0 0 0.20  0 0 0 0 0.74  0 0 0 0 0.40  0 0 0 1.6 0" result="cb"/>
+                  <feMerge><feMergeNode in="cb"/><feMergeNode in="SourceGraphic"/></feMerge>
+                </filter>
+                <filter id="tr" x="-35%" y="-35%" width="170%" height="170%">
+                  <feGaussianBlur in="SourceAlpha" stdDeviation="14" result="blur"/>
+                  <feColorMatrix in="blur" type="matrix" values="0 0 0 0 0.20  0 0 0 0 0.74  0 0 0 0 0.40  0 0 0 2.4 0" result="cb"/>
+                  <feMerge><feMergeNode in="cb"/><feMergeNode in="SourceGraphic"/></feMerge>
+                </filter>
+              </defs>
+              <g stroke="#4ade80" stroke-linecap="round" opacity="0.76" filter="url(#tl)">
+                <line x1="105" y1="358" x2="433" y2="358" stroke-width="9"/>
+                <line x1="90"  y1="407" x2="432" y2="407" stroke-width="9" stroke="#f87171"/>
+                <line x1="125" y1="456" x2="440" y2="456" stroke-width="9"/>
+                <line x1="95"  y1="505" x2="450" y2="505" stroke-width="9"/>
+                <line x1="112" y1="554" x2="440" y2="554" stroke-width="9" stroke="#f87171"/>
+                <line x1="85"  y1="603" x2="432" y2="603" stroke-width="9"/>
+                <line x1="105" y1="651" x2="433" y2="651" stroke-width="9"/>
+              </g>
+              <path d="M 393,405 A 155,155 0 1 1 393,605" fill="none" stroke="#4ade80" stroke-width="26" stroke-linecap="round" filter="url(#tr)"/>
+              <path d="M 495,560 Q 575,635 700,705" fill="none" stroke="#4ade80" stroke-width="26" stroke-linecap="round" filter="url(#tr)"/>
+              <g stroke="#4ade80" stroke-linecap="round" opacity="0.94" filter="url(#tl)">
+                <line x1="667" y1="460" x2="914" y2="460" stroke-width="9"/>
+                <line x1="667" y1="505" x2="914" y2="505" stroke-width="9"/>
+                <line x1="667" y1="550" x2="914" y2="550" stroke-width="9"/>
+              </g>
+            </svg>
+          </a>
         </div>
         <nav class="topbar-nav">
-          <button class="topbar-nav-item active" data-route="home">Home</button>
-          <button class="topbar-nav-item" data-route="garden">Garden</button>
-          <button class="topbar-nav-item" data-route="analytics">Analytics</button>
-          <button class="topbar-nav-item" data-route="logs">Logs</button>
+          <button class="topbar-nav-item active" data-route="home"><i data-lucide="home"></i><span>Home</span></button>
+          <span class="topbar-nav-sep"></span>
+          <button class="topbar-nav-item" data-route="garden"><i data-lucide="shrub"></i><span>Garden</span></button>
+          <span class="topbar-nav-sep"></span>
+          <button class="topbar-nav-item" data-route="analytics"><i data-lucide="bar-chart-3"></i><span>Analytics</span></button>
+          <span class="topbar-nav-sep"></span>
+          <button class="topbar-nav-item" data-route="logs"><i data-lucide="scroll-text"></i><span>Logs</span></button>
         </nav>
         <div class="topbar-right">
           <div class="proxy-status" id="proxy-status">
