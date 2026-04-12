@@ -197,6 +197,54 @@ function setupSettingsToggle(agent) {
 }
 
 // ---------------------------------------------------------------------------
+// Recommended settings: enable everything
+// ---------------------------------------------------------------------------
+
+async function applyRecommendedTokenSaving() {
+  const btn = document.getElementById('ts-recommend-btn');
+  if (btn) btn.disabled = true;
+
+  try {
+    // Install hooks first
+    try { await invoke('install_compression_hook_claude'); } catch (_) {}
+    try { await invoke('install_ctx_read_hook_claude'); } catch (_) {}
+
+    const settings = await getBackendSettings('claude');
+    if (!settings) throw new Error('Backend not found');
+
+    settings.token_saving.shell_compression = true;
+    settings.token_saving.ctx_read = true;
+    settings.token_saving.search_compressor = true;
+    settings.token_saving.diff_compressor = true;
+    settings.token_saving.tool_crusher = true;
+
+    await saveTokenSaving('claude', settings.token_saving);
+    await refreshAllToggles();
+    updateRecommendHint();
+  } catch (error) {
+    alert(`Failed to apply recommended settings: ${error}`);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function updateRecommendHint() {
+  const toggleStates = ALL_AGENTS.map(a => {
+    const t = document.getElementById(a.toggleId);
+    return t && t.checked;
+  });
+  const allOn = toggleStates.every(Boolean);
+  const noneOn = toggleStates.every(v => !v);
+  const hint = document.getElementById('ts-recommend-hint');
+  const bar = document.getElementById('ts-recommend-bar');
+  if (hint) hint.textContent = allOn ? 'All token saving features active' : 'Enable all token saving features with one click';
+  if (bar) {
+    bar.classList.toggle('is-all-on', allOn);
+    bar.classList.toggle('needs-attention', noneOn);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Refresh / Init
 // ---------------------------------------------------------------------------
 
@@ -210,9 +258,15 @@ async function refreshAllToggles() {
 export function initTokenSaving() {
   HOOK_AGENTS.forEach(a => setupHookToggle(a));
   SETTINGS_AGENTS.forEach(a => setupSettingsToggle(a));
-  refreshAllToggles();
+
+  const recommendBtn = document.getElementById('ts-recommend-btn');
+  if (recommendBtn) {
+    recommendBtn.addEventListener('click', () => applyRecommendedTokenSaving());
+  }
+
+  refreshAllToggles().then(() => updateRecommendHint());
 }
 
 export function refreshTokenSaver() {
-  refreshAllToggles();
+  refreshAllToggles().then(() => updateRecommendHint());
 }

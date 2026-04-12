@@ -597,3 +597,108 @@
   background: rgba(31, 216, 164, 0.12);
   color: #1FD8A4;
 }
+
+/* ============ Recommend bar (shared by guardian + token saver) ============ */
+
+.agent-tiles-recommend,
+.ts-recommend-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 13px;
+  background: rgba(31, 216, 164, 0.06);
+  border: 1px solid rgba(31, 216, 164, 0.15);
+  border-radius: 11px;
+  margin-bottom: 4px;
+  transition: opacity 0.3s ease, background 0.3s ease;
+}
+
+.ts-recommend-bar {
+  margin-bottom: 12px;
+}
+
+.agent-tiles-recommend.is-all-on,
+.ts-recommend-bar.is-all-on {
+  background: rgba(31, 216, 164, 0.04);
+  border-color: rgba(31, 216, 164, 0.08);
+}
+
+.agent-tiles-recommend.is-all-on .recommend-btn,
+.ts-recommend-bar.is-all-on .recommend-btn {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.recommend-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 14px;
+  background: rgba(31, 216, 164, 0.15);
+  color: #1FD8A4;
+  border: 1px solid rgba(31, 216, 164, 0.3);
+  border-radius: 7px;
+  font-family: inherit;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.2s ease, opacity 0.2s ease;
+}
+
+.recommend-btn i,
+.recommend-btn svg {
+  width: 13px;
+  height: 13px;
+}
+
+.recommend-btn:hover:not(:disabled) {
+  background: rgba(31, 216, 164, 0.28);
+}
+
+.recommend-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.recommend-hint {
+  font-size: 0.7rem;
+  color: #7a8086;
+  letter-spacing: 0.01em;
+}
+
+/* Pulse when no settings are enabled */
+.agent-tiles-recommend.needs-attention,
+.ts-recommend-bar.needs-attention {
+  animation: recommend-pulse 2.4s ease-in-out infinite;
+  border-color: rgba(31, 216, 164, 0.35);
+}
+
+.agent-tiles-recommend.needs-attention .recommend-btn,
+.ts-recommend-bar.needs-attention .recommend-btn {
+  animation: recommend-btn-glow 2.4s ease-in-out infinite;
+}
+
+@keyframes recommend-pulse {
+  0%, 100% {
+    background: rgba(31, 216, 164, 0.06);
+    border-color: rgba(31, 216, 164, 0.15);
+  }
+  50% {
+    background: rgba(31, 216, 164, 0.14);
+    border-color: rgba(31, 216, 164, 0.4);
+    box-shadow: 0 0 16px rgba(31, 216, 164, 0.12);
+  }
+}
+
+@keyframes recommend-btn-glow {
+  0%, 100% {
+    background: rgba(31, 216, 164, 0.15);
+    box-shadow: none;
+  }
+  50% {
+    background: rgba(31, 216, 164, 0.3);
+    box-shadow: 0 0 10px rgba(31, 216, 164, 0.2);
+  }
+}

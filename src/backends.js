@@ -317,8 +317,18 @@ function renderSettingsIntoCards() {
     const vulnOn = settings.dependency_protection.block_malicious_packages;
     const updateOn = settings.dependency_protection.inform_updated_packages;
 
+    const allGuardianOn = dlpOn && tokenVal > 0 && vulnOn && updateOn;
+    const noGuardianOn = !dlpOn && tokenVal === 0 && !vulnOn && !updateOn;
+    const recommendClass = allGuardianOn ? ' is-all-on' : noGuardianOn ? ' needs-attention' : '';
+
     container.innerHTML = `
       <div class="agent-tiles">
+        <div class="agent-tiles-recommend${recommendClass}">
+          <button class="recommend-btn" type="button">
+            <i data-lucide="shield-check"></i> Use recommended settings
+          </button>
+          <span class="recommend-hint">${allGuardianOn ? 'All protections active' : 'Enable all protections with one click'}</span>
+        </div>
         <div class="agent-tile tile-protection ${dlpOn ? 'tile-active' : 'tile-muted'}">
           <div class="agent-tile-head">
             <span class="agent-tile-dot"></span>
@@ -446,6 +456,15 @@ function renderSettingsIntoCards() {
         toggleDepProtection(backendName, 'inform_updated_packages', !settings.dependency_protection.inform_updated_packages);
       });
     }
+
+    // Recommended settings: enable all protections
+    const recommendBtn = container.querySelector('.recommend-btn');
+    if (recommendBtn) {
+      recommendBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        applyRecommendedGuardian(backendName);
+      });
+    }
   }
 }
 
@@ -495,6 +514,22 @@ async function saveLimits(container, backendName) {
     loadPredefinedBackends();
   } catch (error) {
     alert(`Failed to save: ${error}`);
+  }
+}
+
+async function applyRecommendedGuardian(backendName) {
+  const existing = predefinedBackends.find(b => b.name === backendName);
+  const s = existing ? parseSettings(existing.settings) : parseSettings('{}');
+
+  const depProt = { block_malicious_packages: true, inform_updated_packages: true };
+  const settings = buildSettingsJson(true, 200000, 'block', s.token_saving, depProt);
+
+  try {
+    await invoke('update_predefined_backend', { name: backendName, settings });
+    await invoke('restart_server');
+    loadPredefinedBackends();
+  } catch (error) {
+    alert(`Failed to apply recommended settings: ${error}`);
   }
 }
 
