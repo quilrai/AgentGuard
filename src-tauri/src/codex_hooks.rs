@@ -692,7 +692,63 @@ async fn post_tool_handler(
         }
     }
 
+    // ---- Symbol extraction (best-effort) ----
+    extract_symbols_for_tool(&state.db, &input.tool_name, &input.tool_input, input.cwd.as_deref());
+
     (StatusCode::OK, Json(GenericResponse { status: "ok".to_string() }))
+}
+
+/// If the tool touched a file, extract symbols via tree-sitter (best-effort).
+fn extract_symbols_for_tool(
+    db: &crate::database::Database,
+    tool_name: &str,
+    tool_input: &Value,
+    cwd: Option<&str>,
+) {
+    let is_file_tool = matches!(tool_name, "Read" | "Write" | "Edit" | "Bash");
+    if !is_file_tool {
+        return;
+    }
+
+    // For Bash tool, try to extract file paths from the command.
+    let file_paths: Vec<String> = if tool_name == "Bash" {
+        // Codex only has Bash — paths are extracted by the garden's
+        // extract_paths_from_bash, but here we do a simpler check: look for
+        // paths in the command that are supported extensions.
+        let cmd = json_str(tool_input, "command").unwrap_or_default();
+        let cwd_path = std::path::Path::new(cwd.unwrap_or("."));
+        crate::symbols::paths_from_bash_for_symbols(&cmd, cwd_path)
+    } else {
+        json_str(tool_input, "file_path")
+            .or_else(|| json_str(tool_input, "path"))
+            .into_iter()
+            .collect()
+    };
+
+    let cwd = match cwd {
+        Some(c) => c,
+        None => return,
+    };
+
+    for file_path in file_paths {
+        if !crate::symbols::is_supported_extension(&file_path) {
+            continue;
+        }
+        let content = match std::fs::read_to_string(&file_path) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        let symbols = crate::symbols::extract_symbols(&file_path, &content);
+        if symbols.is_empty() {
+            continue;
+        }
+        let rel_path = if file_path.starts_with(cwd) {
+            file_path[cwd.len()..].trim_start_matches('/').to_string()
+        } else {
+            file_path.clone()
+        };
+        let _ = db.upsert_file_symbols(cwd, &rel_path, &symbols);
+    }
 }
 
 /// POST /codex_hook/stop

@@ -20,6 +20,7 @@ mod predefined_backend_settings;
 mod requestresponsemetadata;
 mod server;
 mod shell_compression;
+pub mod symbols;
 mod token_saving;
 
 use database::get_port_from_db;
@@ -236,6 +237,9 @@ pub fn run() {
             // Garden
             commands::get_garden_stats,
             commands::get_garden_detail,
+            // Garden symbols (tree-sitter)
+            commands::get_file_symbols,
+            commands::get_import_graph,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -348,6 +348,8 @@
                   <svg id="garden-svg" class="garden-svg" viewBox="0 0 1200 700" preserveAspectRatio="xMidYMid meet"></svg>
                   <!-- Hover tooltip -->
                   <div class="garden-tooltip" id="garden-tooltip" style="display:none;"></div>
+                  <!-- Symbol panel (expanded tree detail with imports/functions) -->
+                  <div class="garden-symbol-panel" id="garden-symbol-panel" style="display:none;"></div>
 
                   <!-- Coin rows (input token spend, gold/copper) — HTML overlay so it stays in sync with Quilly's positioning regardless of scene scaling -->
                   <div class="garden-coin-rows" id="garden-coin-rows"></div>
@@ -461,12 +463,30 @@
           <div class="modal-content detections-modal-content">
             <div class="modal-header">
               <h3>Detections</h3>
+              <div class="detections-modal-summary" id="detections-modal-summary">0 / 0 enabled</div>
               <button class="modal-close" id="close-detections-modal">&times;</button>
             </div>
             <div class="modal-body detections-modal-body">
-              <div class="detections-modal-summary" id="detections-modal-summary">0 / 0 enabled</div>
-              <div class="detections-list" id="detections-list">
-                <p class="detections-empty">Loading…</p>
+              <div class="detections-columns">
+                <div class="detections-column">
+                  <div class="detections-column-header">
+                    <span class="detections-column-title">Auth &amp; Secrets</span>
+                    <span class="detections-column-count" id="detections-secrets-count">0/0</span>
+                  </div>
+                  <div class="detections-list" id="detections-list-secrets">
+                    <p class="detections-empty">Loading…</p>
+                  </div>
+                </div>
+                <div class="detections-column-divider"></div>
+                <div class="detections-column">
+                  <div class="detections-column-header">
+                    <span class="detections-column-title">Sensitive Information</span>
+                    <span class="detections-column-count" id="detections-pii-count">0/0</span>
+                  </div>
+                  <div class="detections-list" id="detections-list-pii">
+                    <p class="detections-empty">Loading…</p>
+                  </div>
+                </div>
               </div>
             </div>
             <div class="modal-footer detections-modal-footer">

@@ -441,6 +441,7 @@ pub fn test_dlp_pattern(
         &compiled.regexes,
         &compiled.negative_regexes,
         min_unique_chars,
+        None, // No validator for manual test — tests raw regex matches
     );
 
     // Filter by min_occurrences threshold

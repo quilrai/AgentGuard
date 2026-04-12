@@ -1574,3 +1574,128 @@ pub fn get_garden_detail(cwd: String, time_range: String) -> Result<GardenDetail
     })
 }
 
+// ============================================================================
+// Garden symbols — tree-sitter extracted imports & definitions
+// ============================================================================
+
+#[derive(Serialize)]
+pub struct FileSymbolsResponse {
+    pub file_path: String,
+    pub symbols: Vec<crate::symbols::ExtractedSymbol>,
+}
+
+#[derive(Serialize)]
+pub struct ImportEdge {
+    /// File that contains the import statement.
+    pub from_file: String,
+    /// Import source string (e.g. "react", "../utils", "std::collections").
+    pub import_source: String,
+    /// Resolved target file within the project (if we can match it), or empty.
+    pub to_file: String,
+}
+
+#[derive(Serialize)]
+pub struct ImportGraphResponse {
+    pub cwd: String,
+    pub edges: Vec<ImportEdge>,
+}
+
+/// Get symbols for a single file in a project.
+#[tauri::command]
+pub fn get_file_symbols(cwd: String, file_path: String) -> Result<FileSymbolsResponse, String> {
+    let conn = open_connection().map_err(|e| e.to_string())?;
+    let db = crate::database::Database::from_connection(conn);
+
+    let symbols = db.get_file_symbols(&cwd, &file_path).map_err(|e| e.to_string())?;
+
+    Ok(FileSymbolsResponse { file_path, symbols })
+}
+
+/// Get the import graph for a project: which files import from where.
+/// Tries to resolve import sources to files within the project.
+#[tauri::command]
+pub fn get_import_graph(cwd: String) -> Result<ImportGraphResponse, String> {
+    let conn = open_connection().map_err(|e| e.to_string())?;
+    let db = crate::database::Database::from_connection(conn);
+
+    let all = db.get_project_symbols(&cwd).map_err(|e| e.to_string())?;
+
+    // Collect all known file paths in the project for resolution.
+    let known_files: std::collections::HashSet<String> = all.iter().map(|(fp, _)| fp.clone()).collect();
+
+    let mut edges = Vec::new();
+
+    for (file_path, sym) in &all {
+        if sym.kind != "import" {
+            continue;
+        }
+        let src = match &sym.source {
+            Some(s) if !s.is_empty() => s.clone(),
+            _ => sym.name.clone(),
+        };
+
+        // Try to resolve to a project file.
+        let to_file = resolve_import(&src, file_path, &known_files);
+
+        edges.push(ImportEdge {
+            from_file: file_path.clone(),
+            import_source: src,
+            to_file,
+        });
+    }
+
+    // Deduplicate by (from_file, import_source).
+    edges.sort_by(|a, b| (&a.from_file, &a.import_source).cmp(&(&b.from_file, &b.import_source)));
+    edges.dedup_by(|a, b| a.from_file == b.from_file && a.import_source == b.import_source);
+
+    Ok(ImportGraphResponse { cwd, edges })
+}
+
+/// Best-effort resolution of an import source to a known project file.
+fn resolve_import(
+    import_src: &str,
+    from_file: &str,
+    known_files: &std::collections::HashSet<String>,
+) -> String {
+    // Relative imports: "./foo", "../bar/baz"
+    if import_src.starts_with('.') {
+        let from_dir = from_file.rsplit_once('/').map(|(d, _)| d).unwrap_or("");
+        // Try common extensions.
+        for ext in &["", ".js", ".ts", ".tsx", ".jsx", ".py", ".rs", "/index.js", "/index.ts", "/mod.rs"] {
+            let candidate = format!("{}/{}{}", from_dir, import_src.trim_start_matches("./"), ext);
+            // Normalize ../
+            let normalized = normalize_path(&candidate);
+            if known_files.contains(&normalized) {
+                return normalized;
+            }
+        }
+    }
+
+    // Bare imports: check if any known file's path ends with the import source.
+    // e.g. "commands/stats" might match "src-tauri/src/commands/stats.rs"
+    let cleaned = import_src.replace("::", "/");
+    for ext in &["", ".js", ".ts", ".py", ".rs", ".go", ".java", ".rb", ".cs"] {
+        let suffix = format!("{}{}", cleaned, ext);
+        for f in known_files {
+            if f.ends_with(&suffix) {
+                return f.clone();
+            }
+        }
+    }
+
+    String::new()
+}
+
+/// Normalize a path by resolving `../` segments.
+fn normalize_path(path: &str) -> String {
+    let mut parts: Vec<&str> = Vec::new();
+    for seg in path.split('/') {
+        match seg {
+            ".." => { parts.pop(); }
+            "." | "" => {}
+            s => parts.push(s),
+        }
+    }
+    parts.join("/")
+}
+

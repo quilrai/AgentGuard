@@ -412,21 +412,36 @@
 
 /* ============ SVG Animations ============ */
 
-/* Leaf sway */
-@keyframes leafSway {
+/* Canopy tier sway (subtle, gentler than old leaf sway) */
+@keyframes canopySway {
   0%, 100% { transform: rotate(0deg); }
-  25% { transform: rotate(2.5deg); }
-  75% { transform: rotate(-2.5deg); }
+  25% { transform: rotate(1.2deg); }
+  75% { transform: rotate(-1.2deg); }
 }
 
-.garden-leaf {
-  animation: leafSway 4s ease-in-out infinite;
+.garden-canopy-tier {
+  animation: canopySway 5s ease-in-out infinite;
   transform-origin: bottom center;
 }
 
-.garden-leaf:nth-child(odd) {
-  animation-delay: -1.5s;
-  animation-duration: 3.2s;
+.garden-canopy-tier:nth-child(odd) {
+  animation-delay: -2s;
+  animation-duration: 4.2s;
+}
+
+/* Bush leaf bob */
+@keyframes bushBob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-1.5px); }
+}
+
+.garden-bush-leaf {
+  animation: bushBob 3.5s ease-in-out infinite;
+  transform-origin: center;
+}
+
+.garden-bush-leaf:nth-child(odd) {
+  animation-delay: -1.2s;
 }
 
 /* Trunk grow */
@@ -480,15 +495,34 @@
   text-anchor: middle;
 }
 
-/* ============ File trees + groves ============ */
+/* ============ File trees, bushes & groves ============ */
 
 .garden-tree {
   cursor: pointer;
   transition: opacity 0.3s;
 }
 
-.garden-tree:hover .garden-leaf {
+.garden-tree:hover .garden-canopy-tier {
   filter: brightness(1.15);
+}
+
+.garden-bush:hover .garden-bush-leaf {
+  filter: brightness(1.2);
+}
+
+/* Clearing sub-labels */
+.garden-clearing-label {
+  pointer-events: none;
+}
+
+/* Undergrowth "+N more" label */
+.garden-undergrowth-more {
+  cursor: help;
+  transition: fill 0.15s;
+}
+
+.garden-undergrowth-more:hover {
+  fill: #71D083 !important;
 }
 
 .garden-grove-label,
@@ -531,4 +565,188 @@
   height: 7px;
   border-radius: 50%;
   flex-shrink: 0;
+}
+
+/* ============ Symbol Panel (expanded file detail) ============ */
+
+.garden-symbol-panel {
+  position: absolute;
+  top: 60px;
+  right: 14px;
+  bottom: 12px;
+  width: 280px;
+  background: rgba(20, 22, 24, 0.95);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 14px;
+  overflow-y: auto;
+  z-index: 25;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  animation: symbolPanelIn 0.25s ease-out;
+  scrollbar-width: thin;
+  scrollbar-color: #333 transparent;
+}
+
+.garden-symbol-panel::-webkit-scrollbar {
+  width: 5px;
+}
+
+.garden-symbol-panel::-webkit-scrollbar-thumb {
+  background: #333;
+  border-radius: 3px;
+}
+
+@keyframes symbolPanelIn {
+  from { opacity: 0; transform: translateX(12px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+.garden-symbol-header {
+  font-size: 12px;
+  font-weight: 700;
+  color: #e0e0e0;
+  margin-bottom: 8px;
+  word-break: break-all;
+  line-height: 1.4;
+}
+
+.garden-symbol-stats {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 10px;
+  color: #888;
+  margin-bottom: 10px;
+}
+
+.garden-symbol-stats span {
+  padding: 2px 6px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.garden-symbol-backend {
+  color: #71D083 !important;
+}
+
+.garden-symbol-backend-bar {
+  display: flex;
+  height: 4px;
+  border-radius: 2px;
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+
+.garden-symbol-bar-seg {
+  height: 100%;
+  min-width: 3px;
+}
+
+.garden-symbol-section {
+  margin-bottom: 10px;
+}
+
+.garden-symbol-section-title {
+  font-size: 10px;
+  font-weight: 600;
+  color: #71D083;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+  padding-bottom: 3px;
+  border-bottom: 1px solid rgba(113, 208, 131, 0.15);
+}
+
+.garden-symbol-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.garden-symbol-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  color: #ccc;
+  transition: background 0.1s;
+}
+
+.garden-symbol-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.garden-symbol-kind {
+  font-size: 8px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: #666;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 1px 4px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  min-width: 22px;
+  text-align: center;
+}
+
+.garden-symbol-item.import .garden-symbol-kind {
+  color: #5b9bd5;
+}
+
+.garden-symbol-item.def .garden-symbol-kind {
+  color: #f5c542;
+}
+
+.garden-symbol-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 10.5px;
+}
+
+.garden-symbol-dim {
+  color: #666;
+}
+
+.garden-symbol-line {
+  font-size: 9px;
+  color: #555;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.garden-symbol-more {
+  font-size: 9px;
+  color: #555;
+  padding: 2px 6px;
+  font-style: italic;
+}
+
+.garden-symbol-loading {
+  font-size: 11px;
+  color: #666;
+  padding: 20px 0;
+  text-align: center;
+}
+
+.garden-symbol-empty {
+  font-size: 10px;
+  color: #555;
+  padding: 16px 0;
+  text-align: center;
+  line-height: 1.5;
+}
+
+/* Import edges between trees */
+.garden-import-edge {
+  pointer-events: none;
+  transition: opacity 0.3s;
 }

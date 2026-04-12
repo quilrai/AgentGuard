@@ -770,6 +770,25 @@ async fn before_tab_file_read_handler(
         }
     }
 
+    // ---- Symbol extraction (best-effort) ----
+    if crate::symbols::is_supported_extension(&input.file_path) {
+        let cwd = metadata.workspace_roots.first().cloned().unwrap_or_default();
+        if !cwd.is_empty() {
+            let file_content = std::fs::read_to_string(&input.file_path).unwrap_or_default();
+            if !file_content.is_empty() {
+                let symbols = crate::symbols::extract_symbols(&input.file_path, &file_content);
+                if !symbols.is_empty() {
+                    let rel = if input.file_path.starts_with(&cwd) {
+                        input.file_path[cwd.len()..].trim_start_matches('/').to_string()
+                    } else {
+                        input.file_path.clone()
+                    };
+                    let _ = state.db.upsert_file_symbols(&cwd, &rel, &symbols);
+                }
+            }
+        }
+    }
+
     (StatusCode::OK, Json(response))
 }
 

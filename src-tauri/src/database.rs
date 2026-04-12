@@ -71,6 +71,14 @@ pub struct Database {
 }
 
 impl Database {
+    /// Wrap an already-open connection into a Database handle. Useful in Tauri
+    /// commands that get a `Connection` from `open_connection()`.
+    pub fn from_connection(conn: Connection) -> Self {
+        Self {
+            conn: Arc::new(Mutex::new(conn)),
+        }
+    }
+
     pub fn new(path: &str) -> Result<Self, rusqlite::Error> {
         ensure_db_version_once(path);
 
@@ -149,10 +157,17 @@ impl Database {
                 min_occurrences INTEGER DEFAULT 1,
                 min_unique_chars INTEGER DEFAULT 0,
                 is_builtin INTEGER DEFAULT 0,
+                validator_name TEXT,
                 created_at TEXT NOT NULL
             )",
             [],
         )?;
+
+        // Add validator_name column if upgrading from older schema
+        let _ = conn.execute(
+            "ALTER TABLE dlp_patterns ADD COLUMN validator_name TEXT",
+            [],
+        );
 
         // Seed builtin patterns if not exists
         Self::seed_builtin_patterns(&conn)?;
@@ -207,6 +222,27 @@ impl Database {
             [],
         )?;
 
+        // Create file_symbols table for tree-sitter extracted symbols
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS file_symbols (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                cwd TEXT NOT NULL,
+                file_path TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                name TEXT NOT NULL,
+                source TEXT,
+                line INTEGER NOT NULL,
+                updated_at TEXT NOT NULL
+            )",
+            [],
+        )?;
+
+        // Index for fast per-file and per-project lookups
+        let _ = conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_file_symbols_cwd_path ON file_symbols(cwd, file_path)",
+            [],
+        );
+
         // Store version
         conn.execute(
             "INSERT OR REPLACE INTO settings (key, value) VALUES ('db_version', ?1)",
@@ -245,7 +281,7 @@ impl Database {
             if let Some(id) = existing_id {
                 // Update existing pattern (preserve enabled state)
                 conn.execute(
-                    "UPDATE dlp_patterns SET pattern_type = ?1, patterns = ?2, negative_pattern_type = ?3, negative_patterns = ?4, min_occurrences = ?5, min_unique_chars = ?6 WHERE id = ?7",
+                    "UPDATE dlp_patterns SET pattern_type = ?1, patterns = ?2, negative_pattern_type = ?3, negative_patterns = ?4, min_occurrences = ?5, min_unique_chars = ?6, validator_name = ?7 WHERE id = ?8",
                     rusqlite::params![
                         pattern.pattern_type,
                         patterns_json,
@@ -253,14 +289,15 @@ impl Database {
                         negative_patterns_json,
                         pattern.min_occurrences,
                         pattern.min_unique_chars,
+                        pattern.validator_name,
                         id
                     ],
                 )?;
             } else {
                 // Insert new pattern
                 conn.execute(
-                    "INSERT INTO dlp_patterns (name, pattern_type, patterns, negative_pattern_type, negative_patterns, enabled, min_occurrences, min_unique_chars, is_builtin, created_at)
-                     VALUES (?1, ?2, ?3, ?4, ?5, 1, ?6, ?7, 1, ?8)",
+                    "INSERT INTO dlp_patterns (name, pattern_type, patterns, negative_pattern_type, negative_patterns, enabled, min_occurrences, min_unique_chars, is_builtin, validator_name, created_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, 1, ?6, ?7, 1, ?8, ?9)",
                     rusqlite::params![
                         pattern.name,
                         pattern.pattern_type,
@@ -269,6 +306,7 @@ impl Database {
                         negative_patterns_json,
                         pattern.min_occurrences,
                         pattern.min_unique_chars,
+                        pattern.validator_name,
                         created_at
                     ],
                 )?;
@@ -839,6 +877,108 @@ impl Database {
         )?;
 
         Ok(())
+    }
+
+    // ---- File symbols (tree-sitter) ----
+
+    /// Replace all symbols for a given (cwd, file_path) with fresh extractions.
+    pub fn upsert_file_symbols(
+        &self,
+        cwd: &str,
+        file_path: &str,
+        symbols: &[crate::symbols::ExtractedSymbol],
+    ) -> Result<(), rusqlite::Error> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono::Utc::now().to_rfc3339();
+
+        // Delete old symbols for this file.
+        conn.execute(
+            "DELETE FROM file_symbols WHERE cwd = ?1 AND file_path = ?2",
+            rusqlite::params![cwd, file_path],
+        )?;
+
+        // Batch insert new symbols.
+        let mut stmt = conn.prepare(
+            "INSERT INTO file_symbols (cwd, file_path, kind, name, source, line, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        )?;
+
+        for sym in symbols {
+            stmt.execute(rusqlite::params![
+                cwd,
+                file_path,
+                sym.kind,
+                sym.name,
+                sym.source,
+                sym.line,
+                now,
+            ])?;
+        }
+
+        Ok(())
+    }
+
+    /// Query symbols for a single file in a project.
+    pub fn get_file_symbols(
+        &self,
+        cwd: &str,
+        file_path: &str,
+    ) -> Result<Vec<crate::symbols::ExtractedSymbol>, rusqlite::Error> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT kind, name, source, line FROM file_symbols
+             WHERE cwd = ?1 AND file_path = ?2
+             ORDER BY line",
+        )?;
+
+        let rows = stmt.query_map(rusqlite::params![cwd, file_path], |row| {
+            Ok(crate::symbols::ExtractedSymbol {
+                kind: row.get(0)?,
+                name: row.get(1)?,
+                source: row.get(2)?,
+                line: row.get::<_, u32>(3)?,
+            })
+        })?;
+
+        let mut out = Vec::new();
+        for r in rows {
+            if let Ok(sym) = r {
+                out.push(sym);
+            }
+        }
+        Ok(out)
+    }
+
+    /// Query all symbols for every file in a project (for the garden import graph).
+    pub fn get_project_symbols(
+        &self,
+        cwd: &str,
+    ) -> Result<Vec<(String, crate::symbols::ExtractedSymbol)>, rusqlite::Error> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT file_path, kind, name, source, line FROM file_symbols
+             WHERE cwd = ?1
+             ORDER BY file_path, line",
+        )?;
+
+        let rows = stmt.query_map(rusqlite::params![cwd], |row| {
+            let fp: String = row.get(0)?;
+            let sym = crate::symbols::ExtractedSymbol {
+                kind: row.get(1)?,
+                name: row.get(2)?,
+                source: row.get(3)?,
+                line: row.get::<_, u32>(4)?,
+            };
+            Ok((fp, sym))
+        })?;
+
+        let mut out = Vec::new();
+        for r in rows {
+            if let Ok(pair) = r {
+                out.push(pair);
+            }
+        }
+        Ok(out)
     }
 }
 

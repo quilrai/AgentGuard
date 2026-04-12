@@ -801,7 +801,65 @@ async fn post_tool_handler(
         }
     }
 
+    // ---- Symbol extraction (best-effort, fire-and-forget) ----
+    extract_symbols_for_tool(&state.db, &input.tool_name, &input.tool_input, input.cwd.as_deref());
+
     (StatusCode::OK, Json(GenericResponse { status: "ok".to_string() }))
+}
+
+/// If the tool touched a file (Read/Write/Edit), read it from disk and
+/// extract symbols via tree-sitter. Failures are silently ignored — symbol
+/// data is supplementary, never blocking.
+fn extract_symbols_for_tool(
+    db: &crate::database::Database,
+    tool_name: &str,
+    tool_input: &Value,
+    cwd: Option<&str>,
+) {
+    // Only process file-touching tools.
+    let is_file_tool = matches!(
+        tool_name,
+        "Read" | "Write" | "Edit" | "NotebookEdit" | "read_file" | "write_file" | "edit_file"
+    );
+    if !is_file_tool {
+        return;
+    }
+
+    let file_path = match json_str(tool_input, "file_path")
+        .or_else(|| json_str(tool_input, "path"))
+    {
+        Some(p) => p,
+        None => return,
+    };
+
+    if !crate::symbols::is_supported_extension(&file_path) {
+        return;
+    }
+
+    let cwd = match cwd {
+        Some(c) => c.to_string(),
+        None => return,
+    };
+
+    // Read file from disk (more reliable than parsing tool_response).
+    let content = match std::fs::read_to_string(&file_path) {
+        Ok(c) => c,
+        Err(_) => return,
+    };
+
+    let symbols = crate::symbols::extract_symbols(&file_path, &content);
+    if symbols.is_empty() {
+        return;
+    }
+
+    // Make path relative to cwd for storage.
+    let rel_path = if file_path.starts_with(&cwd) {
+        file_path[cwd.len()..].trim_start_matches('/').to_string()
+    } else {
+        file_path.clone()
+    };
+
+    let _ = db.upsert_file_symbols(&cwd, &rel_path, &symbols);
 }
 
 /// POST /claude_hook/stop

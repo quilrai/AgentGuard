@@ -4,6 +4,7 @@
 // them. Used by hook receivers (e.g. cursor_hooks) to decide whether to
 // allow or block a request.
 
+use crate::builtin_patterns::get_validator_by_name;
 use crate::database::open_connection;
 use crate::pattern_utils::{
     compile_pattern_set, count_unique_chars, is_match_excluded_by_context,
@@ -28,6 +29,8 @@ pub struct CompiledDlpPattern {
     pub negative_regexes: Vec<Regex>,
     pub min_occurrences: i32,
     pub min_unique_chars: i32,
+    /// Optional post-match validator (e.g. Luhn checksum for credit cards)
+    pub validator: Option<fn(&str) -> bool>,
 }
 
 /// Get all enabled DLP patterns from database
@@ -41,14 +44,14 @@ pub fn get_enabled_dlp_patterns() -> Vec<CompiledDlpPattern> {
 
     let mut stmt = match conn.prepare(
         "SELECT name, pattern_type, patterns, negative_pattern_type, negative_patterns,
-                min_occurrences, min_unique_chars
+                min_occurrences, min_unique_chars, validator_name
          FROM dlp_patterns WHERE enabled = 1",
     ) {
         Ok(s) => s,
         Err(_) => return patterns,
     };
 
-    let db_patterns: Vec<(String, String, String, Option<String>, Option<String>, i32, i32)> = stmt
+    let db_patterns: Vec<(String, String, String, Option<String>, Option<String>, i32, i32, Option<String>)> = stmt
         .query_map([], |row| {
             Ok((
                 row.get::<_, String>(0)?,
@@ -58,13 +61,14 @@ pub fn get_enabled_dlp_patterns() -> Vec<CompiledDlpPattern> {
                 row.get::<_, Option<String>>(4)?,
                 row.get::<_, i32>(5)?,
                 row.get::<_, i32>(6)?,
+                row.get::<_, Option<String>>(7)?,
             ))
         })
         .ok()
         .map(|iter| iter.filter_map(|r| r.ok()).collect())
         .unwrap_or_default();
 
-    for (name, pattern_type, patterns_json, negative_pattern_type, negative_patterns_json, min_occurrences, min_unique_chars) in db_patterns {
+    for (name, pattern_type, patterns_json, negative_pattern_type, negative_patterns_json, min_occurrences, min_unique_chars, validator_name) in db_patterns {
         let pattern_list: Vec<String> = serde_json::from_str(&patterns_json).unwrap_or_default();
 
         // Parse negative patterns if present
@@ -86,6 +90,11 @@ pub fn get_enabled_dlp_patterns() -> Vec<CompiledDlpPattern> {
             }
         };
 
+        // Resolve validator function from name
+        let validator = validator_name
+            .as_deref()
+            .and_then(get_validator_by_name);
+
         if !compiled.regexes.is_empty() {
             patterns.push(CompiledDlpPattern {
                 name,
@@ -94,6 +103,7 @@ pub fn get_enabled_dlp_patterns() -> Vec<CompiledDlpPattern> {
                 negative_regexes: compiled.negative_regexes,
                 min_occurrences,
                 min_unique_chars,
+                validator,
             });
         }
     }
@@ -136,6 +146,13 @@ pub fn check_dlp_patterns(text: &str) -> Vec<DlpDetection> {
                 if pattern.min_unique_chars > 0 {
                     let unique_count = count_unique_chars(&matched);
                     if (unique_count as i32) < pattern.min_unique_chars {
+                        continue;
+                    }
+                }
+
+                // Run post-match validator (e.g. Luhn/Verhoeff checksum)
+                if let Some(validate) = pattern.validator {
+                    if !validate(&matched) {
                         continue;
                     }
                 }

@@ -248,28 +248,51 @@ export async function setAllDetections(enabled) {
 
 // ============ Detections Modal ============
 
+// Categorize patterns into Auth/Secrets vs Sensitive Info (PII)
+// Any pattern whose name contains one of these keywords is auth/secrets.
+const AUTH_SECRETS_KEYWORDS = [
+  'api', 'key', 'token', 'secret', 'credential', 'password',
+  'aws', 'database', 'webhook', 'jwt', 'private key', 'slack',
+  'stripe', 'sendgrid', 'twilio', 'github', 'discord',
+];
+
+function categorizeDetection(name) {
+  const lower = name.toLowerCase();
+  if (AUTH_SECRETS_KEYWORDS.some(kw => lower.includes(kw))) return 'secrets';
+  return 'pii';
+}
+
 function renderDetectionsList() {
-  const list = document.getElementById('detections-list');
+  const secretsList = document.getElementById('detections-list-secrets');
+  const piiList = document.getElementById('detections-list-pii');
   const summary = document.getElementById('detections-modal-summary');
-  if (!list) return;
+  const secretsCount = document.getElementById('detections-secrets-count');
+  const piiCount = document.getElementById('detections-pii-count');
 
   const total = dlpDetections.length;
   const enabled = dlpDetections.filter(d => d.enabled).length;
   if (summary) summary.textContent = `${enabled} / ${total} enabled`;
 
-  if (total === 0) {
-    list.innerHTML = '<p class="detections-empty">No detections configured</p>';
-    return;
-  }
+  const secrets = dlpDetections.filter(d => categorizeDetection(d.name) === 'secrets');
+  const pii = dlpDetections.filter(d => categorizeDetection(d.name) === 'pii');
 
-  list.innerHTML = dlpDetections.map(d => `
-    <label class="detections-row" data-id="${d.id}">
-      <input type="checkbox" class="detections-row-check" data-id="${d.id}" ${d.enabled ? 'checked' : ''} />
-      <span class="detections-row-name">${escapeHtml(d.name)}</span>
-    </label>
-  `).join('');
+  if (secretsCount) secretsCount.textContent = `${secrets.filter(d => d.enabled).length}/${secrets.length}`;
+  if (piiCount) piiCount.textContent = `${pii.filter(d => d.enabled).length}/${pii.length}`;
 
-  list.querySelectorAll('.detections-row-check').forEach(cb => {
+  const renderGroup = (items) => items.length === 0
+    ? '<p class="detections-empty">None</p>'
+    : items.map(d => `
+      <label class="detections-row" data-id="${d.id}">
+        <input type="checkbox" class="detections-row-check" data-id="${d.id}" ${d.enabled ? 'checked' : ''} />
+        <span class="detections-row-name">${escapeHtml(d.name)}</span>
+      </label>
+    `).join('');
+
+  if (secretsList) secretsList.innerHTML = renderGroup(secrets);
+  if (piiList) piiList.innerHTML = renderGroup(pii);
+
+  // Attach handlers to both lists
+  document.querySelectorAll('.detections-list .detections-row-check').forEach(cb => {
     cb.addEventListener('change', async (e) => {
       e.stopPropagation();
       const id = parseInt(cb.dataset.id);

@@ -124,12 +124,14 @@ pub struct MatchResult {
 /// - First finds all positive matches
 /// - For each match, checks if any negative pattern matches within its context window
 /// - Applies min_unique_chars filter to individual matches
+/// - Runs optional validator function (e.g. Luhn/Verhoeff checksum)
 /// - Returns unique matches (deduplicated)
 pub fn collect_matches_with_negative_context(
     text: &str,
     regexes: &[Regex],
     negative_regexes: &[Regex],
     min_unique_chars: i32,
+    validator: Option<fn(&str) -> bool>,
 ) -> MatchResult {
     let mut all_matches: Vec<String> = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
@@ -151,6 +153,13 @@ pub fn collect_matches_with_negative_context(
             if min_unique_chars > 0 {
                 let unique_count = count_unique_chars(&matched);
                 if (unique_count as i32) < min_unique_chars {
+                    continue;
+                }
+            }
+
+            // Run post-match validator (e.g. Luhn/Verhoeff checksum)
+            if let Some(validate) = validator {
+                if !validate(&matched) {
                     continue;
                 }
             }
@@ -229,7 +238,7 @@ mod tests {
         let pos_regexes = compile_patterns(&vec![r"sk-[a-z0-9]+".to_string()], "regex").unwrap();
         let neg_regexes = compile_patterns(&vec!["test".to_string()], "keyword").unwrap();
 
-        let result = collect_matches_with_negative_context(text, &pos_regexes, &neg_regexes, 0);
+        let result = collect_matches_with_negative_context(text, &pos_regexes, &neg_regexes, 0, None);
 
         // Only sk-prod456 should remain (sk-test123 excluded due to "testing" in context)
         assert_eq!(result.matches.len(), 1);
@@ -258,7 +267,7 @@ mod tests {
     #[test]
     fn test_collect_matches() {
         let regexes = compile_patterns(&vec![r"\d+".to_string()], "regex").unwrap();
-        let result = collect_matches_with_negative_context("123 456 123", &regexes, &[], 0);
+        let result = collect_matches_with_negative_context("123 456 123", &regexes, &[], 0, None);
         assert_eq!(result.matches.len(), 2); // unique: 123, 456
     }
 }
