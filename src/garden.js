@@ -268,8 +268,17 @@ function renderGardenScene() {
   svg.innerHTML = '';
   if (helpMode) svg.classList.add('help-mode');
 
-  const W = 1200, H = 700;
-  const GROUND_Y = 520;
+  // Dynamic viewBox: match container height so the SVG fills
+  // vertically with no letterboxing. Width may exceed the container
+  // for big repos — the wrapper scrolls horizontally.
+  const container = document.querySelector('.garden-scene-wrap');
+  const cRect = container ? container.getBoundingClientRect() : null;
+  const containerW = (cRect && cRect.width > 0) ? cRect.width : 1200;
+  const containerH = (cRect && cRect.height > 0) ? cRect.height : 700;
+  // Base W on container width (1:1 px mapping); will be expanded if groves need more room.
+  let W = Math.max(containerW, 800);
+  const H = containerH;
+  const GROUND_Y = H - 160;
 
   // ---- Defs ----
   const defs = el('defs');
@@ -294,24 +303,12 @@ function renderGardenScene() {
   `;
   svg.appendChild(defs);
 
-  // ---- Sky + stars ----
-  svg.appendChild(rect(0, 0, W, H, 'url(#gSky)'));
-  for (let i = 0; i < 50; i++) {
-    const s = el('circle');
-    s.setAttribute('class', 'garden-star');
-    setA(s, { cx: rand(0, W), cy: rand(0, GROUND_Y * 0.5), r: rand(0.4, 1.4), fill: '#c8dcff' });
-    s.style.animationDelay = `${-rand(0, 3)}s`;
-    svg.appendChild(s);
-  }
-
-  // ---- Ground ----
-  svg.appendChild(rect(0, GROUND_Y, W, H - GROUND_Y, 'url(#gGround)'));
-  const gl = el('line');
-  setA(gl, { x1: 0, y1: GROUND_Y, x2: W, y2: GROUND_Y, stroke: '#3d5e2a', 'stroke-width': 2, opacity: 0.5 });
-  svg.appendChild(gl);
-
   // ---- Empty state ----
   if (!gardenDetail.files || gardenDetail.files.length === 0) {
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    svg.style.width = '100%';
+    svg.appendChild(rect(0, 0, W, H, 'url(#gSky)'));
+    svg.appendChild(rect(0, GROUND_Y, W, H - GROUND_Y, 'url(#gGround)'));
     const msg = el('text');
     setA(msg, { x: W / 2, y: GROUND_Y - 120, 'text-anchor': 'middle', fill: '#aaa', 'font-size': 16, 'font-family': '-apple-system, sans-serif' });
     msg.textContent = 'No files touched yet in the selected time range.';
@@ -319,8 +316,29 @@ function renderGardenScene() {
     return;
   }
 
-  // ---- Groves with clearings ----
-  drawGroves(svg, gardenDetail.files, W, GROUND_Y);
+  // ---- Groves with clearings (may widen W) ----
+  const finalW = drawGroves(svg, gardenDetail.files, W, H, GROUND_Y);
+  W = finalW;
+
+  // ---- Sky + stars (drawn behind groves via insertBefore) ----
+  const firstGrove = svg.querySelector('.garden-grove');
+  const skyRect = rect(0, 0, W, H, 'url(#gSky)');
+  if (firstGrove) svg.insertBefore(skyRect, firstGrove); else svg.appendChild(skyRect);
+
+  for (let i = 0; i < 50; i++) {
+    const s = el('circle');
+    s.setAttribute('class', 'garden-star');
+    setA(s, { cx: rand(0, W), cy: rand(0, GROUND_Y * 0.5), r: rand(0.4, 1.4), fill: '#c8dcff' });
+    s.style.animationDelay = `${-rand(0, 3)}s`;
+    if (firstGrove) svg.insertBefore(s, firstGrove); else svg.appendChild(s);
+  }
+
+  // ---- Ground ----
+  const groundRect = rect(0, GROUND_Y, W, H - GROUND_Y, 'url(#gGround)');
+  if (firstGrove) svg.insertBefore(groundRect, firstGrove); else svg.appendChild(groundRect);
+  const gl = el('line');
+  setA(gl, { x1: 0, y1: GROUND_Y, x2: W, y2: GROUND_Y, stroke: '#3d5e2a', 'stroke-width': 2, opacity: 0.5 });
+  if (firstGrove) svg.insertBefore(gl, firstGrove); else svg.appendChild(gl);
 
   // ---- Fireflies (ambient) ----
   for (let i = 0; i < 8; i++) {
@@ -348,7 +366,7 @@ function fileWeight(f) {
 
 // ---- Groves: group files by top-level segment, lay out side by side ----
 
-function drawGroves(svg, files, W, groundY) {
+function drawGroves(svg, files, W, H, groundY) {
   const groveMap = new Map();
   for (const f of files) {
     const k = topSegment(f.path);
@@ -363,23 +381,50 @@ function drawGroves(svg, files, W, groundY) {
   const maxTokens = Math.max(...files.map(f => f.est_tokens), 1);
   const maxTouches = Math.max(...files.map(f => f.touch_count), 1);
 
-  const padL = 50, padR = 50;
+  const padL = 40, padR = 40;
   const zoneW = W - padL - padR;
   const totalWeight = groves.reduce((a, [, fs]) => a + groveWeight(fs), 0) || 1;
+  const gap = 24;
 
-  let cursorX = padL;
-  for (const [modName, fs] of groves) {
+  // Minimum width per grove so trees, labels, and text stay readable.
+  const MIN_GROVE_W = 140;
+
+  // First pass: calculate grove widths with a healthy minimum.
+  const groveWidths = groves.map(([, fs]) => {
     const w = groveWeight(fs);
     const rawWidth = (w / totalWeight) * zoneW;
-    const groveWidth = Math.max(Math.min(rawWidth, zoneW * 0.55), 100);
-    drawGrove(svg, modName, fs, cursorX, groveWidth, groundY, maxTokens, maxTouches);
-    cursorX += groveWidth + 24;
+    return Math.max(Math.min(rawWidth, zoneW * 0.55), MIN_GROVE_W);
+  });
+
+  const totalGaps = Math.max(0, groves.length - 1) * gap;
+  const totalNeeded = groveWidths.reduce((a, b) => a + b, 0) + totalGaps + padL + padR;
+
+  // If groves need more room than W, widen the viewBox (scroll kicks in).
+  if (totalNeeded > W) {
+    W = totalNeeded;
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    svg.style.width = `${W}px`;
+  } else {
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    svg.style.width = '100%';
   }
+
+  let cursorX = padL;
+  for (let i = 0; i < groves.length; i++) {
+    const [modName, fs] = groves[i];
+    drawGrove(svg, modName, fs, cursorX, groveWidths[i], groundY, maxTokens, maxTouches);
+    cursorX += groveWidths[i] + gap;
+  }
+
+  return W;
 }
 
 function drawGrove(svg, modName, files, x0, width, groundY, maxTokens, maxTouches) {
   const groveG = el('g');
   groveG.setAttribute('class', 'garden-grove');
+  // Set transform-origin to grove center for hover magnification.
+  const groveCx = x0 + width / 2;
+  groveG.style.transformOrigin = `${groveCx}px ${groundY}px`;
 
   const accent = moduleColor(modName);
 
@@ -503,7 +548,39 @@ function drawClearing(parent, subName, files, x0, width, groundY, maxTokens, max
   parent.appendChild(clearingG);
 }
 
-// ---- Conical tree (hero) ----
+// ---- Tree style per language ----
+
+function getTreeStyle(filePath) {
+  const ext = (filePath.split('.').pop() || '').toLowerCase();
+  switch (ext) {
+    case 'py': case 'rb': case 'php': case 'pl': case 'r':
+      return 'round';      // lush round canopy
+    case 'java': case 'kt': case 'go': case 'c': case 'cpp': case 'h': case 'hpp': case 'cs':
+      return 'oak';         // wide, flat-topped
+    case 'rs':
+      return 'cactus';      // angular, geometric
+    case 'css': case 'scss': case 'less': case 'html': case 'vue': case 'svelte': case 'astro':
+      return 'sakura';      // round with blossom petals
+    case 'json': case 'yaml': case 'yml': case 'toml': case 'xml': case 'ini': case 'env': case 'lock':
+      return 'mushroom';    // dome cap on thin stem
+    default:
+      return 'pine';        // conical triangles
+  }
+}
+
+// Color tints per tree style (used when size heat is off).
+function styleAccentColor(style) {
+  switch (style) {
+    case 'round':    return '#5a9a6a'; // rich green
+    case 'oak':      return '#6a8a4a'; // olive
+    case 'cactus':   return '#4a8a7a'; // teal
+    case 'sakura':   return '#c47a8a'; // pink
+    case 'mushroom': return '#8a7a5a'; // tan
+    default:         return null;      // use default
+  }
+}
+
+// ---- Tree drawing (hero) ----
 
 function drawConicalTree(parent, cx, groundY, file, maxTokens, maxTouches, accent, scale, opacity, isHero) {
   const tokenRatio = Math.sqrt(file.est_tokens / Math.max(maxTokens, 1));
@@ -516,7 +593,6 @@ function drawConicalTree(parent, cx, groundY, file, maxTokens, maxTouches, accen
   const trunkH = treeH * 0.3;
 
   const touchRatio = Math.min(file.touch_count / Math.max(maxTouches, 1), 1);
-  // Number of canopy tiers: 2-4 based on touches.
   const tiers = Math.max(2, Math.min(4, Math.floor(2 + touchRatio * 2.5)));
 
   const trunkTop = groundY - trunkH;
@@ -532,59 +608,215 @@ function drawConicalTree(parent, cx, groundY, file, maxTokens, maxTouches, accen
     treeG.setAttribute('opacity', '0.25');
   }
 
-  // Canopy color: heat mode overrides backend color.
-  const canopyColor = sizeHeatMode
-    ? heatColor(file.lines)
-    : (file.backend_touches && file.backend_touches.length > 0
-        ? backendColor(file.backend_touches[0][0])
-        : accent);
+  const style = getTreeStyle(file.path);
+
+  // Canopy color: heat mode overrides backend/style color.
+  let canopyColor;
+  if (sizeHeatMode) {
+    canopyColor = heatColor(file.lines);
+  } else {
+    const sa = styleAccentColor(style);
+    canopyColor = sa
+      || (file.backend_touches && file.backend_touches.length > 0
+          ? backendColor(file.backend_touches[0][0])
+          : accent);
+  }
 
   if (file.exists) {
-    // ---- Trunk ----
+    const canopyH = treeH - trunkH;
+    const baseW = (isHero ? (28 + heightRatio * 35) : (16 + heightRatio * 18)) * scale;
+    const darkC = darken(canopyColor, 0.3);
+
+    // ---- Trunk (varies slightly by style) ----
+    const trunkColor = style === 'cactus' ? '#3a6a5a' : style === 'mushroom' ? '#7a6a5a' : '#5a3a20';
     const trunk = el('rect');
     trunk.setAttribute('class', 'garden-trunk');
     setA(trunk, {
       x: cx - trunkW / 2, y: trunkTop,
       width: trunkW, height: trunkH + 2,
-      rx: trunkW / 3, fill: '#5a3a20',
+      rx: trunkW / 3, fill: trunkColor,
     });
     treeG.appendChild(trunk);
 
-    // ---- Conical canopy tiers ----
-    const canopyH = treeH - trunkH;
-    const baseW = (isHero ? (28 + heightRatio * 35) : (16 + heightRatio * 18)) * scale;
-    const darkC = darken(canopyColor, 0.3);
+    // ---- Canopy: different shapes per tree style ----
+    if (style === 'round') {
+      // Lush round canopy: overlapping circles.
+      const r = baseW * 0.45;
+      const cy0 = trunkTop - r * 0.7;
+      // Main circle.
+      const c1 = el('circle');
+      c1.setAttribute('class', 'garden-canopy-tier');
+      setA(c1, { cx, cy: cy0, r, fill: canopyColor, opacity: 0.8 });
+      treeG.appendChild(c1);
+      // Overlap left.
+      const c2 = el('circle');
+      c2.setAttribute('class', 'garden-canopy-tier');
+      setA(c2, { cx: cx - r * 0.5, cy: cy0 + r * 0.15, r: r * 0.75, fill: darkC, opacity: 0.65 });
+      c2.style.animationDelay = '-1.5s';
+      treeG.appendChild(c2);
+      // Overlap right.
+      const c3 = el('circle');
+      c3.setAttribute('class', 'garden-canopy-tier');
+      setA(c3, { cx: cx + r * 0.5, cy: cy0 + r * 0.2, r: r * 0.7, fill: darken(canopyColor, 0.15), opacity: 0.7 });
+      c3.style.animationDelay = '-3s';
+      treeG.appendChild(c3);
+      // Inner glow.
+      const glow = el('circle');
+      setA(glow, { cx, cy: cy0 - r * 0.15, r: r * 0.35, fill: canopyColor, opacity: 0.3, filter: 'url(#fGlow)' });
+      treeG.appendChild(glow);
 
-    for (let t = 0; t < tiers; t++) {
-      const tierFrac = t / tiers;
-      const tierBottom = trunkTop - canopyH * tierFrac + 6;
-      const tierTop = trunkTop - canopyH * ((t + 1) / tiers);
-      const tierW = baseW * (1.0 - tierFrac * 0.4); // wider at bottom, narrower at top
-      const tierH = tierBottom - tierTop;
+    } else if (style === 'oak') {
+      // Wide, flat-topped oak: overlapping horizontal ellipses.
+      const rw = baseW * 0.6;
+      const rh = baseW * 0.32;
+      const cy0 = trunkTop - rh * 0.8;
+      // Wide main ellipse.
+      const e1 = el('ellipse');
+      e1.setAttribute('class', 'garden-canopy-tier');
+      setA(e1, { cx, cy: cy0, rx: rw, ry: rh, fill: canopyColor, opacity: 0.8 });
+      treeG.appendChild(e1);
+      // Top bump.
+      const e2 = el('ellipse');
+      e2.setAttribute('class', 'garden-canopy-tier');
+      setA(e2, { cx: cx - rw * 0.2, cy: cy0 - rh * 0.5, rx: rw * 0.55, ry: rh * 0.6, fill: darkC, opacity: 0.7 });
+      e2.style.animationDelay = '-2s';
+      treeG.appendChild(e2);
+      // Right bump.
+      const e3 = el('ellipse');
+      e3.setAttribute('class', 'garden-canopy-tier');
+      setA(e3, { cx: cx + rw * 0.3, cy: cy0 - rh * 0.3, rx: rw * 0.45, ry: rh * 0.55, fill: darken(canopyColor, 0.12), opacity: 0.65 });
+      e3.style.animationDelay = '-3.5s';
+      treeG.appendChild(e3);
+      // Glow.
+      const glow = el('ellipse');
+      setA(glow, { cx, cy: cy0, rx: rw * 0.3, ry: rh * 0.3, fill: canopyColor, opacity: 0.25, filter: 'url(#fGlow)' });
+      treeG.appendChild(glow);
 
-      // Main triangle.
-      const tri = el('polygon');
-      tri.setAttribute('class', 'garden-canopy-tier');
-      const points = `${cx},${tierTop} ${cx - tierW / 2},${tierBottom} ${cx + tierW / 2},${tierBottom}`;
-      setA(tri, {
-        points,
-        fill: t % 2 === 0 ? canopyColor : darkC,
-        opacity: 0.85 - t * 0.05,
+    } else if (style === 'cactus') {
+      // Geometric cactus: tall central body + arms.
+      const bodyW = baseW * 0.22;
+      const bodyH = canopyH * 0.85;
+      const bodyTop = trunkTop - bodyH;
+      // Main body (rounded rect).
+      const body = el('rect');
+      body.setAttribute('class', 'garden-canopy-tier');
+      setA(body, { x: cx - bodyW / 2, y: bodyTop, width: bodyW, height: bodyH, rx: bodyW / 2, fill: canopyColor, opacity: 0.85 });
+      treeG.appendChild(body);
+      // Left arm.
+      const armH = bodyH * 0.3;
+      const armW = bodyW * 0.85;
+      const armY = bodyTop + bodyH * 0.35;
+      const armL = el('rect');
+      armL.setAttribute('class', 'garden-canopy-tier');
+      setA(armL, { x: cx - bodyW / 2 - armW, y: armY, width: armW, height: armW, rx: armW / 2, fill: darkC, opacity: 0.8 });
+      armL.style.animationDelay = '-1s';
+      treeG.appendChild(armL);
+      // Left arm vertical extension.
+      const armLV = el('rect');
+      setA(armLV, { x: cx - bodyW / 2 - armW, y: armY - armH, width: armW, height: armH + armW / 2, rx: armW / 2, fill: darkC, opacity: 0.75 });
+      treeG.appendChild(armLV);
+      // Right arm (higher up).
+      const armRY = bodyTop + bodyH * 0.2;
+      const armR = el('rect');
+      armR.setAttribute('class', 'garden-canopy-tier');
+      setA(armR, { x: cx + bodyW / 2, y: armRY, width: armW, height: armW, rx: armW / 2, fill: darken(canopyColor, 0.15), opacity: 0.8 });
+      armR.style.animationDelay = '-2.5s';
+      treeG.appendChild(armR);
+      const armRV = el('rect');
+      setA(armRV, { x: cx + bodyW / 2, y: armRY - armH * 0.7, width: armW, height: armH * 0.7 + armW / 2, rx: armW / 2, fill: darken(canopyColor, 0.15), opacity: 0.75 });
+      treeG.appendChild(armRV);
+      // Highlight stripe.
+      const stripe = el('rect');
+      setA(stripe, { x: cx - bodyW * 0.08, y: bodyTop + 4, width: bodyW * 0.16, height: bodyH - 8, rx: 2, fill: '#fff', opacity: 0.08 });
+      treeG.appendChild(stripe);
+
+    } else if (style === 'sakura') {
+      // Round canopy with blossom petal dots.
+      const r = baseW * 0.42;
+      const cy0 = trunkTop - r * 0.7;
+      const c1 = el('circle');
+      c1.setAttribute('class', 'garden-canopy-tier');
+      setA(c1, { cx, cy: cy0, r, fill: canopyColor, opacity: 0.75 });
+      treeG.appendChild(c1);
+      const c2 = el('circle');
+      c2.setAttribute('class', 'garden-canopy-tier');
+      setA(c2, { cx: cx + r * 0.35, cy: cy0 - r * 0.25, r: r * 0.65, fill: darkC, opacity: 0.6 });
+      c2.style.animationDelay = '-2s';
+      treeG.appendChild(c2);
+      // Scatter blossom petals.
+      const petalCount = 5 + Math.floor(touchRatio * 6);
+      const petalColor = sizeHeatMode ? brighten(canopyColor, 0.3) : '#f0b0c0';
+      for (let p = 0; p < petalCount; p++) {
+        const angle = (p / petalCount) * Math.PI * 2 + rand(-0.3, 0.3);
+        const dist = r * (0.4 + rand(0, 0.55));
+        const px = cx + Math.cos(angle) * dist;
+        const py = cy0 + Math.sin(angle) * dist;
+        const petal = el('circle');
+        petal.setAttribute('class', 'garden-sakura-petal');
+        setA(petal, { cx: px, cy: py, r: 2 + rand(0, 2), fill: petalColor, opacity: 0.5 + rand(0, 0.35) });
+        petal.style.animationDelay = `${-rand(0, 4)}s`;
+        treeG.appendChild(petal);
+      }
+
+    } else if (style === 'mushroom') {
+      // Dome cap on thin stem.
+      const capW = baseW * 0.6;
+      const capH = baseW * 0.35;
+      const capCy = trunkTop - capH * 0.5;
+      // Cap (wide ellipse).
+      const cap = el('ellipse');
+      cap.setAttribute('class', 'garden-canopy-tier');
+      setA(cap, { cx, cy: capCy, rx: capW, ry: capH, fill: canopyColor, opacity: 0.85 });
+      treeG.appendChild(cap);
+      // Cap highlight.
+      const highlight = el('ellipse');
+      setA(highlight, { cx: cx - capW * 0.15, cy: capCy - capH * 0.25, rx: capW * 0.45, ry: capH * 0.4, fill: '#fff', opacity: 0.07 });
+      treeG.appendChild(highlight);
+      // Spots on cap.
+      const spotCount = 2 + Math.floor(rand(0, 3));
+      const spotColor = sizeHeatMode ? brighten(canopyColor, 0.25) : '#e0d8c8';
+      for (let s = 0; s < spotCount; s++) {
+        const sx = cx + (s - spotCount / 2) * capW * 0.35 + rand(-3, 3);
+        const sy = capCy - capH * 0.1 + rand(-capH * 0.3, capH * 0.15);
+        const spot = el('circle');
+        setA(spot, { cx: sx, cy: sy, r: 2 + rand(0, 2.5), fill: spotColor, opacity: 0.3 });
+        treeG.appendChild(spot);
+      }
+      // Glow.
+      const glow = el('ellipse');
+      setA(glow, { cx, cy: capCy, rx: capW * 0.3, ry: capH * 0.3, fill: canopyColor, opacity: 0.2, filter: 'url(#fGlow)' });
+      treeG.appendChild(glow);
+
+    } else {
+      // Pine (default): stacked conical triangles.
+      for (let t = 0; t < tiers; t++) {
+        const tierFrac = t / tiers;
+        const tierBottom = trunkTop - canopyH * tierFrac + 6;
+        const tierTop2 = trunkTop - canopyH * ((t + 1) / tiers);
+        const tierW = baseW * (1.0 - tierFrac * 0.4);
+
+        const tri = el('polygon');
+        tri.setAttribute('class', 'garden-canopy-tier');
+        const points = `${cx},${tierTop2} ${cx - tierW / 2},${tierBottom} ${cx + tierW / 2},${tierBottom}`;
+        setA(tri, {
+          points,
+          fill: t % 2 === 0 ? canopyColor : darkC,
+          opacity: 0.85 - t * 0.05,
+        });
+        tri.style.animationDelay = `${-t * 0.5}s`;
+        treeG.appendChild(tri);
+      }
+      // Glow at canopy center.
+      const glowOpacity = 0.2 + Math.min(touchRatio * 0.5, 0.45);
+      const glow = el('ellipse');
+      setA(glow, {
+        cx, cy: treeTop + canopyH * 0.4,
+        rx: baseW * 0.25, ry: canopyH * 0.25,
+        fill: canopyColor, opacity: glowOpacity,
+        filter: 'url(#fGlow)',
       });
-      tri.style.animationDelay = `${-t * 0.5}s`;
-      treeG.appendChild(tri);
+      treeG.appendChild(glow);
     }
-
-    // Glow at canopy center — brighter for heavily worked files.
-    const glowOpacity = 0.2 + Math.min(touchRatio * 0.5, 0.45);
-    const glow = el('ellipse');
-    setA(glow, {
-      cx, cy: treeTop + canopyH * 0.4,
-      rx: baseW * 0.25, ry: canopyH * 0.25,
-      fill: canopyColor, opacity: glowOpacity,
-      filter: 'url(#fGlow)',
-    });
-    treeG.appendChild(glow);
 
     // Multi-backend indicator at trunk base.
     if (file.backend_touches && file.backend_touches.length > 1) {
@@ -643,37 +875,56 @@ function drawConicalTree(parent, cx, groundY, file, maxTokens, maxTouches, accen
     treeG.appendChild(ghost);
   }
 
-  // ---- Labels (only for hero trees) ----
+  // ---- Labels (only for hero trees) — pill-style badges to avoid overlap ----
   if (isHero) {
+    const nameStr = truncate(baseName(file.path), 14);
+    const nameW = nameStr.length * 5.5 + 12;
+    // Name pill background.
+    const nameBg = el('rect');
+    nameBg.setAttribute('class', 'garden-file-label');
+    setA(nameBg, {
+      x: cx - nameW / 2, y: groundY + 6,
+      width: nameW, height: 16, rx: 8,
+      fill: '#0e1210', opacity: 0.75,
+    });
+    treeG.appendChild(nameBg);
     const nameLbl = el('text');
     nameLbl.setAttribute('class', 'garden-file-label');
     setA(nameLbl, {
-      x: cx, y: groundY + 16,
+      x: cx, y: groundY + 18,
       'text-anchor': 'middle', fill: '#ddd',
-      'font-size': 10, 'font-weight': 600, 'font-family': '-apple-system, sans-serif',
+      'font-size': 9, 'font-weight': 600,
+      'font-family': "'SF Mono','Fira Code','Cascadia Code',monospace",
     });
-    nameLbl.textContent = truncate(baseName(file.path), 14);
+    nameLbl.textContent = nameStr;
     treeG.appendChild(nameLbl);
 
-    const sizeLbl = el('text');
-    sizeLbl.setAttribute('class', 'garden-file-size');
-    setA(sizeLbl, {
-      x: cx, y: groundY + 28,
-      'text-anchor': 'middle', fill: '#aaa',
-      'font-size': 9, 'font-family': '-apple-system, sans-serif',
-    });
-    sizeLbl.textContent = file.exists ? `${formatNumber(file.est_tokens)} · ${file.touch_count}×` : 'missing';
-    treeG.appendChild(sizeLbl);
+    // Metrics pill: compact "123L · 4×" below the name.
+    if (file.exists) {
+      const metricStr = `${formatNumber(file.lines)}L · ${file.touch_count}×`;
+      const metricW = metricStr.length * 5 + 10;
+      const metricBg = el('rect');
+      metricBg.setAttribute('class', 'garden-file-size');
+      setA(metricBg, {
+        x: cx - metricW / 2, y: groundY + 24,
+        width: metricW, height: 13, rx: 6.5,
+        fill: '#0e1210', opacity: 0.6,
+      });
+      treeG.appendChild(metricBg);
+      const sizeLbl = el('text');
+      sizeLbl.setAttribute('class', 'garden-file-size');
+      setA(sizeLbl, {
+        x: cx, y: groundY + 34,
+        'text-anchor': 'middle', fill: '#999',
+        'font-size': 8, 'font-family': "'SF Mono','Fira Code','Cascadia Code',monospace",
+      });
+      sizeLbl.textContent = metricStr;
+      treeG.appendChild(sizeLbl);
+    }
   }
 
-  // Help-mode label.
-  const helpLbl = el('text');
-  helpLbl.setAttribute('class', 'garden-help-label');
-  setA(helpLbl, { x: cx, y: treeTop - 12, 'text-anchor': 'middle' });
-  helpLbl.textContent = `${file.lines} lines · ${file.touch_count} touches`;
-  treeG.appendChild(helpLbl);
-
   // Tooltip + expand interactions.
+  const styleNames = { pine: '🌲', round: '🌳', oak: '🌿', cactus: '🌵', sakura: '🌸', mushroom: '🍄' };
   treeG.addEventListener('mouseenter', () => {
     if (isExpanded) return;
     const topBk = file.backend_touches && file.backend_touches[0]
@@ -682,7 +933,7 @@ function drawConicalTree(parent, cx, groundY, file, maxTokens, maxTouches, accen
       ? `${file.lines} lines · ~${formatNumber(file.est_tokens)} tokens`
       : 'File no longer exists on disk (stale reference)';
     showTooltip(
-      esc(file.path),
+      `${styleNames[style] || ''} ${esc(file.path)}`,
       `${existMsg} · ${file.touch_count} touch${file.touch_count === 1 ? '' : 'es'}`,
       `Top backend: ${esc(topBk)}. Last touched: ${formatTs(file.last_touched)}. Click for details.`
     );
@@ -765,11 +1016,14 @@ function drawBush(parent, cx, cy, file, scale, accent) {
     bushG.setAttribute('opacity', '0.25');
   }
 
+  const bushStyle = getTreeStyle(file.path);
+  const bushStyleColor = styleAccentColor(bushStyle);
   const bushColor = sizeHeatMode
     ? heatColor(file.lines)
-    : (file.backend_touches && file.backend_touches.length > 0
-        ? backendColor(file.backend_touches[0][0])
-        : accent);
+    : (bushStyleColor
+        || (file.backend_touches && file.backend_touches.length > 0
+            ? backendColor(file.backend_touches[0][0])
+            : accent));
 
   if (file.exists) {
     // Small trunk stub.
@@ -1482,6 +1736,16 @@ function backendColor(backend) {
   if (b.includes('codex')) return '#3a6a8a';
   if (b.includes('cursor')) return '#7a5a8a';
   return '#5a7a3a';
+}
+
+function brighten(input, amount) {
+  if (input.startsWith('#')) {
+    const r = Math.min(255, parseInt(input.slice(1, 3), 16) + Math.floor(amount * 255));
+    const g = Math.min(255, parseInt(input.slice(3, 5), 16) + Math.floor(amount * 255));
+    const b = Math.min(255, parseInt(input.slice(5, 7), 16) + Math.floor(amount * 255));
+    return `rgb(${r},${g},${b})`;
+  }
+  return input;
 }
 
 function darken(input, amount) {

@@ -65,6 +65,7 @@ async function saveTokenSaving(backendName, tokenSaving) {
     settings.max_tokens_in_a_request,
     settings.action_for_max_tokens_in_a_request,
     tokenSaving,
+    settings.dependency_protection,
   );
   await invoke('update_predefined_backend', { name: backendName, settings: newSettings });
   await invoke('restart_server');

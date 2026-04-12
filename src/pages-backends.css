@@ -150,13 +150,15 @@
   color: #f3f4f5;
 }
 
-.tile-protection.tile-active .agent-tile-action {
+.tile-protection.tile-active .agent-tile-action,
+.tile-dep.tile-active .agent-tile-action {
   background: rgba(239, 68, 68, 0.08);
   border-color: rgba(239, 68, 68, 0.22);
   color: #f3b7b7;
 }
 
-.tile-protection.tile-active .agent-tile-action:hover {
+.tile-protection.tile-active .agent-tile-action:hover,
+.tile-dep.tile-active .agent-tile-action:hover {
   background: rgba(239, 68, 68, 0.14);
   border-color: rgba(239, 68, 68, 0.36);
   color: #fecaca;
@@ -273,6 +275,33 @@
     0 1px 0 rgba(255, 255, 255, 0.05) inset,
     0 0 0 1px rgba(113, 208, 131, 0.24),
     0 4px 14px -6px rgba(31, 216, 164, 0.3);
+}
+
+/* Dep Protection tiles — same layout as .tile-protection */
+
+.tile-dep {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+}
+
+.tile-dep .agent-tile-head {
+  flex: 1 1 100%;
+}
+
+.agent-tile-desc {
+  flex: 1 1 100%;
+  font-size: 0.62rem;
+  line-height: 1.45;
+  color: #6c7278;
+  letter-spacing: 0.01em;
+  margin: -2px 0 2px;
+}
+
+.tile-dep .agent-tile-action {
+  margin-left: auto;
 }
 
 /* Small toggle */

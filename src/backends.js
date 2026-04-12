@@ -38,6 +38,7 @@ export function parseSettings(settingsJson) {
   try {
     const settings = JSON.parse(settingsJson || '{}');
     const tokenSaving = settings.token_saving || {};
+    const depProt = settings.dependency_protection || {};
     return {
       dlp_enabled: settings.dlp_enabled !== false,
       max_tokens_in_a_request: settings.max_tokens_in_a_request || 0,
@@ -50,18 +51,23 @@ export function parseSettings(settingsJson) {
         tool_crusher: tokenSaving.tool_crusher || false,
         compression_cache: tokenSaving.compression_cache || false,
       },
+      dependency_protection: {
+        inform_updated_packages: depProt.inform_updated_packages || false,
+        block_malicious_packages: depProt.block_malicious_packages || false,
+      },
     };
   } catch {
-    return { dlp_enabled: true, max_tokens_in_a_request: 0, action_for_max_tokens_in_a_request: 'block', token_saving: { shell_compression: false, ctx_read: false, search_compressor: false, diff_compressor: false, tool_crusher: false, compression_cache: false } };
+    return { dlp_enabled: true, max_tokens_in_a_request: 0, action_for_max_tokens_in_a_request: 'block', token_saving: { shell_compression: false, ctx_read: false, search_compressor: false, diff_compressor: false, tool_crusher: false, compression_cache: false }, dependency_protection: { inform_updated_packages: false, block_malicious_packages: false } };
   }
 }
 
-export function buildSettingsJson(dlpEnabled, maxTokens, maxTokensAction, tokenSaving) {
+export function buildSettingsJson(dlpEnabled, maxTokens, maxTokensAction, tokenSaving, dependencyProtection) {
   return JSON.stringify({
     dlp_enabled: dlpEnabled,
     max_tokens_in_a_request: maxTokens,
     action_for_max_tokens_in_a_request: maxTokensAction,
     token_saving: tokenSaving,
+    dependency_protection: dependencyProtection || { inform_updated_packages: false, block_malicious_packages: false },
   });
 }
 
@@ -344,6 +350,30 @@ function renderSettingsIntoCards() {
             </div>
           </div>
         </div>
+
+        <div class="agent-tile tile-dep tile-dep--block ${settings.dependency_protection.block_malicious_packages ? 'tile-active' : 'tile-muted'}">
+          <div class="agent-tile-head">
+            <span class="agent-tile-dot"></span>
+            <span class="agent-tile-label">Vulnerability Guard</span>
+            <span class="agent-tile-val">${settings.dependency_protection.block_malicious_packages ? 'Active' : 'Off'}</span>
+          </div>
+          <span class="agent-tile-desc">Checks every install command and dependency file against the OSV vulnerability database. Blocks packages with known CVEs.</span>
+          <button class="agent-tile-action dep-block-btn" type="button">
+            ${settings.dependency_protection.block_malicious_packages ? 'Disable' : 'Enable'}
+          </button>
+        </div>
+
+        <div class="agent-tile tile-dep tile-dep--inform ${settings.dependency_protection.inform_updated_packages ? 'tile-active' : 'tile-muted'}">
+          <div class="agent-tile-head">
+            <span class="agent-tile-dot"></span>
+            <span class="agent-tile-label">Update Advisor</span>
+            <span class="agent-tile-val">${settings.dependency_protection.inform_updated_packages ? 'Active' : 'Off'}</span>
+          </div>
+          <span class="agent-tile-desc">When the agent installs or pins a package, checks the registry for newer versions and nudges the agent to ask the user about updating.</span>
+          <button class="agent-tile-action dep-inform-btn" type="button">
+            ${settings.dependency_protection.inform_updated_packages ? 'Disable' : 'Enable'}
+          </button>
+        </div>
       </div>
     `;
 
@@ -384,6 +414,24 @@ function renderSettingsIntoCards() {
       maxInput.value = '200000';
       saveLimits(container, backendName);
     });
+
+    // Dep Protection: Vulnerability Guard toggle
+    const depBlockBtn = container.querySelector('.dep-block-btn');
+    if (depBlockBtn) {
+      depBlockBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleDepProtection(backendName, 'block_malicious_packages', !settings.dependency_protection.block_malicious_packages);
+      });
+    }
+
+    // Dep Protection: Update Advisor toggle
+    const depInformBtn = container.querySelector('.dep-inform-btn');
+    if (depInformBtn) {
+      depInformBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleDepProtection(backendName, 'inform_updated_packages', !settings.dependency_protection.inform_updated_packages);
+      });
+    }
   }
 }
 
@@ -396,7 +444,7 @@ async function toggleDlp(container, backendName) {
   const s = existing ? parseSettings(existing.settings) : parseSettings('{}');
   const dlpEnabled = !s.dlp_enabled;
 
-  const settings = buildSettingsJson(dlpEnabled, s.max_tokens_in_a_request, s.action_for_max_tokens_in_a_request, s.token_saving);
+  const settings = buildSettingsJson(dlpEnabled, s.max_tokens_in_a_request, s.action_for_max_tokens_in_a_request, s.token_saving, s.dependency_protection);
 
   const btn = container.querySelector('.backend-dlp-btn');
   if (btn) btn.disabled = true;
@@ -425,7 +473,23 @@ async function saveLimits(container, backendName) {
     return;
   }
 
-  const settings = buildSettingsJson(s.dlp_enabled, maxTokens, maxTokensAction, s.token_saving);
+  const settings = buildSettingsJson(s.dlp_enabled, maxTokens, maxTokensAction, s.token_saving, s.dependency_protection);
+
+  try {
+    await invoke('update_predefined_backend', { name: backendName, settings });
+    await invoke('restart_server');
+    loadPredefinedBackends();
+  } catch (error) {
+    alert(`Failed to save: ${error}`);
+  }
+}
+
+async function toggleDepProtection(backendName, key, enabled) {
+  const existing = predefinedBackends.find(b => b.name === backendName);
+  const s = existing ? parseSettings(existing.settings) : parseSettings('{}');
+
+  const depProt = { ...s.dependency_protection, [key]: enabled };
+  const settings = buildSettingsJson(s.dlp_enabled, s.max_tokens_in_a_request, s.action_for_max_tokens_in_a_request, s.token_saving, depProt);
 
   try {
     await invoke('update_predefined_backend', { name: backendName, settings });
