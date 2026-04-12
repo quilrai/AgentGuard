@@ -1,83 +1,94 @@
 // Home page — status cards + rotating fact strip
 
 import { invoke, formatNumber } from './utils.js';
-import { parseSettings } from './backends.js';
+
+// ============================================================================
+// Agent badge helpers
+// ============================================================================
+
+const GUARDIAN_AGENTS = [
+  { name: 'Claude Code', checkCmd: 'check_claude_hooks_installed' },
+  { name: 'Codex',       checkCmd: 'check_codex_hooks_installed' },
+  { name: 'Cursor',      checkCmd: 'check_cursor_hooks_installed' },
+];
+
+const TOKEN_SAVER_AGENTS = [
+  { name: 'Claude Code', checkCmd: 'check_claude_hooks_installed' },
+];
+
+function renderAgentBadges(container, agents) {
+  container.innerHTML = agents.map(a => `
+    <span class="agent-badge ${a.installed ? 'agent-badge--installed' : 'agent-badge--missing'}">
+      <i data-lucide="${a.installed ? 'check' : 'x'}" class="agent-badge-icon"></i>
+      <span class="agent-badge-name">${a.name}</span>
+    </span>
+  `).join('');
+  if (window.lucide) window.lucide.createIcons({ nodes: [container] });
+}
 
 // ============================================================================
 // Status cards
 // ============================================================================
 
 async function loadGuardianCard() {
-  const dot = document.getElementById('guardian-status-dot');
-  const text = document.getElementById('guardian-status-text');
+  const agentsEl = document.getElementById('guardian-agents');
   const stats = document.getElementById('guardian-card-stats');
-  if (!dot || !text || !stats) return;
+  if (!agentsEl || !stats) return;
 
   try {
-    const [predefined, facts] = await Promise.all([
-      invoke('get_predefined_backends'),
+    const [facts, ...installed] = await Promise.all([
       invoke('get_home_facts'),
+      ...GUARDIAN_AGENTS.map(a => invoke(a.checkCmd).catch(() => false)),
     ]);
 
-    const all = predefined.filter(b => b.name !== 'cursor-hooks');
+    const agents = GUARDIAN_AGENTS.map((a, i) => ({ ...a, installed: installed[i] }));
+    renderAgentBadges(agentsEl, agents);
 
-    const protectedCount = all.filter(b => parseSettings(b.settings).dlp_enabled).length;
     const patternCount = facts.enabled_pattern_count || 0;
-    const isActive = protectedCount > 0 && patternCount > 0;
+    const installedCount = agents.filter(a => a.installed).length;
 
-    dot.className = 'status-dot ' + (isActive ? 'active' : 'inactive');
-    text.textContent = isActive ? 'Active' : 'Inactive';
-
-    if (isActive) {
+    if (installedCount > 0) {
       stats.innerHTML = `
-        <div class="home-card-stat-line">${protectedCount} backend${protectedCount === 1 ? '' : 's'} protected</div>
+        <div class="home-card-stat-line">${installedCount} agent${installedCount === 1 ? '' : 's'} connected</div>
         <div class="home-card-stat-line">${patternCount} detection${patternCount === 1 ? '' : 's'}</div>
       `;
     } else {
       stats.innerHTML = `
-        <div class="home-card-stat-line">No protected backends yet</div>
+        <div class="home-card-stat-line">No agents connected yet</div>
         <div class="home-card-stat-line">Click to set up</div>
       `;
     }
   } catch (e) {
     console.error('Failed to load guardian card:', e);
-    dot.className = 'status-dot inactive';
-    text.textContent = 'Unavailable';
+    agentsEl.innerHTML = '';
     stats.innerHTML = '<div class="home-card-stat-line">Click to configure</div>';
   }
 }
 
 async function loadTokenSaverCard() {
-  const dot = document.getElementById('token-saver-status-dot');
-  const text = document.getElementById('token-saver-status-text');
+  const agentsEl = document.getElementById('token-saver-agents');
   const stats = document.getElementById('token-saver-card-stats');
-  if (!dot || !text || !stats) return;
+  if (!agentsEl || !stats) return;
 
   try {
-    const [claude, facts] = await Promise.all([
-      invoke('check_compression_hook_claude'),
+    const [facts, ...installed] = await Promise.all([
       invoke('get_home_facts'),
+      ...TOKEN_SAVER_AGENTS.map(a => invoke(a.checkCmd).catch(() => false)),
     ]);
 
-    const active = [];
-    if (claude) active.push('Claude Code');
-
-    const isActive = active.length > 0;
-    dot.className = 'status-dot ' + (isActive ? 'active' : 'inactive');
+    const agents = TOKEN_SAVER_AGENTS.map((a, i) => ({ ...a, installed: installed[i] }));
+    renderAgentBadges(agentsEl, agents);
 
     const saved = facts.tokens_saved_today || 0;
     const savedLine = saved > 0
       ? `<div class="home-card-stat-line">${formatNumber(saved)} tokens saved today</div>`
       : '';
 
-    if (isActive) {
-      text.textContent = `Active on ${active.length}`;
+    if (agents.some(a => a.installed)) {
       stats.innerHTML = `
-        <div class="home-card-stat-line">${active.join(', ')}</div>
-        ${savedLine}
+        ${savedLine || '<div class="home-card-stat-line">Hooks active</div>'}
       `;
     } else {
-      text.textContent = 'Inactive';
       stats.innerHTML = `
         ${savedLine || '<div class="home-card-stat-line">No hooks installed yet</div>'}
         <div class="home-card-stat-line">Click to set up</div>
@@ -85,8 +96,7 @@ async function loadTokenSaverCard() {
     }
   } catch (e) {
     console.error('Failed to load token saver card:', e);
-    dot.className = 'status-dot inactive';
-    text.textContent = 'Unavailable';
+    agentsEl.innerHTML = '';
     stats.innerHTML = '<div class="home-card-stat-line">Click to configure</div>';
   }
 }
