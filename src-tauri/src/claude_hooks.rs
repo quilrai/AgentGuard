@@ -37,7 +37,7 @@
 use crate::database::{
     Database, RealUsage, DLP_ACTION_BLOCKED, DLP_ACTION_PASSED, DLP_ACTION_RATELIMITED,
 };
-use crate::dlp::{check_dlp_patterns, DlpDetection};
+use crate::dlp::{check_dlp_patterns, check_dlp_patterns_with_offset, DlpDetection};
 use crate::predefined_backend_settings::CustomBackendSettings;
 use axum::{extract::State, http::StatusCode, response::IntoResponse, routing::post, Json, Router};
 use serde::{Deserialize, Serialize};
@@ -266,10 +266,20 @@ fn estimate_tokens(text: &str) -> i32 {
 fn format_detection_message(detections: &[DlpDetection]) -> String {
     let mut message = String::from("Blocked: Sensitive data detected:\n");
     for detection in detections {
-        message.push_str(&format!(
-            "- {} ({}): \"{}\"\n",
-            detection.pattern_name, detection.pattern_type, detection.original_value
-        ));
+        match (detection.absolute_line, detection.column) {
+            (Some(line), Some(col)) => {
+                message.push_str(&format!(
+                    "- Line {}, col {}: {} — \"{}\"\n",
+                    line, col, detection.pattern_name, detection.original_value
+                ));
+            }
+            _ => {
+                message.push_str(&format!(
+                    "- {} ({}): \"{}\"\n",
+                    detection.pattern_name, detection.pattern_type, detection.original_value
+                ));
+            }
+        }
     }
     message
 }
@@ -646,6 +656,20 @@ fn handle_pre_tool(
     file_path: Option<String>,
     log_as_tool_call: bool,
 ) -> PreToolUseResponse {
+    handle_pre_tool_with_offset(state, input, scanned_text, file_path, log_as_tool_call, 0)
+}
+
+/// Like `handle_pre_tool` but with a file line offset so DLP detections report
+/// absolute line numbers within the original file.
+#[allow(clippy::too_many_arguments)]
+fn handle_pre_tool_with_offset(
+    state: &ClaudeHooksState,
+    input: &PreToolUseInput,
+    scanned_text: &str,
+    file_path: Option<String>,
+    log_as_tool_call: bool,
+    file_line_offset: usize,
+) -> PreToolUseResponse {
     let token_count = estimate_tokens(scanned_text);
     let request_body_json = serde_json::to_string(&input).unwrap_or_default();
 
@@ -692,7 +716,7 @@ fn handle_pre_tool(
 
     // DLP
     let detections = if state.settings.dlp_enabled {
-        check_dlp_patterns(scanned_text)
+        check_dlp_patterns_with_offset(scanned_text, file_line_offset)
     } else {
         Vec::new()
     };
@@ -812,7 +836,8 @@ async fn pre_read_handler(
     println!("[CLAUDE_HOOK] pre_read - file: {}", file_path);
 
     let scanned = read_file_slice(&file_path, offset, limit).unwrap_or_default();
-    let response = handle_pre_tool(&state, &input, &scanned, Some(file_path), true);
+    let file_line_offset = offset.unwrap_or(0).max(0) as usize;
+    let response = handle_pre_tool_with_offset(&state, &input, &scanned, Some(file_path), true, file_line_offset);
     (StatusCode::OK, Json(response))
 }
 

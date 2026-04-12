@@ -16,6 +16,12 @@ pub struct DlpDetection {
     pub pattern_type: String, // "keyword" or "regex"
     pub original_value: String,
     pub message_index: Option<i32>,
+    /// 1-based line number within the scanned text (before applying file_line_offset)
+    pub line_number: Option<usize>,
+    /// 1-based column (character offset within the line)
+    pub column: Option<usize>,
+    /// Absolute 1-based line number in the original file (line_number + file_line_offset)
+    pub absolute_line: Option<usize>,
 }
 
 /// Compiled DLP pattern with all validation rules
@@ -126,9 +132,26 @@ pub fn get_enabled_dlp_patterns() -> Vec<CompiledDlpPattern> {
     patterns
 }
 
+/// Compute (1-based line number, 1-based column) for a byte offset within text.
+fn position_of_byte_offset(text: &str, byte_offset: usize) -> (usize, usize) {
+    let before = &text[..byte_offset];
+    let line = before.matches('\n').count() + 1;
+    let last_newline = before.rfind('\n').map(|p| p + 1).unwrap_or(0);
+    let col = byte_offset - last_newline + 1;
+    (line, col)
+}
+
 /// Check text for DLP patterns (detection only).
-/// Used by hook receivers to decide whether to allow or block a request.
+/// `file_line_offset` is the 0-based line offset of the scanned text within
+/// the original file (i.e. the agent's `offset` parameter). When set,
+/// `absolute_line` in each detection = relative line + file_line_offset.
 pub fn check_dlp_patterns(text: &str) -> Vec<DlpDetection> {
+    check_dlp_patterns_with_offset(text, 0)
+}
+
+/// Like `check_dlp_patterns` but with an explicit file line offset so that
+/// detections report absolute line numbers within the original file.
+pub fn check_dlp_patterns_with_offset(text: &str, file_line_offset: usize) -> Vec<DlpDetection> {
     let patterns = get_enabled_dlp_patterns();
 
     if patterns.is_empty() {
@@ -139,8 +162,8 @@ pub fn check_dlp_patterns(text: &str) -> Vec<DlpDetection> {
     let mut seen_values: HashSet<String> = HashSet::new();
 
     for pattern in patterns {
-        // Collect all matches, filtering by context-aware negative patterns
-        let mut valid_matches: Vec<String> = Vec::new();
+        // Collect all matches with positions, filtering by context-aware negative patterns
+        let mut valid_matches: Vec<(String, usize, usize)> = Vec::new(); // (value, line, col)
 
         for regex in &pattern.regexes {
             for m in regex.find_iter(text) {
@@ -173,7 +196,8 @@ pub fn check_dlp_patterns(text: &str) -> Vec<DlpDetection> {
                     }
                 }
 
-                valid_matches.push(matched);
+                let (line, col) = position_of_byte_offset(text, m.start());
+                valid_matches.push((matched, line, col));
             }
         }
 
@@ -182,14 +206,19 @@ pub fn check_dlp_patterns(text: &str) -> Vec<DlpDetection> {
             continue;
         }
 
-        for matched in valid_matches {
+        for (matched, line, col) in valid_matches {
             seen_values.insert(matched.clone());
+
+            let absolute_line = line + file_line_offset;
 
             detections.push(DlpDetection {
                 pattern_name: pattern.name.clone(),
                 pattern_type: pattern.pattern_type.clone(),
                 original_value: matched,
                 message_index: None,
+                line_number: Some(line),
+                column: Some(col),
+                absolute_line: Some(absolute_line),
             });
         }
     }

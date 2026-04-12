@@ -256,10 +256,20 @@ fn estimate_tokens(text: &str) -> i32 {
 fn format_detection_message(detections: &[DlpDetection]) -> String {
     let mut message = String::from("Blocked: Sensitive data detected:\n");
     for detection in detections {
-        message.push_str(&format!(
-            "- {} ({}): \"{}\"\n",
-            detection.pattern_name, detection.pattern_type, detection.original_value
-        ));
+        match (detection.absolute_line, detection.column) {
+            (Some(line), Some(col)) => {
+                message.push_str(&format!(
+                    "- Line {}, col {}: {} — \"{}\"\n",
+                    line, col, detection.pattern_name, detection.original_value
+                ));
+            }
+            _ => {
+                message.push_str(&format!(
+                    "- {} ({}): \"{}\"\n",
+                    detection.pattern_name, detection.pattern_type, detection.original_value
+                ));
+            }
+        }
     }
     message
 }

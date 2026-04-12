@@ -30,6 +30,45 @@ Token Limit
   - Per-backend max_tokens_in_a_request, blocks if exceeded
   - Settings: predefined_backend_settings.rs
 
+Dependency Protection
+  - Two independent per-backend settings in dependency_protection:
+      block_malicious_packages  — hard deny when OSV returns vulnerabilities
+      inform_updated_packages   — allow with advisory when a newer version exists
+  - Intercepts two surfaces:
+      1. Bash install commands (all three agents): pip install, npm install,
+         yarn/pnpm/bun add, cargo add, go get, gem install, dotnet add
+         package, composer require, mvn dependency:get
+      2. Dependency file writes (Claude Code only — pre_write hook):
+         requirements.txt, pyproject.toml, package.json, Cargo.toml,
+         go.mod, Gemfile, pom.xml, build.gradle, *.csproj, composer.json
+  - Manifest-driven installs handled: bare `npm install`, `pip install -r
+    requirements.txt`, `composer install` read the dependency file from cwd
+    when the command itself names no packages.
+  - Version precision: tracks `version_is_exact` per package. Range specs
+    (^, ~, >=, *, Cargo's implicit ^) are NOT treated as exact pins —
+    OSV queries for non-exact versions resolve latest from the registry
+    first; update advice only fires for exact pins.
+  - Vulnerability check: POST https://api.osv.dev/v1/query per package,
+    3-second timeout, fail-open, concurrent via futures::join_all.
+    Ecosystems: PyPI, npm, crates.io, Maven, Go, RubyGems, NuGet,
+    Packagist.
+  - Latest version check (6 registries): PyPI, npm, crates.io, RubyGems,
+    NuGet, Go proxy. Maven/Packagist skipped for v1.
+  - Edit/MultiEdit file preview: for Claude's pre_write hook, the full
+    post-edit file content is reconstructed (apply_string_edit on disk
+    content) before parsing, so all dependencies are visible — not just
+    the edited snippet.
+  - Agent-specific behaviour:
+      Claude Code: block + inform (permissionDecisionReason carries both)
+      Codex CLI:   block only (empty stdout required for allow — no inform)
+      Cursor IDE:  block (permission:"deny") + inform (agent_message on allow)
+  - Files: dep_protection.rs (extraction, OSV, registry APIs),
+    predefined_backend_settings.rs (DependencyProtectionSettings)
+  - Frontend: two tiles per agent card ("Vulnerability Guard",
+    "Update Advisor") in backends.js, styled in pages-backends.css
+  - Shared reqwest::Client created in server.rs, passed to all three
+    hook routers via state structs.
+
 Shell Compression (token saving)
   - Intercepts shell command output, compresses before agent sees it
   - Endpoint: POST /cli_compression
@@ -136,11 +175,16 @@ KEY FILES
 ================================================================================
 
   src/lib.rs                          App entry, tray icon, window management
-  src/server.rs                       Axum server setup, route mounting
+  src/server.rs                       Axum server setup, route mounting,
+                                      shared reqwest::Client for dep protection
   src/database.rs                     SQLite: logging, settings, DLP, symbols
   src/symbols.rs                      Tree-sitter symbol extraction (10 langs)
+  src/dep_protection.rs               Dependency protection: package extraction
+                                      from commands + files, OSV vuln check,
+                                      registry version check, manifest resolution
   src/dlp_pattern_config.rs           DB path resolution (~/.quilrdlpapp)
-  src/predefined_backend_settings.rs  Per-backend settings shape (DLP, tokens)
+  src/predefined_backend_settings.rs  Per-backend settings (DLP, tokens,
+                                      dependency_protection)
   src/commands/mod.rs                 Tauri command re-exports
   src/commands/hook_ordering.rs       Hook install ordering logic
   src/commands/stats.rs               Dashboard, logs, tool calls, Garden,
@@ -148,6 +192,10 @@ KEY FILES
   ../src/garden.js                    Frontend Garden view (conical trees, clearings,
                                       hero/bush layout, symbol panel, import edges)
   ../src/pages-garden.css             Garden styles (tree shapes, symbol panel, etc.)
+  ../src/backends.js                  Guardian agent cards: DLP, token cap,
+                                      dep protection (Vulnerability Guard,
+                                      Update Advisor) toggles
+  ../src/pages-backends.css           Agent card tile styles incl. dep protection
 
 Hook scripts live at:
   Claude:  ~/.claude/settings.json (hooks section)
