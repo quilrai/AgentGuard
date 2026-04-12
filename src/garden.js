@@ -320,31 +320,24 @@ function renderGardenScene() {
   const finalW = drawGroves(svg, gardenDetail.files, W, H, GROUND_Y);
   W = finalW;
 
-  // ---- Sky + stars (drawn behind groves via insertBefore) ----
-  const firstGrove = svg.querySelector('.garden-grove');
+  // ---- Sky + stars (drawn behind everything via insertBefore) ----
+  const firstChild = svg.querySelector('.garden-ground-row') || svg.querySelector('.garden-grove');
   const skyRect = rect(0, 0, W, H, 'url(#gSky)');
-  if (firstGrove) svg.insertBefore(skyRect, firstGrove); else svg.appendChild(skyRect);
+  if (firstChild) svg.insertBefore(skyRect, firstChild); else svg.appendChild(skyRect);
 
   for (let i = 0; i < 50; i++) {
     const s = el('circle');
     s.setAttribute('class', 'garden-star');
-    setA(s, { cx: rand(0, W), cy: rand(0, GROUND_Y * 0.5), r: rand(0.4, 1.4), fill: '#c8dcff' });
+    setA(s, { cx: rand(0, W), cy: rand(0, H * 0.4), r: rand(0.4, 1.4), fill: '#c8dcff' });
     s.style.animationDelay = `${-rand(0, 3)}s`;
-    if (firstGrove) svg.insertBefore(s, firstGrove); else svg.appendChild(s);
+    if (firstChild) svg.insertBefore(s, firstChild); else svg.appendChild(s);
   }
-
-  // ---- Ground ----
-  const groundRect = rect(0, GROUND_Y, W, H - GROUND_Y, 'url(#gGround)');
-  if (firstGrove) svg.insertBefore(groundRect, firstGrove); else svg.appendChild(groundRect);
-  const gl = el('line');
-  setA(gl, { x1: 0, y1: GROUND_Y, x2: W, y2: GROUND_Y, stroke: '#3d5e2a', 'stroke-width': 2, opacity: 0.5 });
-  if (firstGrove) svg.insertBefore(gl, firstGrove); else svg.appendChild(gl);
 
   // ---- Fireflies (ambient) ----
   for (let i = 0; i < 8; i++) {
     const f = el('circle');
     f.setAttribute('class', 'garden-firefly');
-    setA(f, { cx: rand(50, W - 50), cy: rand(GROUND_Y - 280, GROUND_Y - 30), r: 2, fill: '#b8e986', filter: 'url(#fGlow)' });
+    setA(f, { cx: rand(50, W - 50), cy: rand(H * 0.2, H * 0.7), r: 2, fill: '#b8e986', filter: 'url(#fGlow)' });
     f.style.animationDelay = `${-rand(0, 3)}s`;
     svg.appendChild(f);
   }
@@ -396,24 +389,69 @@ function drawGroves(svg, files, W, H, groundY) {
     return Math.max(Math.min(rawWidth, zoneW * 0.55), MIN_GROVE_W);
   });
 
-  const totalGaps = Math.max(0, groves.length - 1) * gap;
-  const totalNeeded = groveWidths.reduce((a, b) => a + b, 0) + totalGaps + padL + padR;
+  // Determine how many groves fit per row, and whether we should use multiple rows.
+  // Each grove row gets its own ground band. Row height = 350px minimum.
+  const ROW_H = 350;
+  const availableRows = Math.max(1, Math.floor(H / ROW_H));
 
-  // If groves need more room than W, widen the viewBox (scroll kicks in).
-  if (totalNeeded > W) {
-    W = totalNeeded;
-    svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
-    svg.style.width = `${W}px`;
+  // Pack groves into rows: fill each row until it would exceed zoneW, then start a new row.
+  const groveRows = [[]];
+  const groveRowWidths = [0]; // running width of each row
+  for (let i = 0; i < groves.length; i++) {
+    const currentRow = groveRows.length - 1;
+    const addedW = groveWidths[i] + (groveRows[currentRow].length > 0 ? gap : 0);
+    if (groveRows[currentRow].length > 0 && groveRowWidths[currentRow] + addedW > zoneW && groveRows.length < availableRows) {
+      // Start a new row.
+      groveRows.push([]);
+      groveRowWidths.push(0);
+    }
+    const r = groveRows.length - 1;
+    groveRows[r].push(i);
+    groveRowWidths[r] += groveWidths[i] + (groveRows[r].length > 1 ? gap : 0);
+  }
+
+  const numRows = groveRows.length;
+  const rowH = H / numRows;
+
+  // If only 1 row, check if we need to widen for horizontal scroll.
+  if (numRows === 1) {
+    const totalGaps = Math.max(0, groves.length - 1) * gap;
+    const totalNeeded = groveWidths.reduce((a, b) => a + b, 0) + totalGaps + padL + padR;
+    if (totalNeeded > W) {
+      W = totalNeeded;
+      svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+      svg.style.width = `${W}px`;
+    } else {
+      svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+      svg.style.width = '100%';
+    }
   } else {
     svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
     svg.style.width = '100%';
   }
 
-  let cursorX = padL;
-  for (let i = 0; i < groves.length; i++) {
-    const [modName, fs] = groves[i];
-    drawGrove(svg, modName, fs, cursorX, groveWidths[i], groundY, maxTokens, maxTouches);
-    cursorX += groveWidths[i] + gap;
+  // Draw each row of groves.
+  for (let ri = 0; ri < numRows; ri++) {
+    const rowIndices = groveRows[ri];
+    const rowGroundY = rowH * (ri + 1) - 80; // ground near bottom of each row band
+
+    // Draw ground band for this row.
+    const groundRect = rect(0, rowGroundY, W, rowH - (rowGroundY - rowH * ri), 'url(#gGround)');
+    groundRect.setAttribute('class', 'garden-ground-row');
+    svg.appendChild(groundRect);
+    const gl = el('line');
+    setA(gl, { x1: 0, y1: rowGroundY, x2: W, y2: rowGroundY, stroke: '#3d5e2a', 'stroke-width': 2, opacity: 0.5 });
+    svg.appendChild(gl);
+
+    // Center groves within the row.
+    const rowTotalW = rowIndices.reduce((a, idx) => a + groveWidths[idx], 0) + Math.max(0, rowIndices.length - 1) * gap;
+    let cursorX = (W - rowTotalW) / 2;
+
+    for (const idx of rowIndices) {
+      const [modName, fs] = groves[idx];
+      drawGrove(svg, modName, fs, cursorX, groveWidths[idx], rowGroundY, maxTokens, maxTouches);
+      cursorX += groveWidths[idx] + gap;
+    }
   }
 
   return W;
@@ -514,9 +552,16 @@ function drawClearing(parent, subName, files, x0, width, groundY, maxTokens, max
 
   // Draw hero trees with depth: heaviest in front (lower, bigger),
   // lighter ones behind (higher, smaller).
-  const heroSpacing = width / (heroCount + 1);
+  // Use generous spacing — at least 80px per tree.
+  const minTreeSpacing = 80;
+  const neededWidth = heroCount * minTreeSpacing;
+  const effectiveWidth = Math.max(width, neededWidth);
+  const heroSpacing = effectiveWidth / (heroCount + 1);
+  // Center the trees if we expanded beyond clearing width.
+  const offsetX = (effectiveWidth > width) ? x0 - (effectiveWidth - width) / 2 : x0;
+
   heroes.forEach((file, i) => {
-    const treeCx = x0 + heroSpacing * (i + 1);
+    const treeCx = offsetX + heroSpacing * (i + 1);
     // Depth: index 0 (heaviest) is foreground, last is background.
     const depthFactor = heroCount > 1 ? i / (heroCount - 1) : 0;
     const depthScale = 1.0 - depthFactor * 0.25; // foreground 1.0, background 0.75

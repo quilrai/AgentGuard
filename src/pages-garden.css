@@ -5,6 +5,7 @@
 .content:has(#garden-tab.active) {
   padding: 0;
   overflow: hidden;
+  background: #182510;
 }
 
 #garden-tab.active {
@@ -93,6 +94,7 @@
   flex: 1;
   min-height: 0;
   overflow: hidden;
+  background: #182510;
 }
 
 /* ---- Empty state ---- */
@@ -164,6 +166,7 @@
   min-height: 0;
   display: flex;
   overflow: hidden;
+  background: #182510;
 }
 
 .garden-scene-wrap {
@@ -175,6 +178,7 @@
   position: relative;
   scrollbar-width: thin;
   scrollbar-color: #2a3d1a transparent;
+  background: #182510;
 }
 
 .garden-scene-wrap::-webkit-scrollbar {

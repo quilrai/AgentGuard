@@ -274,6 +274,7 @@ struct CursorHookMetadata {
 pub struct CursorHooksState {
     pub db: Database,
     pub settings: Arc<CustomBackendSettings>,
+    pub http_client: reqwest::Client,
 }
 
 // ============================================================================
@@ -995,7 +996,7 @@ async fn before_shell_execution_handler(
     };
     let is_blocked = !detections.is_empty();
 
-    let (permission, user_message, agent_message) = if is_blocked {
+    let (mut permission, mut user_message, mut agent_message) = if is_blocked {
         let msg = format_detection_message(&detections);
         (
             "deny".to_string(),
@@ -1008,6 +1009,34 @@ async fn before_shell_execution_handler(
         ("allow".to_string(), None, None)
     };
 
+    // Dependency protection: check if this is a package install command
+    if !is_blocked {
+        let dep = &state.settings.dependency_protection;
+        if dep.block_malicious_packages || dep.inform_updated_packages {
+            let packages = crate::dep_protection::extract_packages_from_command_with_context(
+                &input.command,
+                input.cwd.as_deref(),
+            );
+            if !packages.is_empty() {
+                let dep_result = crate::dep_protection::check_dependencies(
+                    &state.http_client,
+                    &packages,
+                    dep.block_malicious_packages,
+                    dep.inform_updated_packages,
+                )
+                .await;
+                if dep_result.should_block {
+                    permission = "deny".to_string();
+                    user_message = dep_result.block_reason.clone();
+                    agent_message =
+                        Some("Command blocked due to vulnerable dependency.".to_string());
+                } else if let Some(ref info) = dep_result.info_message {
+                    agent_message = Some(info.clone());
+                }
+            }
+        }
+    }
+
     // Build response
     let response = BeforeShellExecutionResponse {
         permission: permission.clone(),
@@ -1017,8 +1046,9 @@ async fn before_shell_execution_handler(
     let response_body_json = serde_json::to_string(&response).unwrap_or_default();
 
     // Log to database
-    let response_status = if is_blocked { 403 } else { 200 };
-    let dlp_action = if is_blocked {
+    let final_blocked = permission == "deny";
+    let response_status = if final_blocked { 403 } else { 200 };
+    let dlp_action = if final_blocked {
         DLP_ACTION_BLOCKED
     } else {
         DLP_ACTION_PASSED
@@ -1206,10 +1236,15 @@ async fn before_mcp_execution_handler(
 // Router
 // ============================================================================
 
-pub fn create_cursor_hooks_router(db: Database, settings: CustomBackendSettings) -> Router {
+pub fn create_cursor_hooks_router(
+    db: Database,
+    settings: CustomBackendSettings,
+    http_client: reqwest::Client,
+) -> Router {
     let state = CursorHooksState {
         db,
         settings: Arc::new(settings),
+        http_client,
     };
 
     Router::new()

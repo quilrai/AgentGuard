@@ -214,6 +214,7 @@ struct CodexHookMetadata {
 pub struct CodexHooksState {
     pub db: Database,
     pub settings: Arc<CustomBackendSettings>,
+    pub http_client: reqwest::Client,
 }
 
 const BACKEND: &str = "codex-hooks";
@@ -625,10 +626,38 @@ async fn pre_bash_handler(
     };
     let command = json_str(&input.tool_input, "command").unwrap_or_default();
     println!("[CODEX_HOOK] pre_bash - command: {}", command);
-    match handle_pre_tool(&state, &input, &command, true) {
-        Some(deny) => (StatusCode::OK, Json(deny)).into_response(),
-        None => (StatusCode::OK, "").into_response(),
+    let deny = handle_pre_tool(&state, &input, &command, true);
+    if deny.is_some() {
+        return (StatusCode::OK, Json(deny.unwrap())).into_response();
     }
+
+    // Dependency protection: only block_malicious is actionable for Codex
+    // (Codex expects empty stdout on allow, so we can't send info messages)
+    let dep = &state.settings.dependency_protection;
+    if dep.block_malicious_packages {
+        let packages = crate::dep_protection::extract_packages_from_command_with_context(
+            &command,
+            input.cwd.as_deref(),
+        );
+        if !packages.is_empty() {
+            let dep_result = crate::dep_protection::check_dependencies(
+                &state.http_client,
+                &packages,
+                true,
+                false, // inform not actionable for Codex
+            )
+            .await;
+            if dep_result.should_block {
+                return (
+                    StatusCode::OK,
+                    Json(pre_tool_deny_response(dep_result.block_reason)),
+                )
+                    .into_response();
+            }
+        }
+    }
+
+    (StatusCode::OK, "").into_response()
 }
 
 /// POST /codex_hook/post_tool
@@ -964,10 +993,15 @@ async fn session_start_handler(
 // Router
 // ============================================================================
 
-pub fn create_codex_hooks_router(db: Database, settings: CustomBackendSettings) -> Router {
+pub fn create_codex_hooks_router(
+    db: Database,
+    settings: CustomBackendSettings,
+    http_client: reqwest::Client,
+) -> Router {
     let state = CodexHooksState {
         db,
         settings: Arc::new(settings),
+        http_client,
     };
 
     Router::new()

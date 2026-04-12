@@ -232,6 +232,7 @@ pub struct ClaudeHooksState {
     pub db: Database,
     pub settings: Arc<CustomBackendSettings>,
     pub ctx_read_cache: Option<Arc<Mutex<crate::ctx_read::cache::SessionCache>>>,
+    pub http_client: reqwest::Client,
 }
 
 const BACKEND: &str = "claude-hooks";
@@ -346,6 +347,92 @@ fn extract_write_content(tool_name: &str, tool_input: &Value) -> String {
         }
         "NotebookEdit" => json_str(tool_input, "new_source").unwrap_or_default(),
         _ => String::new(),
+    }
+}
+
+fn apply_string_edit(
+    content: &mut String,
+    old_string: &str,
+    new_string: &str,
+    replace_all: bool,
+) -> bool {
+    if old_string.is_empty() {
+        return false;
+    }
+
+    if replace_all {
+        if !content.contains(old_string) {
+            return false;
+        }
+        *content = content.replace(old_string, new_string);
+        return true;
+    }
+
+    if let Some(start) = content.find(old_string) {
+        let end = start + old_string.len();
+        content.replace_range(start..end, new_string);
+        return true;
+    }
+
+    false
+}
+
+fn build_dependency_file_preview(
+    tool_name: &str,
+    tool_input: &Value,
+    file_path: Option<&str>,
+    fallback_content: &str,
+) -> String {
+    match tool_name {
+        "Write" => fallback_content.to_string(),
+        "Edit" | "MultiEdit" => {
+            let Some(path) = file_path else {
+                return fallback_content.to_string();
+            };
+            let Ok(mut content) = std::fs::read_to_string(path) else {
+                return fallback_content.to_string();
+            };
+
+            let mut applied_any = false;
+            match tool_name {
+                "Edit" => {
+                    let old_string = json_str(tool_input, "old_string").unwrap_or_default();
+                    let new_string = json_str(tool_input, "new_string").unwrap_or_default();
+                    let replace_all = tool_input
+                        .get("replace_all")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+                    applied_any =
+                        apply_string_edit(&mut content, &old_string, &new_string, replace_all);
+                }
+                "MultiEdit" => {
+                    if let Some(edits) = tool_input.get("edits").and_then(|v| v.as_array()) {
+                        for edit in edits {
+                            let old_string = json_str(edit, "old_string").unwrap_or_default();
+                            let new_string = json_str(edit, "new_string").unwrap_or_default();
+                            let replace_all = edit
+                                .get("replace_all")
+                                .and_then(|v| v.as_bool())
+                                .unwrap_or(false);
+                            applied_any |= apply_string_edit(
+                                &mut content,
+                                &old_string,
+                                &new_string,
+                                replace_all,
+                            );
+                        }
+                    }
+                }
+                _ => {}
+            }
+
+            if applied_any {
+                content
+            } else {
+                fallback_content.to_string()
+            }
+        }
+        _ => fallback_content.to_string(),
     }
 }
 
@@ -671,6 +758,39 @@ async fn pre_bash_handler(
     let command = json_str(&input.tool_input, "command").unwrap_or_default();
     println!("[CLAUDE_HOOK] pre_bash - command: {}", command);
     let response = handle_pre_tool(&state, &input, &command, None, true);
+
+    // Dependency protection: only if DLP/token-limit allowed
+    if response.hook_specific_output.permission_decision == "allow" {
+        let dep = &state.settings.dependency_protection;
+        if dep.block_malicious_packages || dep.inform_updated_packages {
+            let packages = crate::dep_protection::extract_packages_from_command_with_context(
+                &command,
+                input.cwd.as_deref(),
+            );
+            if !packages.is_empty() {
+                let dep_result = crate::dep_protection::check_dependencies(
+                    &state.http_client,
+                    &packages,
+                    dep.block_malicious_packages,
+                    dep.inform_updated_packages,
+                )
+                .await;
+                if dep_result.should_block {
+                    return (
+                        StatusCode::OK,
+                        Json(pre_tool_response(true, dep_result.block_reason)),
+                    );
+                }
+                if dep_result.info_message.is_some() {
+                    return (
+                        StatusCode::OK,
+                        Json(pre_tool_response(false, dep_result.info_message)),
+                    );
+                }
+            }
+        }
+    }
+
     (StatusCode::OK, Json(response))
 }
 
@@ -716,7 +836,47 @@ async fn pre_write_handler(
         "[CLAUDE_HOOK] pre_write - tool: {}, file: {:?}",
         input.tool_name, file_path
     );
-    let response = handle_pre_tool(&state, &input, &scanned, file_path, true);
+    let response = handle_pre_tool(&state, &input, &scanned, file_path.clone(), true);
+
+    // Dependency protection: check if writing to a dependency file
+    if response.hook_specific_output.permission_decision == "allow" {
+        if let Some(ref fp) = file_path {
+            let dep = &state.settings.dependency_protection;
+            if (dep.block_malicious_packages || dep.inform_updated_packages)
+                && crate::dep_protection::is_dependency_file(fp)
+            {
+                let dep_preview = build_dependency_file_preview(
+                    &input.tool_name,
+                    &input.tool_input,
+                    Some(fp),
+                    &scanned,
+                );
+                let packages = crate::dep_protection::extract_packages_from_file(fp, &dep_preview);
+                if !packages.is_empty() {
+                    let dep_result = crate::dep_protection::check_dependencies(
+                        &state.http_client,
+                        &packages,
+                        dep.block_malicious_packages,
+                        dep.inform_updated_packages,
+                    )
+                    .await;
+                    if dep_result.should_block {
+                        return (
+                            StatusCode::OK,
+                            Json(pre_tool_response(true, dep_result.block_reason)),
+                        );
+                    }
+                    if dep_result.info_message.is_some() {
+                        return (
+                            StatusCode::OK,
+                            Json(pre_tool_response(false, dep_result.info_message)),
+                        );
+                    }
+                }
+            }
+        }
+    }
+
     (StatusCode::OK, Json(response))
 }
 
@@ -1113,11 +1273,13 @@ pub fn create_claude_hooks_router(
     db: Database,
     settings: CustomBackendSettings,
     ctx_read_cache: Option<Arc<Mutex<crate::ctx_read::cache::SessionCache>>>,
+    http_client: reqwest::Client,
 ) -> Router {
     let state = ClaudeHooksState {
         db,
         settings: Arc::new(settings),
         ctx_read_cache,
+        http_client,
     };
 
     Router::new()
@@ -1131,4 +1293,64 @@ pub fn create_claude_hooks_router(
         .route("/session_start", post(session_start_handler))
         .route("/session_end", post(session_end_handler))
         .with_state(state)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_path(name: &str) -> PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!("{}_{}", name, nonce))
+    }
+
+    #[test]
+    fn dependency_preview_applies_single_edit_to_full_file() {
+        let path = temp_path("claude_dep_edit");
+        fs::write(
+            &path,
+            r#"{"dependencies":{"left-pad":"1.0.0","zod":"3.23.8"}}"#,
+        )
+        .unwrap();
+
+        let preview = build_dependency_file_preview(
+            "Edit",
+            &serde_json::json!({
+                "old_string": "\"left-pad\":\"1.0.0\"",
+                "new_string": "\"left-pad\":\"1.1.0\""
+            }),
+            path.to_str(),
+            "\"left-pad\":\"1.1.0\"",
+        );
+
+        let _ = fs::remove_file(&path);
+        assert!(preview.contains("\"left-pad\":\"1.1.0\""));
+        assert!(preview.contains("\"zod\":\"3.23.8\""));
+    }
+
+    #[test]
+    fn dependency_preview_falls_back_when_edit_cannot_be_applied() {
+        let path = temp_path("claude_dep_edit_missing");
+        fs::write(&path, "requests==2.31.0\n").unwrap();
+
+        let fallback = "flask==3.0.2";
+        let preview = build_dependency_file_preview(
+            "Edit",
+            &serde_json::json!({
+                "old_string": "does-not-exist",
+                "new_string": "flask==3.0.2"
+            }),
+            path.to_str(),
+            fallback,
+        );
+
+        let _ = fs::remove_file(&path);
+        assert_eq!(preview, fallback);
+    }
 }

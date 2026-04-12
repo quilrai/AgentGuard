@@ -47,6 +47,17 @@ impl TokenSavingSettings {
     }
 }
 
+/// Dependency protection settings
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct DependencyProtectionSettings {
+    /// Inform the agent when a newer version of a package is available
+    #[serde(default)]
+    pub inform_updated_packages: bool,
+    /// Block packages with known vulnerabilities (checked via OSV API)
+    #[serde(default)]
+    pub block_malicious_packages: bool,
+}
+
 /// Settings persisted per predefined backend in the database.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CustomBackendSettings {
@@ -62,6 +73,9 @@ pub struct CustomBackendSettings {
     /// Token saving settings with sub-category features
     #[serde(default)]
     pub token_saving: TokenSavingSettings,
+    /// Dependency protection settings
+    #[serde(default)]
+    pub dependency_protection: DependencyProtectionSettings,
 }
 
 fn default_true() -> bool {

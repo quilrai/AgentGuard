@@ -658,6 +658,13 @@ pub async fn start_server(app_handle: AppHandle) {
         };
         println!("Database initialized: {}", db_path);
 
+        // Shared HTTP client for dependency protection (OSV + registry checks)
+        let dep_http_client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(5))
+            .user_agent("LLMwatcher/1.0")
+            .build()
+            .unwrap_or_default();
+
         // Load cursor-hooks settings and create router
         let cursor_hooks_settings_json = db
             .get_predefined_backend_settings("cursor-hooks")
@@ -665,7 +672,8 @@ pub async fn start_server(app_handle: AppHandle) {
         let cursor_hooks_settings: CustomBackendSettings =
             serde_json::from_str(&cursor_hooks_settings_json).unwrap_or_default();
 
-        let cursor_hooks_router = create_cursor_hooks_router(db.clone(), cursor_hooks_settings);
+        let cursor_hooks_router =
+            create_cursor_hooks_router(db.clone(), cursor_hooks_settings, dep_http_client.clone());
 
         // Create shared ctx_read session cache (shared with agent hook routers
         // so they can clear it on SessionStart)
@@ -681,6 +689,7 @@ pub async fn start_server(app_handle: AppHandle) {
             db.clone(),
             claude_hooks_settings,
             Some(session_cache.clone()),
+            dep_http_client.clone(),
         );
 
         // Load codex-hooks settings and build its router.
@@ -689,7 +698,8 @@ pub async fn start_server(app_handle: AppHandle) {
             .unwrap_or_else(|_| "{}".to_string());
         let codex_hooks_settings: CustomBackendSettings =
             serde_json::from_str(&codex_hooks_settings_json).unwrap_or_default();
-        let codex_hooks_router = create_codex_hooks_router(db.clone(), codex_hooks_settings);
+        let codex_hooks_router =
+            create_codex_hooks_router(db.clone(), codex_hooks_settings, dep_http_client.clone());
 
         // Build shell compression router
         let cli_compression_router = Router::new().route("/", post(cli_compression_handler));

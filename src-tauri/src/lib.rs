@@ -13,6 +13,7 @@ mod compression;
 mod ctx_read;
 mod cursor_hooks;
 mod database;
+mod dep_protection;
 mod dlp;
 mod dlp_pattern_config;
 mod pattern_utils;
