@@ -33,7 +33,10 @@ let currentCwd = null;
 let projectList = [];
 let gardenDetail = null;
 let expandedFilePath = null;
-let helpMode = false;
+let expandedGrove = null;  // grove name when a module label is clicked
+let helpMode = true;
+let sizeHeatMode = true;   // default ON
+let depWebMode = false;
 // Symbols cache: { [filePath]: { symbols: [...], loading: bool } }
 let symbolsCache = {};
 let importGraph = null;
@@ -41,6 +44,20 @@ let importGraph = null;
 // ============ Public API ============
 
 export function initGarden() {
+  // Size Heat toggle (default ON).
+  document.getElementById('garden-size-heat-btn')?.addEventListener('click', () => {
+    sizeHeatMode = !sizeHeatMode;
+    document.getElementById('garden-size-heat-btn')?.classList.toggle('active', sizeHeatMode);
+    renderGardenScene();
+  });
+
+  // Dependency Web toggle.
+  document.getElementById('garden-dep-web-btn')?.addEventListener('click', () => {
+    depWebMode = !depWebMode;
+    document.getElementById('garden-dep-web-btn')?.classList.toggle('active', depWebMode);
+    renderGardenScene();
+  });
+
   // Help mode toggle — labels every element on the scene.
   document.getElementById('garden-help-btn')?.addEventListener('click', () => {
     helpMode = !helpMode;
@@ -52,11 +69,21 @@ export function initGarden() {
     if (coinRows) coinRows.classList.toggle('help-mode', helpMode);
   });
 
-  // Click on SVG background collapses any expanded tree.
+  // Apply help-mode classes on init since helpMode defaults to true.
+  const initBtn = document.getElementById('garden-help-btn');
+  const initSvg = document.getElementById('garden-svg');
+  const initCoinRows = document.getElementById('garden-coin-rows');
+  if (initBtn) initBtn.classList.add('active');
+  if (initSvg) initSvg.classList.add('help-mode');
+  if (initCoinRows) initCoinRows.classList.add('help-mode');
+
+  // Click on SVG background collapses any expanded tree or grove panel.
   document.getElementById('garden-svg')?.addEventListener('click', (e) => {
     if (e.target.closest('.garden-tree')) return;
-    if (expandedFilePath) {
+    if (e.target.closest('.garden-grove-label, .garden-grove-sub')) return;
+    if (expandedFilePath || expandedGrove) {
       expandedFilePath = null;
+      expandedGrove = null;
       hideSymbolPanel();
       renderGardenScene();
     }
@@ -148,6 +175,7 @@ function highlightActivePill() {
 
 function loadGardenDetail(cwd) {
   expandedFilePath = null;
+  expandedGrove = null;
   symbolsCache = {};
   importGraph = null;
   hideSymbolPanel();
@@ -162,7 +190,11 @@ function loadGardenDetail(cwd) {
       invoke('get_import_graph', { cwd })
         .then(graph => {
           importGraph = graph;
-          renderImportEdges();
+          if (depWebMode) {
+            renderDepWeb();
+          } else {
+            renderImportEdges();
+          }
         })
         .catch(() => {}); // non-critical
     })
@@ -252,10 +284,6 @@ function renderGardenScene() {
       <stop offset="0%" stop-color="#2a3d1a"/>
       <stop offset="100%" stop-color="#182510"/>
     </linearGradient>
-    <radialGradient id="gSunGlow" cx="0.5" cy="0.5" r="0.5">
-      <stop offset="0%" stop-color="rgba(245,197,66,0.25)"/>
-      <stop offset="100%" stop-color="transparent"/>
-    </radialGradient>
     <filter id="fGlow">
       <feGaussianBlur in="SourceGraphic" stdDeviation="2.5" result="b"/>
       <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
@@ -276,9 +304,6 @@ function renderGardenScene() {
     svg.appendChild(s);
   }
 
-  // ---- Sun (cache read ratio) ----
-  drawSun(svg, gardenDetail);
-
   // ---- Ground ----
   svg.appendChild(rect(0, GROUND_Y, W, H - GROUND_Y, 'url(#gGround)'));
   const gl = el('line');
@@ -288,7 +313,7 @@ function renderGardenScene() {
   // ---- Empty state ----
   if (!gardenDetail.files || gardenDetail.files.length === 0) {
     const msg = el('text');
-    setA(msg, { x: W / 2, y: GROUND_Y - 120, 'text-anchor': 'middle', fill: '#666', 'font-size': 16, 'font-family': '-apple-system, sans-serif' });
+    setA(msg, { x: W / 2, y: GROUND_Y - 120, 'text-anchor': 'middle', fill: '#aaa', 'font-size': 16, 'font-family': '-apple-system, sans-serif' });
     msg.textContent = 'No files touched yet in the selected time range.';
     svg.appendChild(msg);
     return;
@@ -304,6 +329,15 @@ function renderGardenScene() {
     setA(f, { cx: rand(50, W - 50), cy: rand(GROUND_Y - 280, GROUND_Y - 30), r: 2, fill: '#b8e986', filter: 'url(#fGlow)' });
     f.style.animationDelay = `${-rand(0, 3)}s`;
     svg.appendChild(f);
+  }
+
+  // Re-render edges after scene rebuild.
+  if (importGraph) {
+    if (depWebMode) {
+      renderDepWeb();
+    } else {
+      renderImportEdges();
+    }
   }
 }
 
@@ -382,10 +416,14 @@ function drawGrove(svg, modName, files, x0, width, groundY, maxTokens, maxTouche
   setA(lbl, {
     x: x0 + width / 2, y: labelY,
     'text-anchor': 'middle', fill: accent,
-    'font-size': 12, 'font-weight': 700,
+    'font-size': 13, 'font-weight': 700,
     'font-family': '-apple-system, sans-serif',
   });
   lbl.textContent = modName;
+  lbl.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleGrovePanel(modName);
+  });
   groveG.appendChild(lbl);
 
   // File count sub-label.
@@ -393,10 +431,14 @@ function drawGrove(svg, modName, files, x0, width, groundY, maxTokens, maxTouche
   sub.setAttribute('class', 'garden-grove-sub');
   setA(sub, {
     x: x0 + width / 2, y: labelY + 14,
-    'text-anchor': 'middle', fill: '#555',
-    'font-size': 9, 'font-family': '-apple-system, sans-serif',
+    'text-anchor': 'middle', fill: '#999',
+    'font-size': 10, 'font-family': '-apple-system, sans-serif',
   });
   sub.textContent = `${files.length} file${files.length === 1 ? '' : 's'}`;
+  sub.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleGrovePanel(modName);
+  });
   groveG.appendChild(sub);
 
   svg.appendChild(groveG);
@@ -450,8 +492,8 @@ function drawClearing(parent, subName, files, x0, width, groundY, maxTokens, max
     slbl.setAttribute('class', 'garden-clearing-label');
     setA(slbl, {
       x: x0 + width / 2, y: groundY + 22,
-      'text-anchor': 'middle', fill: '#555',
-      'font-size': 8, 'font-family': '-apple-system, sans-serif',
+      'text-anchor': 'middle', fill: '#aaa',
+      'font-size': 9, 'font-family': '-apple-system, sans-serif',
       'font-style': 'italic',
     });
     slbl.textContent = subName;
@@ -490,10 +532,12 @@ function drawConicalTree(parent, cx, groundY, file, maxTokens, maxTouches, accen
     treeG.setAttribute('opacity', '0.25');
   }
 
-  // Backend color for canopy.
-  const canopyColor = file.backend_touches && file.backend_touches.length > 0
-    ? backendColor(file.backend_touches[0][0])
-    : accent;
+  // Canopy color: heat mode overrides backend color.
+  const canopyColor = sizeHeatMode
+    ? heatColor(file.lines)
+    : (file.backend_touches && file.backend_touches.length > 0
+        ? backendColor(file.backend_touches[0][0])
+        : accent);
 
   if (file.exists) {
     // ---- Trunk ----
@@ -554,6 +598,21 @@ function drawConicalTree(parent, cx, groundY, file, maxTokens, maxTouches, accen
         px += w + 1;
       }
     }
+
+    // Ground glow in size-heat mode.
+    if (sizeHeatMode) {
+      const hc = heatColor(file.lines);
+      const glowR = (12 + Math.sqrt(file.lines) * 0.8) * scale;
+      const gGlow = el('ellipse');
+      gGlow.setAttribute('class', 'garden-heat-glow');
+      setA(gGlow, {
+        cx, cy: groundY + 2,
+        rx: glowR, ry: glowR * 0.35,
+        fill: hc, opacity: 0.3,
+        filter: 'url(#fGlow)',
+      });
+      treeG.appendChild(gGlow);
+    }
   } else {
     // ---- Dead tree: bare trunk + branches, no canopy ----
     const trunk = el('rect');
@@ -579,7 +638,7 @@ function drawConicalTree(parent, cx, groundY, file, maxTokens, maxTouches, accen
       treeG.appendChild(br);
     }
     const ghost = el('text');
-    setA(ghost, { x: cx, y: treeTop + treeH * 0.2, 'text-anchor': 'middle', fill: '#555', 'font-size': 10 });
+    setA(ghost, { x: cx, y: treeTop + treeH * 0.2, 'text-anchor': 'middle', fill: '#999', 'font-size': 11 });
     ghost.textContent = '\u2205';
     treeG.appendChild(ghost);
   }
@@ -590,8 +649,8 @@ function drawConicalTree(parent, cx, groundY, file, maxTokens, maxTouches, accen
     nameLbl.setAttribute('class', 'garden-file-label');
     setA(nameLbl, {
       x: cx, y: groundY + 16,
-      'text-anchor': 'middle', fill: '#999',
-      'font-size': 9, 'font-family': '-apple-system, sans-serif',
+      'text-anchor': 'middle', fill: '#ddd',
+      'font-size': 10, 'font-weight': 600, 'font-family': '-apple-system, sans-serif',
     });
     nameLbl.textContent = truncate(baseName(file.path), 14);
     treeG.appendChild(nameLbl);
@@ -599,9 +658,9 @@ function drawConicalTree(parent, cx, groundY, file, maxTokens, maxTouches, accen
     const sizeLbl = el('text');
     sizeLbl.setAttribute('class', 'garden-file-size');
     setA(sizeLbl, {
-      x: cx, y: groundY + 27,
-      'text-anchor': 'middle', fill: '#555',
-      'font-size': 8, 'font-family': '-apple-system, sans-serif',
+      x: cx, y: groundY + 28,
+      'text-anchor': 'middle', fill: '#aaa',
+      'font-size': 9, 'font-family': '-apple-system, sans-serif',
     });
     sizeLbl.textContent = file.exists ? `${formatNumber(file.est_tokens)} · ${file.touch_count}×` : 'missing';
     treeG.appendChild(sizeLbl);
@@ -632,6 +691,7 @@ function drawConicalTree(parent, cx, groundY, file, maxTokens, maxTouches, accen
   treeG.addEventListener('click', (e) => {
     e.stopPropagation();
     expandedFilePath = expandedFilePath === file.path ? null : file.path;
+    expandedGrove = null;
     renderGardenScene();
   });
 
@@ -674,8 +734,8 @@ function drawUndergrowth(parent, files, x0, width, groundY, maxTokens, maxTouche
     moreLabel.setAttribute('class', 'garden-undergrowth-more');
     setA(moreLabel, {
       x: x0 + width - 6, y: groundY - 4,
-      'text-anchor': 'end', fill: '#555',
-      'font-size': 8, 'font-family': '-apple-system, sans-serif',
+      'text-anchor': 'end', fill: '#aaa',
+      'font-size': 9, 'font-family': '-apple-system, sans-serif',
     });
     moreLabel.textContent = `+${hidden} more`;
 
@@ -705,9 +765,11 @@ function drawBush(parent, cx, cy, file, scale, accent) {
     bushG.setAttribute('opacity', '0.25');
   }
 
-  const bushColor = file.backend_touches && file.backend_touches.length > 0
-    ? backendColor(file.backend_touches[0][0])
-    : accent;
+  const bushColor = sizeHeatMode
+    ? heatColor(file.lines)
+    : (file.backend_touches && file.backend_touches.length > 0
+        ? backendColor(file.backend_touches[0][0])
+        : accent);
 
   if (file.exists) {
     // Small trunk stub.
@@ -737,6 +799,21 @@ function drawBush(parent, cx, cy, file, scale, accent) {
         opacity: 0.7,
       });
       bushG.appendChild(blob);
+    }
+
+    // Ground glow in size-heat mode.
+    if (sizeHeatMode) {
+      const hc = heatColor(file.lines);
+      const glowR = (6 + Math.sqrt(file.lines) * 0.4) * scale;
+      const gGlow = el('ellipse');
+      gGlow.setAttribute('class', 'garden-heat-glow');
+      setA(gGlow, {
+        cx, cy: cy + 2,
+        rx: glowR, ry: glowR * 0.35,
+        fill: hc, opacity: 0.25,
+        filter: 'url(#fGlow)',
+      });
+      bushG.appendChild(gGlow);
     }
   } else {
     // Dead bush: tiny bare sticks.
@@ -770,6 +847,7 @@ function drawBush(parent, cx, cy, file, scale, accent) {
   bushG.addEventListener('click', (e) => {
     e.stopPropagation();
     expandedFilePath = expandedFilePath === file.path ? null : file.path;
+    expandedGrove = null;
     renderGardenScene();
   });
 
@@ -930,6 +1008,108 @@ function hideSymbolPanel() {
   }
 }
 
+// ---- Grove / folder panel ----
+
+function toggleGrovePanel(groveName) {
+  if (expandedGrove === groveName) {
+    expandedGrove = null;
+    hideSymbolPanel();
+    return;
+  }
+  expandedGrove = groveName;
+  expandedFilePath = null;
+  loadGrovePanel(groveName);
+}
+
+function loadGrovePanel(groveName) {
+  const panel = document.getElementById('garden-symbol-panel');
+  if (!panel) return;
+  panel.style.display = '';
+  panel.innerHTML = `
+    <div class="garden-symbol-header">${esc(groveName)}</div>
+    <div class="garden-symbol-loading">Reading folder\u2026</div>
+  `;
+
+  // (root) means files at project root — pass empty dir.
+  const dir = groveName === '(root)' ? '' : groveName;
+  invoke('browse_directory', { cwd: currentCwd, dir })
+    .then(data => {
+      if (expandedGrove !== groveName) return; // stale
+      renderGrovePanel(groveName, data.files || []);
+    })
+    .catch(e => {
+      if (expandedGrove !== groveName) return;
+      panel.innerHTML = `
+        <div class="garden-symbol-header">${esc(groveName)}</div>
+        <div class="garden-symbol-empty">Could not read folder: ${esc(String(e))}</div>
+      `;
+    });
+}
+
+function renderGrovePanel(groveName, files) {
+  const panel = document.getElementById('garden-symbol-panel');
+  if (!panel) return;
+  panel.style.display = '';
+
+  // Group files by sub-folder: take the path relative to the grove,
+  // and use the first segment as the sub-folder name.
+  const subMap = new Map();
+  for (const f of files) {
+    // f.path is relative to cwd, e.g. "src/commands/stats.rs".
+    // Strip the grove prefix to get the remainder.
+    const prefix = groveName === '(root)' ? '' : groveName + '/';
+    const rest = f.path.startsWith(prefix) ? f.path.slice(prefix.length) : f.path;
+    const parts = rest.split('/').filter(Boolean);
+    const sub = parts.length > 1 ? parts[0] : '(files)';
+    if (!subMap.has(sub)) subMap.set(sub, []);
+    subMap.get(sub).push(f);
+  }
+
+  // Sort sub-folders by total lines descending.
+  const subs = [...subMap.entries()].sort((a, b) => {
+    const aLines = a[1].reduce((s, f) => s + f.lines, 0);
+    const bLines = b[1].reduce((s, f) => s + f.lines, 0);
+    return bLines - aLines;
+  });
+
+  const totalLines = files.reduce((s, f) => s + f.lines, 0);
+
+  let html = `
+    <div class="garden-symbol-header">${esc(groveName === '(root)' ? 'Project root' : groveName)}</div>
+    <div class="garden-symbol-stats">
+      <span>${files.length} files</span>
+      <span>${formatNumber(totalLines)} lines</span>
+    </div>
+  `;
+
+  for (const [subName, subFiles] of subs) {
+    const sorted = [...subFiles].sort((a, b) => b.lines - a.lines);
+    const subLines = sorted.reduce((s, f) => s + f.lines, 0);
+    const label = subName === '(files)' ? 'root files' : subName;
+
+    html += `<div class="garden-symbol-section">
+      <div class="garden-grove-section-title">
+        <span>${esc(label)}</span>
+        <span class="garden-grove-section-lines">${formatNumber(subLines)} lines</span>
+      </div>
+      <div class="garden-symbol-list">`;
+
+    for (const f of sorted) {
+      const hc = heatColor(f.lines);
+      const name = baseName(f.path);
+      html += `<div class="garden-grove-file-row">
+        <span class="garden-grove-file-dot" style="background:${hc}"></span>
+        <span class="garden-grove-file-name" title="${esc(f.path)}">${esc(name)}</span>
+        <span class="garden-grove-file-lines" style="color:${hc}">${f.lines}</span>
+      </div>`;
+    }
+
+    html += `</div></div>`;
+  }
+
+  panel.innerHTML = html;
+}
+
 // ---- Import edges ----
 // Draws curved lines between trees that import each other.
 
@@ -986,64 +1166,158 @@ function renderImportEdges() {
   }
 }
 
-// ---- Sun & Coin pile ----
+// ---- Dependency Web (enhanced import edges) ----
 
-function drawSun(svg, detail) {
-  const ratio = detail.total_input > 0 ? detail.cache_read / detail.total_input : 0;
-  const sunR = 20 + ratio * 30;
-  const opacity = 0.3 + ratio * 0.7;
-  const cx = 100, cy = 100;
+function removeDepWeb() {
+  const svg = document.getElementById('garden-svg');
+  if (!svg) return;
+  svg.querySelectorAll('.garden-dep-edge, .garden-fanin-halo, .garden-circular-dep').forEach(e => e.remove());
+}
 
-  const grp = el('g');
-  grp.setAttribute('class', 'garden-sun-group garden-hover-target');
+function renderDepWeb() {
+  const svg = document.getElementById('garden-svg');
+  if (!svg || !importGraph || !importGraph.edges) return;
 
-  const glow = el('circle');
-  glow.setAttribute('class', 'garden-sun-glow');
-  setA(glow, { cx, cy, r: sunR * 3, fill: 'url(#gSunGlow)', opacity });
-  grp.appendChild(glow);
+  // Remove old edges (both default and dep-web).
+  svg.querySelectorAll('.garden-import-edge, .garden-dep-edge, .garden-fanin-halo, .garden-circular-dep').forEach(e => e.remove());
 
-  if (ratio > 0.05) {
-    const rayCount = 8 + Math.floor(ratio * 8);
-    for (let i = 0; i < rayCount; i++) {
-      const angle = (i / rayCount) * Math.PI * 2;
-      const inner = sunR + 4;
-      const outer = sunR + 10 + ratio * 20;
-      const ray = el('line');
-      setA(ray, {
-        x1: cx + Math.cos(angle) * inner,
-        y1: cy + Math.sin(angle) * inner,
-        x2: cx + Math.cos(angle) * outer,
-        y2: cy + Math.sin(angle) * outer,
-        stroke: '#f5c542',
-        'stroke-width': 1.5,
-        'stroke-linecap': 'round',
-        opacity: opacity * 0.6,
-      });
-      grp.appendChild(ray);
+  // Build tree center map.
+  const treeCenters = new Map();
+  svg.querySelectorAll('.garden-tree').forEach(treeEl => {
+    const p = treeEl.dataset.path;
+    if (!p) return;
+    const bbox = treeEl.getBBox();
+    treeCenters.set(p, {
+      x: bbox.x + bbox.width / 2,
+      y: bbox.y + bbox.height * 0.3,
+    });
+  });
+
+  // Aggregate: count imports per (from, to) pair, and track fan-in per file.
+  const pairCount = new Map(); // "from->to" → count
+  const fanIn = new Map();     // file → number of distinct files that import it
+  const edgeSet = new Set();   // for dedup
+
+  for (const edge of importGraph.edges) {
+    if (!edge.to_file) continue;
+    const from = edge.from_file;
+    const to = edge.to_file;
+    // Normalize pair key (undirected for display).
+    const fwd = `${from}->${to}`;
+    const rev = `${to}->${from}`;
+    if (!edgeSet.has(fwd)) {
+      edgeSet.add(fwd);
+      pairCount.set(fwd, (pairCount.get(fwd) || 0) + 1);
+    }
+    // Track fan-in: how many distinct files import `to`.
+    if (!fanIn.has(to)) fanIn.set(to, new Set());
+    fanIn.get(to).add(from);
+  }
+
+  // Detect circular dependencies: A→B and B→A both exist.
+  const circularPairs = new Set();
+  for (const key of edgeSet) {
+    const [from, to] = key.split('->');
+    if (edgeSet.has(`${to}->${from}`)) {
+      const canonical = [from, to].sort().join('<->');
+      circularPairs.add(canonical);
     }
   }
 
-  const disc = el('circle');
-  setA(disc, { cx, cy, r: sunR, fill: '#f5c542', opacity, filter: 'url(#fGlow)' });
-  grp.appendChild(disc);
+  // Insert point: before the first grove so edges are behind trees.
+  const firstGrove = svg.querySelector('.garden-grove');
 
-  const lbl = el('text');
-  lbl.setAttribute('class', 'garden-label-dim');
-  setA(lbl, { x: cx, y: cy + sunR + 16, 'text-anchor': 'middle', fill: '#888', 'font-size': 10 });
-  lbl.textContent = `${Math.round(ratio * 100)}% cache`;
-  grp.appendChild(lbl);
+  // Draw fan-in halos first (behind edges).
+  for (const [file, importers] of fanIn) {
+    if (importers.size < 3) continue;
+    const center = treeCenters.get(file);
+    if (!center) continue;
+    const halo = el('circle');
+    halo.setAttribute('class', 'garden-fanin-halo');
+    const haloR = 20 + importers.size * 4;
+    setA(halo, {
+      cx: center.x, cy: center.y,
+      r: haloR,
+      fill: 'none',
+      stroke: '#71D083',
+      'stroke-width': 2,
+      opacity: 0.25,
+    });
+    if (firstGrove) svg.insertBefore(halo, firstGrove);
+    else svg.appendChild(halo);
+  }
 
-  grp.addEventListener('mouseenter', () => {
-    showTooltip(
-      'Sun \u2014 Cache Read',
-      `${Math.round(ratio * 100)}% hit rate \u00B7 ${formatNumber(detail.cache_read)} tokens from cache`,
-      'Bright sun means most context is being served from the prompt cache — the cheapest path.'
-    );
-  });
-  grp.addEventListener('mouseleave', hideTooltip);
+  // Draw edges.
+  const drawnPairs = new Set();
+  for (const edge of importGraph.edges) {
+    if (!edge.to_file) continue;
+    const from = treeCenters.get(edge.from_file);
+    const to = treeCenters.get(edge.to_file);
+    if (!from || !to) continue;
 
-  svg.appendChild(grp);
+    const pairKey = [edge.from_file, edge.to_file].sort().join('<->');
+    if (drawnPairs.has(pairKey)) continue;
+    drawnPairs.add(pairKey);
+
+    const isCircular = circularPairs.has(pairKey);
+    const fwdKey = `${edge.from_file}->${edge.to_file}`;
+    const revKey = `${edge.to_file}->${edge.from_file}`;
+    const count = (pairCount.get(fwdKey) || 0) + (pairCount.get(revKey) || 0);
+
+    // Width scales with import count.
+    const strokeW = count >= 10 ? 4 : count >= 5 ? 3 : 1.5;
+    const edgeColor = isCircular ? '#c4793a' : '#71D083';
+    const edgeOpacity = isCircular ? 0.6 : 0.4;
+
+    const midY = Math.min(from.y, to.y) - 30;
+    const pathEl = el('path');
+    pathEl.setAttribute('class', 'garden-dep-edge garden-dep-edge-flow');
+    setA(pathEl, {
+      d: `M${from.x},${from.y} Q${(from.x + to.x) / 2},${midY} ${to.x},${to.y}`,
+      fill: 'none',
+      stroke: edgeColor,
+      'stroke-width': strokeW,
+      'stroke-dasharray': '8,8',
+      opacity: edgeOpacity,
+    });
+
+    // Tooltip on hover.
+    const fromName = baseName(edge.from_file);
+    const toName = baseName(edge.to_file);
+    pathEl.addEventListener('mouseenter', () => {
+      showTooltip(
+        `${esc(fromName)} \u2194 ${esc(toName)}`,
+        `${count} import${count === 1 ? '' : 's'}${isCircular ? ' (circular!)' : ''}`,
+        isCircular
+          ? 'These files import each other \u2014 consider breaking the cycle.'
+          : 'Dependency link between these files.'
+      );
+    });
+    pathEl.addEventListener('mouseleave', hideTooltip);
+
+    if (firstGrove) svg.insertBefore(pathEl, firstGrove);
+    else svg.appendChild(pathEl);
+
+    // Circular dep marker at midpoint.
+    if (isCircular) {
+      const mx = (from.x + to.x) / 2;
+      const my = midY + (Math.min(from.y, to.y) - midY) * 0.5;
+      const marker = el('text');
+      marker.setAttribute('class', 'garden-circular-dep');
+      setA(marker, {
+        x: mx, y: my,
+        'text-anchor': 'middle',
+        fill: '#c4793a',
+        'font-size': 12,
+      });
+      marker.textContent = '\u27F3'; // ⟳
+      if (firstGrove) svg.insertBefore(marker, firstGrove);
+      else svg.appendChild(marker);
+    }
+  }
 }
+
+// ---- Sun & Coin pile ----
 
 // ---- Coin rows (HTML overlay) ----
 //
@@ -1193,6 +1467,13 @@ function moduleColor(name) {
   }
   const hue = Math.abs(h) % 360;
   return `hsl(${hue}, 55%, 58%)`;
+}
+
+// Size heat: 3-bucket color based on line count.
+function heatColor(lines) {
+  if (lines <= 200) return '#4a8a5a'; // cool green
+  if (lines <= 500) return '#c49a3a'; // warm amber
+  return '#c45a3a';                   // hot red-orange
 }
 
 function backendColor(backend) {

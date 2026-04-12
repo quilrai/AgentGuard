@@ -50,9 +50,23 @@ Logging / Observability
 
 Garden (project-level file/module view)
   - "Each project is a garden": groves = modules (first path segment),
-    trees = files the agent has actually touched. Tree height tracks est
-    tokens, canopy density tracks touch count, bark color tracks top
-    backend, dead trees mark files no longer on disk.
+    clearings = sub-folders within a grove, hero trees = hottest files
+    (full conical trees), bushes = lightly-touched files (undergrowth).
+  - Visual mapping:
+      Tree height   = file size (est_tokens, sqrt-scaled)
+      Trunk width   = line count
+      Canopy tiers  = stacked triangles; more tiers = more touches
+      Canopy color  = top backend (green=Claude, blue=Codex, purple=Cursor)
+      Dead tree     = bare branches + ∅ symbol (file deleted from disk)
+      Depth         = hero trees foreground (bigger, lower), bushes
+                      background (smaller, higher, fainter)
+      Sun           = cache hit ratio (brighter = more cache reads)
+      Gold coins    = full-price input tokens (1 coin ≈ 100K)
+      Copper coins  = cached input tokens (1 coin ≈ 1M)
+  - Layout: groves get weight-proportional widths. Within each grove,
+    files are grouped into clearings by second path segment. Each clearing
+    shows up to 3 hero trees + up to 6 undergrowth bushes, with "+N more"
+    for the rest.
   - Backend: stats.rs `get_garden_stats` (project picker) and
     `get_garden_detail` (per-project file breakdown, structs GardenFile /
     GardenDetail).
@@ -66,6 +80,35 @@ Garden (project-level file/module view)
     at all — the paths are buried in `sed`/`nl`/`cat`/`wc` invocations.
   - Frontend: src/garden.js (self-contained SVG renderer + project picker).
     No session-based view remains; the Garden tab is only this file view.
+
+Symbol Extraction (tree-sitter)
+  - Extracts imports and definitions from source files using tree-sitter
+    AST parsing. Runs at PostToolUse time when the agent reads/writes/edits
+    a file — reads the file from disk and stores symbols in SQLite.
+  - Supports 10 languages: JavaScript, TypeScript, Python, Rust, Go,
+    Java, C, C++, Ruby, C#. Language detected from file extension.
+  - Symbols extracted:
+      Imports   : import/from/use/require/#include/using statements
+      Definitions: functions, methods, classes, structs, enums, traits,
+                   interfaces, modules, type aliases
+  - Each symbol: { kind, name, source (import path), line }
+  - Files: symbols.rs (extractor + queries), database.rs (file_symbols
+    table), stats.rs (get_file_symbols, get_import_graph commands)
+  - Import graph: `get_import_graph(cwd)` returns edges between project
+    files, with best-effort resolution of import paths to known files.
+  - Frontend integration:
+      * Clicking a tree/bush in the Garden opens a symbol panel (HTML
+        overlay, right side) showing imports grouped by source and
+        definitions grouped by kind (functions, classes, etc.)
+      * Dashed curved lines connect trees that import from each other
+        (rendered as SVG paths behind the tree layer)
+  - Hook wiring:
+      Claude Code: extract_symbols_for_tool() in claude_hooks.rs
+      Codex CLI:   extract_symbols_for_tool() in codex_hooks.rs (with
+                   Bash command path extraction via paths_from_bash_for_symbols)
+      Cursor IDE:  inline extraction in before_tab_file_read_handler
+  - Symbols are best-effort, fire-and-forget. Parse failures or missing
+    files are silently ignored. 500KB file size cap prevents slow parses.
 
 ================================================================================
 HOOK LIFECYCLE PER AGENT
@@ -94,13 +137,17 @@ KEY FILES
 
   src/lib.rs                          App entry, tray icon, window management
   src/server.rs                       Axum server setup, route mounting
-  src/database.rs                     SQLite: logging, settings, DLP storage
+  src/database.rs                     SQLite: logging, settings, DLP, symbols
+  src/symbols.rs                      Tree-sitter symbol extraction (10 langs)
   src/dlp_pattern_config.rs           DB path resolution (~/.quilrdlpapp)
   src/predefined_backend_settings.rs  Per-backend settings shape (DLP, tokens)
   src/commands/mod.rs                 Tauri command re-exports
   src/commands/hook_ordering.rs       Hook install ordering logic
-  src/commands/stats.rs               Dashboard, logs, tool calls, Garden
-  ../src/garden.js                    Frontend Garden view (file/module SVG)
+  src/commands/stats.rs               Dashboard, logs, tool calls, Garden,
+                                      symbols (get_file_symbols, get_import_graph)
+  ../src/garden.js                    Frontend Garden view (conical trees, clearings,
+                                      hero/bush layout, symbol panel, import edges)
+  ../src/pages-garden.css             Garden styles (tree shapes, symbol panel, etc.)
 
 Hook scripts live at:
   Claude:  ~/.claude/settings.json (hooks section)
@@ -109,4 +156,5 @@ Hook scripts live at:
 
 Database: ~/.quilrdlpapp/proxy_requests.db  (resolved in dlp_pattern_config.rs::get_db_path)
   Tables: requests, tool_calls, dlp_detections, dlp_patterns,
-          compression_cache, settings, predefined_backend_settings
+          compression_cache, settings, predefined_backend_settings,
+          file_symbols (tree-sitter extracted imports/definitions)

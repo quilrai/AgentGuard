@@ -240,6 +240,8 @@ pub fn run() {
             // Garden symbols (tree-sitter)
             commands::get_file_symbols,
             commands::get_import_graph,
+            // Garden disk browsing
+            commands::browse_directory,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

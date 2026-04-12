@@ -7,7 +7,7 @@ use crate::requestresponsemetadata::{RequestMetadata, ResponseMetadata};
 use rusqlite::Connection;
 use std::sync::{Arc, Mutex, Once};
 
-const DB_VERSION: &str = "2026-april-09";
+const DB_VERSION: &str = "2026-april-12";
 
 static VERSION_CHECK: Once = Once::new();
 

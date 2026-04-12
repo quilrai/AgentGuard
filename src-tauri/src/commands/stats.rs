@@ -1699,3 +1699,131 @@ fn normalize_path(path: &str) -> String {
     parts.join("/")
 }
 
+// ========================================================================
+// Browse directory from disk (for grove panel)
+// ========================================================================
+
+/// A file entry from disk with its line count.
+#[derive(Serialize, Clone)]
+pub struct DiskFileEntry {
+    /// Path relative to the project cwd.
+    pub path: String,
+    /// Line count (0 for non-text / unreadable files).
+    pub lines: u64,
+}
+
+/// Response for browsing a sub-directory on disk.
+#[derive(Serialize)]
+pub struct BrowseDirResponse {
+    pub dir: String,
+    pub files: Vec<DiskFileEntry>,
+}
+
+/// Text/code file extensions we count lines for.
+fn is_text_ext(ext: &str) -> bool {
+    matches!(
+        ext,
+        "rs" | "js" | "ts" | "tsx" | "jsx" | "py" | "go" | "java" | "c" | "h"
+            | "cpp" | "hpp" | "cc" | "cs" | "rb" | "swift" | "kt" | "scala"
+            | "lua" | "sh" | "bash" | "zsh" | "fish" | "pl" | "pm"
+            | "html" | "htm" | "css" | "scss" | "sass" | "less"
+            | "json" | "yaml" | "yml" | "toml" | "xml" | "csv"
+            | "md" | "txt" | "rst" | "ini" | "cfg" | "conf"
+            | "sql" | "graphql" | "gql" | "proto"
+            | "vue" | "svelte" | "astro"
+            | "dockerfile" | "makefile" | "cmake"
+            | "r" | "jl" | "ex" | "exs" | "erl" | "hrl"
+            | "zig" | "nim" | "dart" | "v" | "vhdl"
+    )
+}
+
+/// Directories to always skip.
+fn is_ignored_dir(name: &str) -> bool {
+    matches!(
+        name,
+        "node_modules" | ".git" | ".svn" | ".hg" | "target" | "build" | "dist"
+            | ".next" | ".nuxt" | "__pycache__" | ".tox" | ".venv" | "venv"
+            | ".idea" | ".vscode" | ".cache" | "vendor"
+    )
+}
+
+/// Browse a directory on disk, returning all text/code files with line counts.
+/// `dir` is relative to `cwd` (e.g. "src" or "src/commands"). Pass empty string for project root.
+#[tauri::command]
+pub fn browse_directory(cwd: String, dir: String) -> Result<BrowseDirResponse, String> {
+    use std::fs;
+    use std::io::{BufRead, BufReader};
+    use std::path::Path;
+
+    let base = Path::new(&cwd);
+    let abs_dir = if dir.is_empty() {
+        base.to_path_buf()
+    } else {
+        base.join(&dir)
+    };
+
+    if !abs_dir.is_dir() {
+        return Err(format!("Not a directory: {}", abs_dir.display()));
+    }
+
+    let mut files = Vec::new();
+    let mut stack = vec![abs_dir.clone()];
+
+    while let Some(current) = stack.pop() {
+        let entries = match fs::read_dir(&current) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let file_name = entry.file_name();
+            let name = file_name.to_string_lossy();
+
+            if path.is_dir() {
+                if !is_ignored_dir(&name.to_lowercase()) && !name.starts_with('.') {
+                    stack.push(path);
+                }
+                continue;
+            }
+
+            // Check extension.
+            let ext = path
+                .extension()
+                .map(|e| e.to_string_lossy().to_lowercase())
+                .unwrap_or_default();
+
+            // Also accept extensionless files with known names.
+            let fname_lower = name.to_lowercase();
+            let is_text = is_text_ext(&ext)
+                || matches!(fname_lower.as_str(), "makefile" | "dockerfile" | "rakefile" | "gemfile" | "procfile");
+
+            if !is_text {
+                continue;
+            }
+
+            // Count lines.
+            let lines = match fs::File::open(&path) {
+                Ok(f) => {
+                    let reader = BufReader::new(f);
+                    reader.lines().count() as u64
+                }
+                Err(_) => 0,
+            };
+
+            // Make path relative to cwd.
+            let rel = path
+                .strip_prefix(base)
+                .unwrap_or(&path)
+                .to_string_lossy()
+                .replace('\\', "/");
+
+            files.push(DiskFileEntry { path: rel, lines });
+        }
+    }
+
+    // Sort by lines descending.
+    files.sort_by(|a, b| b.lines.cmp(&a.lines));
+
+    Ok(BrowseDirResponse { dir, files })
+}
