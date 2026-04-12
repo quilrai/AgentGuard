@@ -9,16 +9,14 @@ import {
   formatLatency,
   shortenModel
 } from './utils.js';
-import { destroyCharts, createModelsChart, createTokenChart, createLatencyChart, createDlpChart, createToolInsightsChart } from './charts.js';
+import { destroyCharts, createModelsChart, createTokenChart, createLatencyChart, createTokenSavingsChart, createToolInsightsChart } from './charts.js';
 
 // Store chart creation functions for fullscreen recreation
 let chartData = {};
 
 // Render dashboard HTML
-function renderDashboard(data, dlpStats, toolInsights) {
-  const { models, features, token_totals, recent_requests, latency_points } = data;
-
-  const pct = (val) => features.total_requests > 0 ? Math.round((val / features.total_requests) * 100) : 0;
+function renderDashboard(data, tokenSavings, toolInsights) {
+  const { models, token_totals, recent_requests, latency_points } = data;
 
   return `
     <div class="charts-grid">
@@ -61,39 +59,17 @@ function renderDashboard(data, dlpStats, toolInsights) {
     </div>
 
     <div class="charts-grid">
-      <!-- Request Features -->
+      <!-- Token Savings -->
       <div class="card">
-        <div class="card-header">Request Features</div>
-        <div class="card-body">
-          <div class="feature-bars">
-            <div class="feature-bar">
-              <div class="feature-label">
-                <span class="feature-name">System Prompt</span>
-                <span class="feature-value">${features.with_system_prompt} (${pct(features.with_system_prompt)}%)</span>
-              </div>
-              <div class="bar-track">
-                <div class="bar-fill system" style="width: ${pct(features.with_system_prompt)}%"></div>
-              </div>
-            </div>
-            <div class="feature-bar">
-              <div class="feature-label">
-                <span class="feature-name">Tools</span>
-                <span class="feature-value">${features.with_tools} (${pct(features.with_tools)}%)</span>
-              </div>
-              <div class="bar-track">
-                <div class="bar-fill tools" style="width: ${pct(features.with_tools)}%"></div>
-              </div>
-            </div>
-            <div class="feature-bar">
-              <div class="feature-label">
-                <span class="feature-name">Thinking</span>
-                <span class="feature-value">${features.with_thinking} (${pct(features.with_thinking)}%)</span>
-              </div>
-              <div class="bar-track">
-                <div class="bar-fill thinking" style="width: ${pct(features.with_thinking)}%"></div>
-              </div>
-            </div>
+        <div class="card-header">
+          <span>Token Savings</span>
+          <div class="card-header-actions">
+            <span class="badge">${formatNumber(tokenSavings.total_saved)} saved</span>
+            <button class="expand-btn" data-chart="tokenSavings" title="Expand"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg></button>
           </div>
+        </div>
+        <div class="card-body chart-container-md" id="token-savings-chart">
+          ${tokenSavings.by_method.length === 0 ? '<p class="empty-text">No token savings yet</p>' : ''}
         </div>
       </div>
 
@@ -140,23 +116,6 @@ function renderDashboard(data, dlpStats, toolInsights) {
       </div>
     </div>
 
-    <!-- Detections -->
-    <div class="charts-grid">
-      <div class="card full-width">
-        <div class="card-header">
-          <span>Detections</span>
-          <div class="card-header-actions">
-            <button class="expand-btn" data-chart="dlp" title="Expand"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg></button>
-          </div>
-        </div>
-        <div class="card-body">
-          <div class="dlp-chart-container" id="dlp-chart">
-            ${(!dlpStats || dlpStats.detections_by_pattern.length === 0) ? '<p class="empty-text">No detections</p>' : ''}
-          </div>
-        </div>
-      </div>
-    </div>
-
     <!-- Fullscreen Chart Modal -->
     <div class="chart-fullscreen-modal" id="chart-fullscreen-modal">
       <div class="chart-fullscreen-content">
@@ -178,14 +137,14 @@ export async function loadDashboard() {
   destroyCharts();
 
   try {
-    // Load dashboard stats, DLP stats, and tool insights in parallel
-    const [data, dlpStats, toolInsights] = await Promise.all([
+    // Load dashboard stats, token savings, and tool insights in parallel
+    const [data, tokenSavings, toolInsights] = await Promise.all([
       invoke('get_dashboard_stats', { timeRange: currentTimeRange, backend: currentBackend }),
-      invoke('get_dlp_detection_stats', { timeRange: currentTimeRange, backend: currentBackend }),
+      invoke('get_token_savings_stats', { timeRange: currentTimeRange, backend: currentBackend }),
       invoke('get_tool_call_insights', { timeRange: currentTimeRange, backend: currentBackend })
     ]);
 
-    if (data.total_requests === 0 && dlpStats.total_detections === 0 && toolInsights.tools.length === 0) {
+    if (data.total_requests === 0 && tokenSavings.total_saved === 0 && toolInsights.tools.length === 0) {
       content.innerHTML = `
         <div class="empty-state">
           <h3>No data yet</h3>
@@ -195,7 +154,7 @@ export async function loadDashboard() {
       return;
     }
 
-    content.innerHTML = renderDashboard(data, dlpStats, toolInsights);
+    content.innerHTML = renderDashboard(data, tokenSavings, toolInsights);
 
     // Store chart data for fullscreen recreation
     chartData = {
@@ -203,7 +162,7 @@ export async function loadDashboard() {
       requests: data.recent_requests,
       latencyPoints: data.latency_points,
       toolInsights: toolInsights,
-      dlpStats: dlpStats
+      tokenSavings: tokenSavings
     };
 
     // Create charts after DOM is updated
@@ -220,8 +179,8 @@ export async function loadDashboard() {
       if (toolInsights.tools.length > 0) {
         createToolInsightsChart(document.getElementById('tool-insights-chart'), toolInsights);
       }
-      if (dlpStats && dlpStats.detections_by_pattern.length > 0) {
-        createDlpChart(document.getElementById('dlp-chart'), dlpStats.detections_by_pattern);
+      if (tokenSavings && tokenSavings.by_method.length > 0) {
+        createTokenSavingsChart(document.getElementById('token-savings-chart'), tokenSavings);
       }
 
       // Setup expand button handlers
@@ -279,7 +238,7 @@ const chartTitles = {
   tokens: 'Token Usage Per Request',
   latency: 'Latency Trend',
   toolInsights: 'Tool Insights',
-  dlp: 'Detections'
+  tokenSavings: 'Token Savings'
 };
 
 // Fullscreen chart instance
@@ -347,9 +306,9 @@ function openFullscreenChart(chartType, modal, body, titleEl) {
           fullscreenChart = createFullscreenToolInsightsChart(canvas, chartData.toolInsights);
         }
         break;
-      case 'dlp':
-        if (chartData.dlpStats?.detections_by_pattern?.length > 0) {
-          fullscreenChart = createFullscreenDlpChart(canvas, chartData.dlpStats.detections_by_pattern);
+      case 'tokenSavings':
+        if (chartData.tokenSavings?.by_method?.length > 0) {
+          fullscreenChart = createFullscreenTokenSavingsChart(canvas, chartData.tokenSavings);
         }
         break;
     }
@@ -367,7 +326,7 @@ function closeFullscreenModal(modal, body) {
 }
 
 // Fullscreen chart creation functions (duplicated with larger dimensions)
-const dlpColors = [
+const chartColors = [
   colors.primary, colors.secondary, colors.warning, colors.pink, colors.blue,
   '#8b5cf6', '#14b8a6', '#f97316', '#ef4444', '#84cc16'
 ];
@@ -383,7 +342,7 @@ function createFullscreenModelsChart(canvas, models) {
       labels,
       datasets: [{
         data: values,
-        backgroundColor: dlpColors.slice(0, data.length),
+        backgroundColor: chartColors.slice(0, data.length),
         borderRadius: 6,
         barThickness: 32,
       }]
@@ -465,7 +424,7 @@ function createFullscreenToolInsightsChart(canvas, insights) {
   const { tools } = insights;
   const innerLabels = tools.map(t => t.tool_name);
   const innerValues = tools.map(t => t.count);
-  const innerColors = tools.map((_, i) => dlpColors[i % dlpColors.length]);
+  const innerColors = tools.map((_, i) => chartColors[i % chartColors.length]);
 
   const outerLabels = [];
   const outerValues = [];
@@ -473,7 +432,7 @@ function createFullscreenToolInsightsChart(canvas, insights) {
   const outerMeta = [];
 
   tools.forEach((tool, toolIndex) => {
-    const baseColor = dlpColors[toolIndex % dlpColors.length];
+    const baseColor = chartColors[toolIndex % chartColors.length];
     if (tool.targets.length === 0) {
       outerLabels.push('other');
       outerValues.push(tool.count);
@@ -557,7 +516,7 @@ function createFullscreenToolInsightsChart(canvas, insights) {
             color: '#aaa',
             generateLabels: () => tools.map((tool, i) => ({
               text: `${tool.tool_name} (${tool.count})`,
-              fillStyle: dlpColors[i % dlpColors.length],
+              fillStyle: chartColors[i % chartColors.length],
               strokeStyle: '#1D2021',
               fontColor: '#aaa',
               lineWidth: 1,
@@ -580,10 +539,50 @@ function createFullscreenToolInsightsChart(canvas, insights) {
   });
 }
 
-function createFullscreenDlpChart(canvas, detectionsByPattern) {
-  const labels = detectionsByPattern.map(p => p.pattern_name);
-  const values = detectionsByPattern.map(p => p.count);
-  const backgroundColors = detectionsByPattern.map((_, i) => dlpColors[i % dlpColors.length]);
+const methodLabels = {
+  shell_compression: 'Shell Compression',
+  ctx_read: 'File Read Cache',
+  ctx_smart_read: 'Smart Read',
+  unknown: 'Other',
+};
+
+function createFullscreenTokenSavingsChart(canvas, savingsData) {
+  const labels = savingsData.by_method.map(m => methodLabels[m.method] || m.method);
+  const values = savingsData.by_method.map(m => m.tokens_saved);
+  const backgroundColors = savingsData.by_method.map((_, i) => chartColors[i % chartColors.length]);
+
+  const labelPlugin = {
+    id: 'fsSavingsSegmentLabels',
+    afterDraw: (chart) => {
+      const ctx = chart.ctx;
+      ctx.save();
+      const meta = chart.getDatasetMeta(0);
+      meta.data.forEach((arc, index) => {
+        const { x, y, startAngle, endAngle, innerRadius, outerRadius } = arc.getProps(['x', 'y', 'startAngle', 'endAngle', 'innerRadius', 'outerRadius']);
+        const angleSpan = endAngle - startAngle;
+        if (angleSpan < 0.26) return;
+        const midAngle = startAngle + angleSpan / 2;
+        const midRadius = (innerRadius + outerRadius) / 2;
+        const labelX = x + Math.cos(midAngle) * midRadius;
+        const labelY = y + Math.sin(midAngle) * midRadius;
+        let label = labels[index];
+        const arcLength = angleSpan * midRadius;
+        const fontSize = 13;
+        ctx.font = `${fontSize}px -apple-system, BlinkMacSystemFont, sans-serif`;
+        const maxChars = Math.floor(arcLength / (fontSize * 0.6));
+        if (label.length > maxChars && maxChars > 3) {
+          label = label.substring(0, maxChars - 2) + '..';
+        } else if (maxChars <= 3) return;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#e8e8e8';
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+        ctx.shadowBlur = 3;
+        ctx.fillText(label, labelX, labelY);
+      });
+      ctx.restore();
+    }
+  };
 
   return new Chart(canvas, {
     type: 'doughnut',
@@ -594,18 +593,22 @@ function createFullscreenDlpChart(canvas, detectionsByPattern) {
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      cutout: '30%',
       plugins: {
         legend: {
+          display: true,
           position: 'right',
           labels: {
-            boxWidth: 16,
-            padding: 16,
-            font: { size: 14 },
-            generateLabels: (chart) => chart.data.labels.map((label, i) => ({
-              text: `${label} (${chart.data.datasets[0].data[i]})`,
-              fillStyle: chart.data.datasets[0].backgroundColor[i],
+            boxWidth: 14,
+            padding: 12,
+            font: { size: 13 },
+            color: '#aaa',
+            generateLabels: () => savingsData.by_method.map((m, i) => ({
+              text: `${methodLabels[m.method] || m.method} (${formatNumber(m.tokens_saved)})`,
+              fillStyle: backgroundColors[i],
               strokeStyle: '#1D2021',
-              lineWidth: 2,
+              fontColor: '#aaa',
+              lineWidth: 1,
               index: i
             }))
           }
@@ -615,11 +618,12 @@ function createFullscreenDlpChart(canvas, detectionsByPattern) {
             label: (context) => {
               const total = context.dataset.data.reduce((a, b) => a + b, 0);
               const pct = Math.round((context.parsed / total) * 100);
-              return `${context.label}: ${context.parsed} (${pct}%)`;
+              return `${context.label}: ${formatNumber(context.parsed)} tokens (${pct}%)`;
             }
           }
         }
       }
-    }
+    },
+    plugins: [labelPlugin]
   });
 }

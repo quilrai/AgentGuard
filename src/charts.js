@@ -1,7 +1,7 @@
 import { charts, setCharts, colors, formatNumber, formatLatency, shortenModel } from './utils.js';
 
-// Extended color palette for DLP chart
-const dlpColors = [
+// Extended color palette for charts
+const chartColors = [
   colors.primary,    // Indigo
   colors.secondary,  // Green
   colors.warning,    // Amber
@@ -198,7 +198,7 @@ export function createToolCallsChart(container, toolCallStats) {
       labels,
       datasets: [{
         data: values,
-        backgroundColor: dlpColors.slice(0, data.length),
+        backgroundColor: chartColors.slice(0, data.length),
         borderRadius: 6,
         barThickness: 20,
       }]
@@ -236,7 +236,7 @@ export function createToolInsightsChart(container, insights) {
   // Inner ring: tools
   const innerLabels = tools.map(t => t.tool_name);
   const innerValues = tools.map(t => t.count);
-  const innerColors = tools.map((_, i) => dlpColors[i % dlpColors.length]);
+  const innerColors = tools.map((_, i) => chartColors[i % chartColors.length]);
 
   // Outer ring: targets aligned with parent tool's arc
   // Each tool's targets must sum to that tool's count to align properly
@@ -246,7 +246,7 @@ export function createToolInsightsChart(container, insights) {
   const outerMeta = []; // Store tool name for tooltip
 
   tools.forEach((tool, toolIndex) => {
-    const baseColor = dlpColors[toolIndex % dlpColors.length];
+    const baseColor = chartColors[toolIndex % chartColors.length];
 
     if (tool.targets.length === 0) {
       // No targets extracted - show single segment labeled "other"
@@ -381,7 +381,7 @@ export function createToolInsightsChart(container, insights) {
               // Only show tools in legend
               return tools.map((tool, i) => ({
                 text: `${tool.tool_name} (${tool.count})`,
-                fillStyle: dlpColors[i % dlpColors.length],
+                fillStyle: chartColors[i % chartColors.length],
                 strokeStyle: '#1D2021',
                 fontColor: '#aaa',
                 lineWidth: 1,
@@ -413,17 +413,63 @@ export function createToolInsightsChart(container, insights) {
   setCharts(newCharts);
 }
 
-// Create DLP Detections Chart (Doughnut)
-export function createDlpChart(container, detectionsByPattern) {
+// Pretty method names for token saving methods
+const methodLabels = {
+  shell_compression: 'Shell Compression',
+  ctx_read: 'File Read Cache',
+  ctx_smart_read: 'Smart Read',
+  unknown: 'Other',
+};
+
+function prettyMethod(method) {
+  return methodLabels[method] || method;
+}
+
+// Create Token Savings Chart (Doughnut by method)
+export function createTokenSavingsChart(container, savingsData) {
   const ctx = document.createElement('canvas');
   container.appendChild(ctx);
 
-  const labels = detectionsByPattern.map(p => p.pattern_name);
-  const values = detectionsByPattern.map(p => p.count);
-  const backgroundColors = detectionsByPattern.map((_, i) => dlpColors[i % dlpColors.length]);
+  const labels = savingsData.by_method.map(m => prettyMethod(m.method));
+  const values = savingsData.by_method.map(m => m.tokens_saved);
+  const backgroundColors = savingsData.by_method.map((_, i) => chartColors[i % chartColors.length]);
+
+  // Segment label plugin (same style as Tool Insights)
+  const labelPlugin = {
+    id: 'savingsSegmentLabels',
+    afterDraw: (chart) => {
+      const ctx = chart.ctx;
+      ctx.save();
+      const meta = chart.getDatasetMeta(0);
+      meta.data.forEach((arc, index) => {
+        const { x, y, startAngle, endAngle, innerRadius, outerRadius } = arc.getProps(['x', 'y', 'startAngle', 'endAngle', 'innerRadius', 'outerRadius']);
+        const angleSpan = endAngle - startAngle;
+        if (angleSpan < 0.26) return;
+        const midAngle = startAngle + angleSpan / 2;
+        const midRadius = (innerRadius + outerRadius) / 2;
+        const labelX = x + Math.cos(midAngle) * midRadius;
+        const labelY = y + Math.sin(midAngle) * midRadius;
+        let label = labels[index];
+        const arcLength = angleSpan * midRadius;
+        const fontSize = 11;
+        ctx.font = `${fontSize}px -apple-system, BlinkMacSystemFont, sans-serif`;
+        const maxChars = Math.floor(arcLength / (fontSize * 0.6));
+        if (label.length > maxChars && maxChars > 3) {
+          label = label.substring(0, maxChars - 2) + '..';
+        } else if (maxChars <= 3) { ctx.restore(); return; }
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#fff';
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+        ctx.shadowBlur = 3;
+        ctx.fillText(label, labelX, labelY);
+      });
+      ctx.restore();
+    }
+  };
 
   const newCharts = { ...charts };
-  newCharts.dlp = new Chart(ctx, {
+  newCharts.tokenSavings = new Chart(ctx, {
     type: 'doughnut',
     data: {
       labels,
@@ -437,20 +483,23 @@ export function createDlpChart(container, detectionsByPattern) {
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      cutout: '30%',
       plugins: {
         legend: {
+          display: true,
           position: 'right',
           labels: {
-            boxWidth: 14,
-            padding: 12,
-            font: { size: 12 },
-            generateLabels: (chart) => {
-              const data = chart.data;
-              return data.labels.map((label, i) => ({
-                text: `${label} (${data.datasets[0].data[i]})`,
-                fillStyle: data.datasets[0].backgroundColor[i],
+            boxWidth: 12,
+            padding: 8,
+            font: { size: 11 },
+            color: '#aaa',
+            generateLabels: () => {
+              return savingsData.by_method.map((m, i) => ({
+                text: `${prettyMethod(m.method)} (${formatNumber(m.tokens_saved)})`,
+                fillStyle: backgroundColors[i],
                 strokeStyle: '#1D2021',
-                lineWidth: 2,
+                fontColor: '#aaa',
+                lineWidth: 1,
                 index: i
               }));
             }
@@ -460,14 +509,14 @@ export function createDlpChart(container, detectionsByPattern) {
           callbacks: {
             label: (context) => {
               const total = context.dataset.data.reduce((a, b) => a + b, 0);
-              const value = context.parsed;
-              const pct = Math.round((value / total) * 100);
-              return `${context.label}: ${value} (${pct}%)`;
+              const pct = Math.round((context.parsed / total) * 100);
+              return `${context.label}: ${formatNumber(context.parsed)} tokens (${pct}%)`;
             }
           }
         }
       }
-    }
+    },
+    plugins: [labelPlugin]
   });
   setCharts(newCharts);
 }

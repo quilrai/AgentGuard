@@ -221,6 +221,7 @@ pub fn run() {
             commands::get_tool_calls_for_request,
             commands::get_tool_call_stats,
             commands::get_tool_call_insights,
+            commands::get_token_savings_stats,
             commands::install_cursor_hooks,
             commands::uninstall_cursor_hooks,
             commands::check_cursor_hooks_installed,

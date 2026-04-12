@@ -996,6 +996,83 @@ pub fn get_tool_call_insights(time_range: String, backend: String) -> Result<Too
     Ok(ToolInsights { tools })
 }
 // ========================================================================
+// Token Savings Stats (dashboard chart)
+// ========================================================================
+
+#[derive(Serialize)]
+pub struct TokenSavingsByMethod {
+    pub method: String,
+    pub tokens_saved: i64,
+}
+
+#[derive(Serialize)]
+pub struct TokenSavingsStats {
+    pub total_saved: i64,
+    pub by_method: Vec<TokenSavingsByMethod>,
+}
+
+#[tauri::command]
+pub fn get_token_savings_stats(time_range: String, backend: String) -> Result<TokenSavingsStats, String> {
+    use std::collections::HashMap;
+
+    let conn = open_connection().map_err(|e| e.to_string())?;
+
+    let hours = time_range_to_hours(&time_range);
+    let cutoff_ts = get_cutoff_timestamp(hours);
+
+    let backend_filter = if backend == "all" {
+        String::new()
+    } else {
+        format!(" AND backend = '{}'", backend.replace('\'', "''"))
+    };
+
+    // Fetch rows with token savings and their meta
+    let mut stmt = conn
+        .prepare(&format!(
+            "SELECT COALESCE(tokens_saved, 0), token_saving_meta
+             FROM requests
+             WHERE tokens_saved > 0 AND timestamp >= ?1{}",
+            backend_filter
+        ))
+        .map_err(|e| e.to_string())?;
+
+    let rows: Vec<(i64, Option<String>)> = stmt
+        .query_map([&cutoff_ts], |row| Ok((row.get(0)?, row.get(1)?)))
+        .map_err(|e| e.to_string())?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    // Group by method from token_saving_meta JSON keys
+    let mut method_totals: HashMap<String, i64> = HashMap::new();
+    let mut total_saved: i64 = 0;
+
+    for (saved, meta) in &rows {
+        total_saved += saved;
+        let method = meta
+            .as_deref()
+            .and_then(|m| {
+                // meta is JSON like {"shell_compression":123} or {"ctx_read":456}
+                serde_json::from_str::<serde_json::Value>(m)
+                    .ok()
+                    .and_then(|v| v.as_object()?.keys().next().cloned())
+            })
+            .unwrap_or_else(|| "unknown".to_string());
+        *method_totals.entry(method).or_insert(0) += saved;
+    }
+
+    let mut by_method: Vec<TokenSavingsByMethod> = method_totals
+        .into_iter()
+        .map(|(method, tokens_saved)| TokenSavingsByMethod { method, tokens_saved })
+        .collect();
+    by_method.sort_by(|a, b| b.tokens_saved.cmp(&a.tokens_saved));
+
+    Ok(TokenSavingsStats {
+        total_saved,
+        by_method,
+    })
+}
+
+// ========================================================================
 // Home Screen — facts pool + last-request-by-backend + token-saver stats
 // ========================================================================
 
