@@ -63,6 +63,13 @@ export function setLogsPage(value) {
   logsPage = value;
 }
 
+// Logs view mode: 'token_saving' or 'guardian'
+export let logsView = 'token_saving';
+
+export function setLogsView(value) {
+  logsView = value;
+}
+
 // Store logs data for modal access
 export let currentLogs = [];
 

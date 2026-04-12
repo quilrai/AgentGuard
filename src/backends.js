@@ -91,6 +91,10 @@ function setCardState(agentId, installed) {
   const card = document.querySelector(`.agent-card[data-agent="${agentId}"]`);
   if (!card) return;
   card.classList.toggle('is-installed', !!installed);
+
+  // Update tab bar: show "+ Add" only when not installed, nothing extra when installed
+  const badge = document.getElementById(`agent-tab-badge-${agentId}`);
+  if (badge) badge.hidden = !!installed;
 }
 
 async function refreshAgentStatus(agent) {
@@ -131,7 +135,6 @@ async function refreshAgentStatus(agent) {
 
 function attachAgentHandler(agent) {
   const btn = document.getElementById(`guardian-${agent.id}-btn`);
-  const card = document.querySelector(`.agent-card[data-agent="${agent.id}"]`);
   if (!btn) return;
 
   async function doToggle() {
@@ -153,20 +156,10 @@ function attachAgentHandler(agent) {
     e.stopPropagation();
     doToggle();
   });
-
-  // Make the whole card clickable for install when not-installed
-  if (card) {
-    card.addEventListener('click', () => {
-      if (!card.classList.contains('is-installed') && !btn.disabled) {
-        doToggle();
-      }
-    });
-  }
 }
 
 export async function refreshGuardianHooks() {
   await Promise.all(AGENTS.map(refreshAgentStatus));
-  document.querySelector('.agent-setup-grid')?.classList.add('status-checked');
   showSetupCallout();
 }
 
@@ -278,8 +271,11 @@ function initProtectionControls() {
     if (pop && !pop.hidden) closeProtectionPopover();
   });
 
-  // Keep counts in sync
-  onDetectionsChanged(updateProtectionSummary);
+  // Keep counts in sync (header + inline cards)
+  onDetectionsChanged(() => {
+    updateProtectionSummary();
+    renderSettingsIntoCards();
+  });
   updateProtectionSummary();
 }
 
@@ -313,14 +309,25 @@ function renderSettingsIntoCards() {
     const notifyActive = tokenAction === 'notify' ? 'is-active' : '';
     const tokenNudge = tokenVal === 0 ? 'needs-setup' : '';
 
+    const detections = getDetections();
+    const detTotal = detections.length;
+    const detEnabled = detections.filter(d => d.enabled).length;
+    const detSummary = detTotal > 0 ? `${detEnabled}/${detTotal} enabled` : '';
+
+    const vulnOn = settings.dependency_protection.block_malicious_packages;
+    const updateOn = settings.dependency_protection.inform_updated_packages;
+
     container.innerHTML = `
       <div class="agent-tiles">
         <div class="agent-tile tile-protection ${dlpOn ? 'tile-active' : 'tile-muted'}">
           <div class="agent-tile-head">
             <span class="agent-tile-dot"></span>
-            <span class="agent-tile-label">Protection</span>
-            <span class="agent-tile-val">${dlpOn ? 'Active' : 'Off'}</span>
+            <span class="agent-tile-label">Data Protection</span>
+            <span class="agent-tile-val">${dlpOn ? 'Active' : 'Off'}${dlpOn && detSummary ? ' · ' + detSummary : ''}</span>
           </div>
+          <button class="agent-tile-action-icon dlp-settings-btn" type="button" title="Detection settings">
+            <i data-lucide="settings"></i>
+          </button>
           <button class="agent-tile-action backend-dlp-btn" type="button">
             ${dlpOn ? 'Disable' : 'Enable'}
           </button>
@@ -351,27 +358,25 @@ function renderSettingsIntoCards() {
           </div>
         </div>
 
-        <div class="agent-tile tile-dep tile-dep--block ${settings.dependency_protection.block_malicious_packages ? 'tile-active' : 'tile-muted'}">
+        <div class="agent-tile tile-protection ${vulnOn ? 'tile-active' : 'tile-muted'}">
           <div class="agent-tile-head">
             <span class="agent-tile-dot"></span>
             <span class="agent-tile-label">Vulnerability Guard</span>
-            <span class="agent-tile-val">${settings.dependency_protection.block_malicious_packages ? 'Active' : 'Off'}</span>
+            <span class="agent-tile-val">${vulnOn ? 'Active' : 'Off'}</span>
           </div>
-          <span class="agent-tile-desc">Checks every install command and dependency file against the OSV vulnerability database. Blocks packages with known CVEs.</span>
           <button class="agent-tile-action dep-block-btn" type="button">
-            ${settings.dependency_protection.block_malicious_packages ? 'Disable' : 'Enable'}
+            ${vulnOn ? 'Disable' : 'Enable'}
           </button>
         </div>
 
-        <div class="agent-tile tile-dep tile-dep--inform ${settings.dependency_protection.inform_updated_packages ? 'tile-active' : 'tile-muted'}">
+        <div class="agent-tile tile-protection ${updateOn ? 'tile-active' : 'tile-muted'}">
           <div class="agent-tile-head">
             <span class="agent-tile-dot"></span>
             <span class="agent-tile-label">Update Advisor</span>
-            <span class="agent-tile-val">${settings.dependency_protection.inform_updated_packages ? 'Active' : 'Off'}</span>
+            <span class="agent-tile-val">${updateOn ? 'Active' : 'Off'}</span>
           </div>
-          <span class="agent-tile-desc">When the agent installs or pins a package, checks the registry for newer versions and nudges the agent to ask the user about updating.</span>
           <button class="agent-tile-action dep-inform-btn" type="button">
-            ${settings.dependency_protection.inform_updated_packages ? 'Disable' : 'Enable'}
+            ${updateOn ? 'Disable' : 'Enable'}
           </button>
         </div>
       </div>
@@ -385,6 +390,15 @@ function renderSettingsIntoCards() {
       e.stopPropagation();
       toggleDlp(container, backendName);
     });
+
+    // Settings icon: open detections modal
+    const dlpSettingsBtn = container.querySelector('.dlp-settings-btn');
+    if (dlpSettingsBtn) {
+      dlpSettingsBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        showDetectionsModal();
+      });
+    }
 
     // Token Cap: max tokens — save on blur (or Enter)
     const maxInput = container.querySelector('.backend-max-tokens');
@@ -504,9 +518,32 @@ async function toggleDepProtection(backendName, key, enabled) {
 // Init (called once from main.js)
 // ============================================================================
 
+function initTabBar() {
+  const tabBar = document.getElementById('agent-tab-bar');
+  if (!tabBar) return;
+
+  tabBar.addEventListener('click', (e) => {
+    const tab = e.target.closest('.agent-tab');
+    if (!tab) return;
+
+    const agentId = tab.dataset.agent;
+    if (!agentId) return;
+
+    // Update active tab
+    tabBar.querySelectorAll('.agent-tab').forEach(t => t.classList.remove('is-active'));
+    tab.classList.add('is-active');
+
+    // Show matching card, hide others
+    document.querySelectorAll('.agent-card-wrap .agent-card').forEach(card => {
+      card.classList.toggle('is-visible', card.dataset.agent === agentId);
+    });
+  });
+}
+
 export function initBackends() {
   AGENTS.forEach(attachAgentHandler);
   initProtectionControls();
+  initTabBar();
   refreshGuardianHooks();
   loadPredefinedBackends();
 }

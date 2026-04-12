@@ -5,12 +5,9 @@ import { loadDashboard, loadBackends, initBackendFilter, initTimeFilter } from '
 import {
   loadMessageLogs,
   loadLogsBackends,
-  loadLogsModels,
   initLogsBackendFilter,
-  initLogsModelFilter,
-  initLogsDlpFilter,
   initLogsTimeFilter,
-  initLogsSearch,
+  initLogsViewTabs,
   initLogsExport
 } from './logs.js';
 import { initSettings, loadDetections } from './settings.js';
@@ -42,12 +39,9 @@ window.addEventListener('DOMContentLoaded', () => {
   // Initialize logs
   initLogsTimeFilter();
   initLogsBackendFilter();
-  initLogsModelFilter();
-  initLogsDlpFilter();
-  initLogsSearch();
+  initLogsViewTabs();
   initLogsExport();
   loadLogsBackends();
-  loadLogsModels();
 
   // Initialize Guardian Agent sub-modules
   initSettings();
@@ -86,7 +80,6 @@ window.addEventListener('DOMContentLoaded', () => {
 
     if (route === 'logs') {
       loadMessageLogs();
-      loadLogsModels();
     }
 
     if (route === 'guardian') {

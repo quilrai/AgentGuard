@@ -118,6 +118,34 @@
   color: #1FD8A4;
 }
 
+/* Settings gear icon button (inline in tile row) */
+.agent-tile-action-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 7px;
+  color: #8a9096;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+  flex-shrink: 0;
+}
+
+.agent-tile-action-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.agent-tile-action-icon:hover {
+  background: rgba(113, 208, 131, 0.08);
+  border-color: rgba(113, 208, 131, 0.26);
+  color: #f3f4f5;
+}
+
 /* Protection: enable/disable button row */
 
 .tile-protection {

@@ -459,6 +459,7 @@ pub fn get_message_logs(
     dlp_action: String,
     search: String,
     page: i64,
+    view: Option<String>,
 ) -> Result<PaginatedLogs, String> {
     let conn = open_connection().map_err(|e| e.to_string())?;
 
@@ -487,6 +488,13 @@ pub fn get_message_logs(
         _ => String::new(),
     };
 
+    // View filter: token_saving shows only rows with savings, guardian shows only rows with actions
+    let view_filter = match view.as_deref() {
+        Some("token_saving") => " AND COALESCE(tokens_saved, 0) > 0".to_string(),
+        Some("guardian") => " AND COALESCE(dlp_action, 0) > 0".to_string(),
+        _ => String::new(),
+    };
+
     // Search filter - case-insensitive LIKE on request_body and response_body
     let search_filter = if search.trim().is_empty() {
         String::new()
@@ -502,8 +510,8 @@ pub fn get_message_logs(
     };
 
     let filters = format!(
-        "{}{}{}{}",
-        backend_filter, model_filter, dlp_filter, search_filter
+        "{}{}{}{}{}",
+        backend_filter, model_filter, dlp_filter, view_filter, search_filter
     );
 
     // Get total count
