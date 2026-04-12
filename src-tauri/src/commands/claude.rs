@@ -39,8 +39,7 @@ fn read_claude_settings() -> Result<serde_json::Value, String> {
     if path.exists() {
         let content = fs::read_to_string(&path)
             .map_err(|e| format!("Failed to read settings.json: {}", e))?;
-        serde_json::from_str(&content)
-            .map_err(|e| format!("Failed to parse settings.json: {}", e))
+        serde_json::from_str(&content).map_err(|e| format!("Failed to parse settings.json: {}", e))
     } else {
         Ok(serde_json::json!({}))
     }
@@ -55,8 +54,7 @@ fn write_claude_settings(settings: &serde_json::Value) -> Result<(), String> {
     }
     let content = serde_json::to_string_pretty(settings)
         .map_err(|e| format!("Failed to serialize settings: {}", e))?;
-    fs::write(&path, content)
-        .map_err(|e| format!("Failed to write settings.json: {}", e))?;
+    fs::write(&path, content).map_err(|e| format!("Failed to write settings.json: {}", e))?;
     Ok(())
 }
 
@@ -105,27 +103,52 @@ struct ScriptSpec {
 }
 
 const SCRIPT_SPECS: &[ScriptSpec] = &[
-    ScriptSpec { file_name: "llmwatcher-claude-user-prompt-submit.sh", endpoint: "user_prompt_submit" },
-    ScriptSpec { file_name: "llmwatcher-claude-pre-bash.sh",          endpoint: "pre_bash" },
-    ScriptSpec { file_name: "llmwatcher-claude-pre-read.sh",          endpoint: "pre_read" },
-    ScriptSpec { file_name: "llmwatcher-claude-pre-write.sh",         endpoint: "pre_write" },
-    ScriptSpec { file_name: "llmwatcher-claude-pre-mcp.sh",           endpoint: "pre_mcp" },
-    ScriptSpec { file_name: "llmwatcher-claude-post-tool.sh",         endpoint: "post_tool" },
-    ScriptSpec { file_name: "llmwatcher-claude-stop.sh",              endpoint: "stop" },
-    ScriptSpec { file_name: "llmwatcher-claude-session-start.sh",     endpoint: "session_start" },
-    ScriptSpec { file_name: "llmwatcher-claude-session-end.sh",       endpoint: "session_end" },
+    ScriptSpec {
+        file_name: "llmwatcher-claude-user-prompt-submit.sh",
+        endpoint: "user_prompt_submit",
+    },
+    ScriptSpec {
+        file_name: "llmwatcher-claude-pre-bash.sh",
+        endpoint: "pre_bash",
+    },
+    ScriptSpec {
+        file_name: "llmwatcher-claude-pre-read.sh",
+        endpoint: "pre_read",
+    },
+    ScriptSpec {
+        file_name: "llmwatcher-claude-pre-write.sh",
+        endpoint: "pre_write",
+    },
+    ScriptSpec {
+        file_name: "llmwatcher-claude-pre-mcp.sh",
+        endpoint: "pre_mcp",
+    },
+    ScriptSpec {
+        file_name: "llmwatcher-claude-post-tool.sh",
+        endpoint: "post_tool",
+    },
+    ScriptSpec {
+        file_name: "llmwatcher-claude-stop.sh",
+        endpoint: "stop",
+    },
+    ScriptSpec {
+        file_name: "llmwatcher-claude-session-start.sh",
+        endpoint: "session_start",
+    },
+    ScriptSpec {
+        file_name: "llmwatcher-claude-session-end.sh",
+        endpoint: "session_end",
+    },
 ];
 
 fn write_script(spec: &ScriptSpec, port: u16) -> Result<String, String> {
     let dir = get_claude_hooks_dir()?;
     if !dir.exists() {
-        fs::create_dir_all(&dir)
-            .map_err(|e| format!("Failed to create hooks directory: {}", e))?;
+        fs::create_dir_all(&dir).map_err(|e| format!("Failed to create hooks directory: {}", e))?;
     }
     let path = dir.join(spec.file_name);
     let content = generate_forwarder_script(port, spec.endpoint);
-    fs::write(&path, content)
-        .map_err(|e| format!("Failed to write {}: {}", spec.file_name, e))?;
+    fs::write(&path, content).map_err(|e| format!("Failed to write {}: {}", spec.file_name, e))?;
 
     #[cfg(unix)]
     {
@@ -255,7 +278,10 @@ fn add_hook_entry(
 
     let mut new_entry = serde_json::Map::new();
     if let Some(matcher) = install.matcher {
-        new_entry.insert("matcher".to_string(), serde_json::Value::String(matcher.to_string()));
+        new_entry.insert(
+            "matcher".to_string(),
+            serde_json::Value::String(matcher.to_string()),
+        );
     }
     new_entry.insert(
         "hooks".to_string(),

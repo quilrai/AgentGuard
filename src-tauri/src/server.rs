@@ -77,8 +77,15 @@ async fn cli_compression_handler(body: Bytes) -> impl IntoResponse {
         }
     };
 
-    let cwd = parsed.get("cwd").and_then(|v| v.as_str()).map(|s| s.to_string());
-    let backend_name = parsed.get("backend").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let cwd = parsed
+        .get("cwd")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    let backend_name = parsed
+        .get("backend")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
 
     // Look up per-backend token saving settings (predefined backends only)
     let token_saving = if !backend_name.is_empty() {
@@ -89,7 +96,8 @@ async fn cli_compression_handler(body: Bytes) -> impl IntoResponse {
         } else {
             "{}".to_string()
         };
-        let settings: CustomBackendSettings = serde_json::from_str(&settings_json).unwrap_or_default();
+        let settings: CustomBackendSettings =
+            serde_json::from_str(&settings_json).unwrap_or_default();
         settings.token_saving
     } else {
         Default::default()
@@ -459,10 +467,7 @@ async fn ctx_smart_read_handler(
 /// Returns:
 ///   200 + stub body  — file cached and unchanged, hook should redirect Read
 ///   204 No Content   — allow the native Read through (first read or changed)
-async fn ctx_pre_read_handler(
-    State(cache): State<SharedCache>,
-    body: Bytes,
-) -> impl IntoResponse {
+async fn ctx_pre_read_handler(State(cache): State<SharedCache>, body: Bytes) -> impl IntoResponse {
     let parsed: serde_json::Value = match serde_json::from_str(&String::from_utf8_lossy(&body)) {
         Ok(v) => v,
         Err(_) => {
@@ -517,10 +522,7 @@ async fn ctx_pre_read_handler(
 
             // Log savings
             let tokens_saved = original_tokens.saturating_sub(sent) as i32;
-            let backend_name = parsed
-                .get("backend")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+            let backend_name = parsed.get("backend").and_then(|v| v.as_str()).unwrap_or("");
             if let Ok(db) = Database::new(&get_db_path()) {
                 let req_meta = crate::requestresponsemetadata::RequestMetadata {
                     model: None,
@@ -663,10 +665,7 @@ pub async fn start_server(app_handle: AppHandle) {
         let cursor_hooks_settings: CustomBackendSettings =
             serde_json::from_str(&cursor_hooks_settings_json).unwrap_or_default();
 
-        let cursor_hooks_router = create_cursor_hooks_router(
-            db.clone(),
-            cursor_hooks_settings,
-        );
+        let cursor_hooks_router = create_cursor_hooks_router(db.clone(), cursor_hooks_settings);
 
         // Create shared ctx_read session cache (shared with agent hook routers
         // so they can clear it on SessionStart)
@@ -690,10 +689,7 @@ pub async fn start_server(app_handle: AppHandle) {
             .unwrap_or_else(|_| "{}".to_string());
         let codex_hooks_settings: CustomBackendSettings =
             serde_json::from_str(&codex_hooks_settings_json).unwrap_or_default();
-        let codex_hooks_router = create_codex_hooks_router(
-            db.clone(),
-            codex_hooks_settings,
-        );
+        let codex_hooks_router = create_codex_hooks_router(db.clone(), codex_hooks_settings);
 
         // Build shell compression router
         let cli_compression_router = Router::new().route("/", post(cli_compression_handler));

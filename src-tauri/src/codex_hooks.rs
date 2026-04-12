@@ -33,16 +33,12 @@
 //   - TOOL_ENDPOINT    -> CodexTool     (PreToolUse / PostToolUse rows)
 //   - SESSION_ENDPOINT -> CodexSession  (SessionStart rows)
 
-use crate::database::{Database, RealUsage, DLP_ACTION_BLOCKED, DLP_ACTION_PASSED, DLP_ACTION_RATELIMITED};
+use crate::database::{
+    Database, RealUsage, DLP_ACTION_BLOCKED, DLP_ACTION_PASSED, DLP_ACTION_RATELIMITED,
+};
 use crate::dlp::{check_dlp_patterns, DlpDetection};
 use crate::predefined_backend_settings::CustomBackendSettings;
-use axum::{
-    extract::State,
-    http::StatusCode,
-    response::IntoResponse,
-    routing::post,
-    Json, Router,
-};
+use axum::{extract::State, http::StatusCode, response::IntoResponse, routing::post, Json, Router};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::Arc;
@@ -163,7 +159,10 @@ pub struct PreToolUseHookOutput {
     pub hook_event_name: &'static str,
     #[serde(rename = "permissionDecision")]
     pub permission_decision: String,
-    #[serde(rename = "permissionDecisionReason", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "permissionDecisionReason",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub permission_decision_reason: Option<String>,
 }
 
@@ -342,8 +341,7 @@ fn read_latest_turn_usage(transcript_path: &str) -> Option<RealUsage> {
                 .unwrap_or(0) as i32;
             usage.input_tokens += input;
             usage.output_tokens += output;
-            usage.cache_read_tokens +=
-                json_i64(u, "cache_read_input_tokens").unwrap_or(0) as i32;
+            usage.cache_read_tokens += json_i64(u, "cache_read_input_tokens").unwrap_or(0) as i32;
             usage.cache_creation_tokens +=
                 json_i64(u, "cache_creation_input_tokens").unwrap_or(0) as i32;
             found_any = true;
@@ -371,7 +369,13 @@ async fn user_prompt_submit_handler(
         Ok(v) => v,
         Err(e) => {
             println!("[CODEX_HOOK] user_prompt_submit parse error: {}", e);
-            return (StatusCode::OK, Json(UserPromptSubmitResponse { decision: None, reason: None }));
+            return (
+                StatusCode::OK,
+                Json(UserPromptSubmitResponse {
+                    decision: None,
+                    reason: None,
+                }),
+            );
         }
     };
     println!(
@@ -440,12 +444,19 @@ async fn user_prompt_submit_handler(
             reason: Some(format_detection_message(&detections)),
         }
     } else {
-        UserPromptSubmitResponse { decision: None, reason: None }
+        UserPromptSubmitResponse {
+            decision: None,
+            reason: None,
+        }
     };
     let response_body_json = serde_json::to_string(&response).unwrap_or_default();
 
     let response_status = if is_blocked { 403 } else { 200 };
-    let dlp_action = if is_blocked { DLP_ACTION_BLOCKED } else { DLP_ACTION_PASSED };
+    let dlp_action = if is_blocked {
+        DLP_ACTION_BLOCKED
+    } else {
+        DLP_ACTION_PASSED
+    };
 
     if let Ok(request_id) = state.db.log_agent_hook_request(
         BACKEND,
@@ -548,7 +559,9 @@ fn handle_pre_tool(
     let is_blocked = !detections.is_empty();
 
     let response = if is_blocked {
-        Some(pre_tool_deny_response(Some(format_detection_message(&detections))))
+        Some(pre_tool_deny_response(Some(format_detection_message(
+            &detections,
+        ))))
     } else {
         None
     };
@@ -558,7 +571,11 @@ fn handle_pre_tool(
         .unwrap_or_else(|| "{}".to_string());
 
     let response_status = if is_blocked { 403 } else { 200 };
-    let dlp_action = if is_blocked { DLP_ACTION_BLOCKED } else { DLP_ACTION_PASSED };
+    let dlp_action = if is_blocked {
+        DLP_ACTION_BLOCKED
+    } else {
+        DLP_ACTION_PASSED
+    };
 
     if let Ok(request_id) = state.db.log_agent_hook_request(
         BACKEND,
@@ -625,7 +642,12 @@ async fn post_tool_handler(
         Ok(v) => v,
         Err(e) => {
             println!("[CODEX_HOOK] post_tool parse error: {}", e);
-            return (StatusCode::OK, Json(GenericResponse { status: "ok".to_string() }));
+            return (
+                StatusCode::OK,
+                Json(GenericResponse {
+                    status: "ok".to_string(),
+                }),
+            );
         }
     };
     println!(
@@ -693,9 +715,19 @@ async fn post_tool_handler(
     }
 
     // ---- Symbol extraction (best-effort) ----
-    extract_symbols_for_tool(&state.db, &input.tool_name, &input.tool_input, input.cwd.as_deref());
+    extract_symbols_for_tool(
+        &state.db,
+        &input.tool_name,
+        &input.tool_input,
+        input.cwd.as_deref(),
+    );
 
-    (StatusCode::OK, Json(GenericResponse { status: "ok".to_string() }))
+    (
+        StatusCode::OK,
+        Json(GenericResponse {
+            status: "ok".to_string(),
+        }),
+    )
 }
 
 /// If the tool touched a file, extract symbols via tree-sitter (best-effort).
@@ -771,7 +803,12 @@ async fn stop_handler(
         Ok(v) => v,
         Err(e) => {
             println!("[CODEX_HOOK] stop parse error: {}", e);
-            return (StatusCode::OK, Json(GenericResponse { status: "ok".to_string() }));
+            return (
+                StatusCode::OK,
+                Json(GenericResponse {
+                    status: "ok".to_string(),
+                }),
+            );
         }
     };
     println!(
@@ -851,7 +888,12 @@ async fn stop_handler(
         );
     }
 
-    (StatusCode::OK, Json(GenericResponse { status: "ok".to_string() }))
+    (
+        StatusCode::OK,
+        Json(GenericResponse {
+            status: "ok".to_string(),
+        }),
+    )
 }
 
 /// POST /codex_hook/session_start
@@ -864,7 +906,12 @@ async fn session_start_handler(
         Ok(v) => v,
         Err(e) => {
             println!("[CODEX_HOOK] session_start parse error: {}", e);
-            return (StatusCode::OK, Json(GenericResponse { status: "ok".to_string() }));
+            return (
+                StatusCode::OK,
+                Json(GenericResponse {
+                    status: "ok".to_string(),
+                }),
+            );
         }
     };
     println!(
@@ -905,17 +952,19 @@ async fn session_start_handler(
         DLP_ACTION_PASSED,
     );
 
-    (StatusCode::OK, Json(GenericResponse { status: "ok".to_string() }))
+    (
+        StatusCode::OK,
+        Json(GenericResponse {
+            status: "ok".to_string(),
+        }),
+    )
 }
 
 // ============================================================================
 // Router
 // ============================================================================
 
-pub fn create_codex_hooks_router(
-    db: Database,
-    settings: CustomBackendSettings,
-) -> Router {
+pub fn create_codex_hooks_router(db: Database, settings: CustomBackendSettings) -> Router {
     let state = CodexHooksState {
         db,
         settings: Arc::new(settings),

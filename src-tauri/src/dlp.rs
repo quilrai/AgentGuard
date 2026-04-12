@@ -6,9 +6,7 @@
 
 use crate::builtin_patterns::get_validator_by_name;
 use crate::database::open_connection;
-use crate::pattern_utils::{
-    compile_pattern_set, count_unique_chars, is_match_excluded_by_context,
-};
+use crate::pattern_utils::{compile_pattern_set, count_unique_chars, is_match_excluded_by_context};
 use regex::Regex;
 use std::collections::HashSet;
 
@@ -51,7 +49,16 @@ pub fn get_enabled_dlp_patterns() -> Vec<CompiledDlpPattern> {
         Err(_) => return patterns,
     };
 
-    let db_patterns: Vec<(String, String, String, Option<String>, Option<String>, i32, i32, Option<String>)> = stmt
+    let db_patterns: Vec<(
+        String,
+        String,
+        String,
+        Option<String>,
+        Option<String>,
+        i32,
+        i32,
+        Option<String>,
+    )> = stmt
         .query_map([], |row| {
             Ok((
                 row.get::<_, String>(0)?,
@@ -68,7 +75,17 @@ pub fn get_enabled_dlp_patterns() -> Vec<CompiledDlpPattern> {
         .map(|iter| iter.filter_map(|r| r.ok()).collect())
         .unwrap_or_default();
 
-    for (name, pattern_type, patterns_json, negative_pattern_type, negative_patterns_json, min_occurrences, min_unique_chars, validator_name) in db_patterns {
+    for (
+        name,
+        pattern_type,
+        patterns_json,
+        negative_pattern_type,
+        negative_patterns_json,
+        min_occurrences,
+        min_unique_chars,
+        validator_name,
+    ) in db_patterns
+    {
         let pattern_list: Vec<String> = serde_json::from_str(&patterns_json).unwrap_or_default();
 
         // Parse negative patterns if present
@@ -91,9 +108,7 @@ pub fn get_enabled_dlp_patterns() -> Vec<CompiledDlpPattern> {
         };
 
         // Resolve validator function from name
-        let validator = validator_name
-            .as_deref()
-            .and_then(get_validator_by_name);
+        let validator = validator_name.as_deref().and_then(get_validator_by_name);
 
         if !compiled.regexes.is_empty() {
             patterns.push(CompiledDlpPattern {
@@ -138,7 +153,8 @@ pub fn check_dlp_patterns(text: &str) -> Vec<DlpDetection> {
 
                 // Check if this match should be excluded based on its context
                 // Context = 30 chars before + match + 30 chars after
-                if is_match_excluded_by_context(text, m.start(), m.end(), &pattern.negative_regexes) {
+                if is_match_excluded_by_context(text, m.start(), m.end(), &pattern.negative_regexes)
+                {
                     continue;
                 }
 

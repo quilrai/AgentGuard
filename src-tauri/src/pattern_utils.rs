@@ -20,10 +20,7 @@ pub struct CompiledPatterns {
 /// - For "keyword" type: patterns are escaped and made case-insensitive
 /// - For "regex" type: patterns are used as-is
 /// Returns an error if any pattern is invalid
-pub fn compile_patterns(
-    patterns: &[String],
-    pattern_type: &str,
-) -> Result<Vec<Regex>, String> {
+pub fn compile_patterns(patterns: &[String], pattern_type: &str) -> Result<Vec<Regex>, String> {
     let mut regexes = Vec::new();
 
     for p in patterns {
@@ -176,10 +173,7 @@ pub fn collect_matches_with_negative_context(
 
 /// Filter matches by min_occurrences threshold
 /// Uses the collected match count
-pub fn filter_by_min_occurrences(
-    match_result: MatchResult,
-    min_occurrences: i32,
-) -> Vec<String> {
+pub fn filter_by_min_occurrences(match_result: MatchResult, min_occurrences: i32) -> Vec<String> {
     if (match_result.matches.len() as i32) < min_occurrences {
         Vec::new()
     } else {
@@ -238,7 +232,8 @@ mod tests {
         let pos_regexes = compile_patterns(&vec![r"sk-[a-z0-9]+".to_string()], "regex").unwrap();
         let neg_regexes = compile_patterns(&vec!["test".to_string()], "keyword").unwrap();
 
-        let result = collect_matches_with_negative_context(text, &pos_regexes, &neg_regexes, 0, None);
+        let result =
+            collect_matches_with_negative_context(text, &pos_regexes, &neg_regexes, 0, None);
 
         // Only sk-prod456 should remain (sk-test123 excluded due to "testing" in context)
         assert_eq!(result.matches.len(), 1);

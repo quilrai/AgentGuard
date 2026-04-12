@@ -15,16 +15,28 @@ static NOTABLE_RE: OnceLock<Regex> = OnceLock::new();
 
 fn notable_re() -> &'static Regex {
     NOTABLE_RE.get_or_init(|| {
-        Regex::new(r"(?i)error|fail|critical|warning|exception|crash|timeout|denied|rejected|invalid")
-            .unwrap()
+        Regex::new(
+            r"(?i)error|fail|critical|warning|exception|crash|timeout|denied|rejected|invalid",
+        )
+        .unwrap()
     })
 }
 
 // Category fields to look for in JSON objects (ordered by priority)
 const CATEGORY_FIELDS: &[&str] = &[
-    "type", "status", "kind", "category", "level", "severity",
-    "state", "phase", "action", "event_type", "log_level",
-    "result", "outcome",
+    "type",
+    "status",
+    "kind",
+    "category",
+    "level",
+    "severity",
+    "state",
+    "phase",
+    "action",
+    "event_type",
+    "log_level",
+    "result",
+    "outcome",
 ];
 
 // ── JSON-based summaries ──────────────────────────────────────────
@@ -110,7 +122,10 @@ fn categorize_by_fields(items: &[&serde_json::Value]) -> HashMap<String, usize> 
                     if let Some(s) = val.as_str() {
                         if s.len() > 2
                             && s.len() < 30
-                            && !matches!(key.as_str(), "id" | "name" | "path" | "url" | "href" | "email")
+                            && !matches!(
+                                key.as_str(),
+                                "id" | "name" | "path" | "url" | "href" | "email"
+                            )
                             && !s.starts_with("http")
                             && !s.starts_with('/')
                         {
@@ -206,7 +221,10 @@ pub fn summarize_search_omissions(omission_map: &HashMap<String, usize>) -> Stri
     if sorted.len() > max_named {
         let remaining_files = sorted.len() - max_named;
         let remaining_count: usize = sorted.iter().skip(max_named).map(|(_, c)| **c).sum();
-        parts.push(format!("{} in {} other files", remaining_count, remaining_files));
+        parts.push(format!(
+            "{} in {} other files",
+            remaining_count, remaining_files
+        ));
     }
 
     parts.join(", ")
@@ -221,7 +239,10 @@ pub fn summarize_diff_omissions(hunks_removed: usize, files_affected: usize) -> 
     if files_affected <= 1 {
         format!("{} hunks omitted", hunks_removed)
     } else {
-        format!("{} hunks omitted across {} files", hunks_removed, files_affected)
+        format!(
+            "{} hunks omitted across {} files",
+            hunks_removed, files_affected
+        )
     }
 }
 

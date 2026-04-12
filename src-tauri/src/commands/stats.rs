@@ -1,6 +1,9 @@
 // Stats and Monitoring Tauri Commands
 
-use crate::database::{get_port_from_db, open_connection, save_port_to_db, DLP_ACTION_BLOCKED, DLP_ACTION_PASSED, DLP_ACTION_REDACTED};
+use crate::database::{
+    get_port_from_db, open_connection, save_port_to_db, DLP_ACTION_BLOCKED, DLP_ACTION_PASSED,
+    DLP_ACTION_REDACTED,
+};
 use crate::{ServerStatus, RESTART_SENDER, SERVER_PORT, SERVER_STATUS};
 use serde::Serialize;
 
@@ -92,7 +95,7 @@ pub fn get_tray_token_timeline() -> Result<TrayTokenTimeline, String> {
             "SELECT backend, timestamp, input_tokens
              FROM requests
              WHERE timestamp >= ?1 AND input_tokens > 0
-             ORDER BY timestamp ASC"
+             ORDER BY timestamp ASC",
         )
         .map_err(|e| e.to_string())?;
 
@@ -114,7 +117,10 @@ pub fn get_tray_token_timeline() -> Result<TrayTokenTimeline, String> {
         backend_points
             .entry(backend)
             .or_default()
-            .push(TokenTimelinePoint { timestamp, input_tokens });
+            .push(TokenTimelinePoint {
+                timestamp,
+                input_tokens,
+            });
     }
 
     // Convert to sorted vec
@@ -214,7 +220,7 @@ fn time_range_to_hours(time_range: &str) -> i64 {
         "1d" => 24,
         "7d" => 24 * 7,
         "all" => 24 * 365 * 10, // ~10 years, effectively all time
-        _ => 24 * 365 * 10, // default to all time
+        _ => 24 * 365 * 10,     // default to all time
     }
 }
 
@@ -468,7 +474,10 @@ pub fn get_message_logs(
     let model_filter = if model == "all" {
         String::new()
     } else {
-        format!(" AND COALESCE(model, 'unknown') = '{}'", model.replace('\'', "''"))
+        format!(
+            " AND COALESCE(model, 'unknown') = '{}'",
+            model.replace('\'', "''")
+        )
     };
 
     let dlp_filter = match dlp_action.as_str() {
@@ -482,14 +491,20 @@ pub fn get_message_logs(
     let search_filter = if search.trim().is_empty() {
         String::new()
     } else {
-        let escaped_search = search.replace('\'', "''").replace('%', "\\%").replace('_', "\\_");
+        let escaped_search = search
+            .replace('\'', "''")
+            .replace('%', "\\%")
+            .replace('_', "\\_");
         format!(
             " AND (LOWER(request_body) LIKE LOWER('%{}%') ESCAPE '\\' OR LOWER(response_body) LIKE LOWER('%{}%') ESCAPE '\\')",
             escaped_search, escaped_search
         )
     };
 
-    let filters = format!("{}{}{}{}", backend_filter, model_filter, dlp_filter, search_filter);
+    let filters = format!(
+        "{}{}{}{}",
+        backend_filter, model_filter, dlp_filter, search_filter
+    );
 
     // Get total count
     let total: i64 = conn
@@ -583,7 +598,10 @@ pub fn export_message_logs(
     let model_filter = if model == "all" {
         String::new()
     } else {
-        format!(" AND COALESCE(model, 'unknown') = '{}'", model.replace('\'', "''"))
+        format!(
+            " AND COALESCE(model, 'unknown') = '{}'",
+            model.replace('\'', "''")
+        )
     };
 
     let dlp_filter = match dlp_action.as_str() {
@@ -596,14 +614,20 @@ pub fn export_message_logs(
     let search_filter = if search.trim().is_empty() {
         String::new()
     } else {
-        let escaped_search = search.replace('\'', "''").replace('%', "\\%").replace('_', "\\_");
+        let escaped_search = search
+            .replace('\'', "''")
+            .replace('%', "\\%")
+            .replace('_', "\\_");
         format!(
             " AND (LOWER(request_body) LIKE LOWER('%{}%') ESCAPE '\\' OR LOWER(response_body) LIKE LOWER('%{}%') ESCAPE '\\')",
             escaped_search, escaped_search
         )
     };
 
-    let filters = format!("{}{}{}{}", backend_filter, model_filter, dlp_filter, search_filter);
+    let filters = format!(
+        "{}{}{}{}",
+        backend_filter, model_filter, dlp_filter, search_filter
+    );
 
     let mut stmt = conn
         .prepare(&format!(
@@ -653,7 +677,7 @@ pub fn get_port_setting() -> u16 {
 
 #[derive(Serialize)]
 pub struct ServerStatusResponse {
-    pub status: String,  // "starting", "running", "failed"
+    pub status: String, // "starting", "running", "failed"
     pub port: u16,
     pub error: Option<String>,
 }
@@ -758,7 +782,10 @@ pub fn get_tool_calls_for_request(request_id: i64) -> Result<Vec<ToolCallRecord>
 }
 
 #[tauri::command]
-pub fn get_tool_call_stats(time_range: String, backend: String) -> Result<Vec<ToolCallStats>, String> {
+pub fn get_tool_call_stats(
+    time_range: String,
+    backend: String,
+) -> Result<Vec<ToolCallStats>, String> {
     let conn = open_connection().map_err(|e| e.to_string())?;
 
     let hours = time_range_to_hours(&time_range);
@@ -823,7 +850,10 @@ fn extract_target(tool_name: &str, tool_input: &str) -> Option<String> {
     match tool_name {
         // File-based tools: extract filename from path
         "Read" | "Write" | "Edit" | "NotebookEdit" => {
-            let path = json.get("file_path").or_else(|| json.get("notebook_path"))?.as_str()?;
+            let path = json
+                .get("file_path")
+                .or_else(|| json.get("notebook_path"))?
+                .as_str()?;
             Some(path.rsplit('/').next()?.to_string())
         }
         "Glob" | "Grep" => {
@@ -843,7 +873,7 @@ fn extract_target(tool_name: &str, tool_input: &str) -> Option<String> {
             let clean = first_word.trim_start_matches("sudo ");
             Some(clean.split('/').last()?.to_string())
         }
-        _ => None
+        _ => None,
     }
 }
 
@@ -860,10 +890,15 @@ pub fn get_tool_call_insights(time_range: String, backend: String) -> Result<Too
         format!(" AND r.backend = '{}'", backend.replace('\'', "''"))
     };
 
-    println!("[STATS] get_tool_call_insights: time_range={}, backend={}, cutoff_ts={}", time_range, backend, cutoff_ts);
+    println!(
+        "[STATS] get_tool_call_insights: time_range={}, backend={}, cutoff_ts={}",
+        time_range, backend, cutoff_ts
+    );
 
     // Debug: check tool_calls table
-    let tc_count: i64 = conn.query_row("SELECT COUNT(*) FROM tool_calls", [], |row| row.get(0)).unwrap_or(0);
+    let tc_count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM tool_calls", [], |row| row.get(0))
+        .unwrap_or(0);
     println!("[STATS] Total tool_calls in DB: {}", tc_count);
 
     // Debug: check recent requests with tool calls
@@ -871,15 +906,20 @@ pub fn get_tool_call_insights(time_range: String, backend: String) -> Result<Too
         "SELECT r.id, r.timestamp, r.backend, tc.tool_name
          FROM tool_calls tc
          JOIN requests r ON tc.request_id = r.id
-         ORDER BY r.id DESC LIMIT 5"
+         ORDER BY r.id DESC LIMIT 5",
     ) {
         let debug_rows: Vec<(i64, String, String, String)> = debug_stmt
-            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)))
+            .query_map([], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+            })
             .unwrap()
             .filter_map(|r| r.ok())
             .collect();
         for (id, ts, backend, tool) in debug_rows {
-            println!("[STATS] Recent tool call: request_id={}, timestamp={}, backend={}, tool={}", id, ts, backend, tool);
+            println!(
+                "[STATS] Recent tool call: request_id={}, timestamp={}, backend={}, tool={}",
+                id, ts, backend, tool
+            );
         }
     }
 
@@ -893,14 +933,10 @@ pub fn get_tool_call_insights(time_range: String, backend: String) -> Result<Too
     );
     println!("[STATS] Query: {}", query);
 
-    let mut calls_stmt = conn
-        .prepare(&query)
-        .map_err(|e| e.to_string())?;
+    let mut calls_stmt = conn.prepare(&query).map_err(|e| e.to_string())?;
 
     let calls: Vec<(String, String)> = calls_stmt
-        .query_map([&cutoff_ts], |row| {
-            Ok((row.get(0)?, row.get(1)?))
-        })
+        .query_map([&cutoff_ts], |row| Ok((row.get(0)?, row.get(1)?)))
         .map_err(|e| e.to_string())?
         .filter_map(|r| r.ok())
         .collect();
@@ -938,7 +974,11 @@ pub fn get_tool_call_insights(time_range: String, backend: String) -> Result<Too
             targets.sort_by(|a, b| b.count.cmp(&a.count));
             targets.truncate(5); // Top 5 targets per tool
 
-            ToolWithTargets { tool_name, count, targets }
+            ToolWithTargets {
+                tool_name,
+                count,
+                targets,
+            }
         })
         .collect();
 
@@ -1171,18 +1211,14 @@ pub fn get_garden_stats(time_range: String) -> Result<GardenProjectList, String>
                AND extra_metadata IS NOT NULL
                AND json_extract(extra_metadata, '$.cwd') IS NOT NULL
              GROUP BY cwd
-             ORDER BY req_count DESC"
+             ORDER BY req_count DESC",
         )
         .map_err(|e| e.to_string())?;
 
     let projects: Vec<GardenProject> = stmt
         .query_map([&cutoff_ts], |row| {
             let cwd: String = row.get(0)?;
-            let display_name = cwd
-                .rsplit('/')
-                .next()
-                .unwrap_or(&cwd)
-                .to_string();
+            let display_name = cwd.rsplit('/').next().unwrap_or(&cwd).to_string();
             let backends_str: String = row.get::<_, String>(7)?;
             let backends: Vec<String> = backends_str
                 .split(',')
@@ -1327,9 +1363,9 @@ fn extract_paths_from_bash(cmd: &str, cwd: &std::path::Path) -> Vec<String> {
             continue;
         }
         // Anything with other shell metacharacters can't be a bare path.
-        if trimmed.contains(|c: char| {
-            matches!(c, '|' | '&' | ';' | '<' | '>' | '`' | '$' | '*' | '?')
-        }) {
+        if trimmed
+            .contains(|c: char| matches!(c, '|' | '&' | ';' | '<' | '>' | '`' | '$' | '*' | '?'))
+        {
             continue;
         }
         // Has to look path-ish: either contains `/`, or ends with a
@@ -1376,19 +1412,19 @@ pub fn get_garden_detail(cwd: String, time_range: String) -> Result<GardenDetail
     }
     let mut touches: HashMap<String, Agg> = HashMap::new();
 
-    let push = |raw_path: String, backend: String, ts: String,
-                touches: &mut HashMap<String, Agg>| {
-        let entry = touches.entry(raw_path).or_insert_with(|| Agg {
-            touch_count: 0,
-            backend_touches: HashMap::new(),
-            last_touched: String::new(),
-        });
-        entry.touch_count += 1;
-        *entry.backend_touches.entry(backend).or_insert(0) += 1;
-        if ts > entry.last_touched {
-            entry.last_touched = ts;
-        }
-    };
+    let push =
+        |raw_path: String, backend: String, ts: String, touches: &mut HashMap<String, Agg>| {
+            let entry = touches.entry(raw_path).or_insert_with(|| Agg {
+                touch_count: 0,
+                backend_touches: HashMap::new(),
+                last_touched: String::new(),
+            });
+            entry.touch_count += 1;
+            *entry.backend_touches.entry(backend).or_insert(0) += 1;
+            if ts > entry.last_touched {
+                entry.last_touched = ts;
+            }
+        };
 
     // Source 1: Claude Code — file_path lives in requests.extra_metadata.
     if let Ok(mut stmt) = conn.prepare(
@@ -1543,7 +1579,13 @@ pub fn get_garden_detail(cwd: String, time_range: String) -> Result<GardenDetail
     files.truncate(200);
 
     // Project-wide aggregates.
-    let (total_input, total_output, cache_read, cache_creation, request_count): (i64, i64, i64, i64, i64) = conn
+    let (total_input, total_output, cache_read, cache_creation, request_count): (
+        i64,
+        i64,
+        i64,
+        i64,
+        i64,
+    ) = conn
         .query_row(
             "SELECT
                 COALESCE(SUM(input_tokens + cache_read_tokens + cache_creation_tokens), 0),
@@ -1556,7 +1598,15 @@ pub fn get_garden_detail(cwd: String, time_range: String) -> Result<GardenDetail
                AND extra_metadata IS NOT NULL
                AND json_extract(extra_metadata, '$.cwd') = ?2",
             rusqlite::params![&cutoff_ts, &cwd],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            },
         )
         .unwrap_or((0, 0, 0, 0, 0));
 
@@ -1606,7 +1656,9 @@ pub fn get_file_symbols(cwd: String, file_path: String) -> Result<FileSymbolsRes
     let conn = open_connection().map_err(|e| e.to_string())?;
     let db = crate::database::Database::from_connection(conn);
 
-    let symbols = db.get_file_symbols(&cwd, &file_path).map_err(|e| e.to_string())?;
+    let symbols = db
+        .get_file_symbols(&cwd, &file_path)
+        .map_err(|e| e.to_string())?;
 
     Ok(FileSymbolsResponse { file_path, symbols })
 }
@@ -1621,7 +1673,8 @@ pub fn get_import_graph(cwd: String) -> Result<ImportGraphResponse, String> {
     let all = db.get_project_symbols(&cwd).map_err(|e| e.to_string())?;
 
     // Collect all known file paths in the project for resolution.
-    let known_files: std::collections::HashSet<String> = all.iter().map(|(fp, _)| fp.clone()).collect();
+    let known_files: std::collections::HashSet<String> =
+        all.iter().map(|(fp, _)| fp.clone()).collect();
 
     let mut edges = Vec::new();
 
@@ -1661,8 +1714,24 @@ fn resolve_import(
     if import_src.starts_with('.') {
         let from_dir = from_file.rsplit_once('/').map(|(d, _)| d).unwrap_or("");
         // Try common extensions.
-        for ext in &["", ".js", ".ts", ".tsx", ".jsx", ".py", ".rs", "/index.js", "/index.ts", "/mod.rs"] {
-            let candidate = format!("{}/{}{}", from_dir, import_src.trim_start_matches("./"), ext);
+        for ext in &[
+            "",
+            ".js",
+            ".ts",
+            ".tsx",
+            ".jsx",
+            ".py",
+            ".rs",
+            "/index.js",
+            "/index.ts",
+            "/mod.rs",
+        ] {
+            let candidate = format!(
+                "{}/{}{}",
+                from_dir,
+                import_src.trim_start_matches("./"),
+                ext
+            );
             // Normalize ../
             let normalized = normalize_path(&candidate);
             if known_files.contains(&normalized) {
@@ -1691,7 +1760,9 @@ fn normalize_path(path: &str) -> String {
     let mut parts: Vec<&str> = Vec::new();
     for seg in path.split('/') {
         match seg {
-            ".." => { parts.pop(); }
+            ".." => {
+                parts.pop();
+            }
             "." | "" => {}
             s => parts.push(s),
         }
@@ -1723,17 +1794,69 @@ pub struct BrowseDirResponse {
 fn is_text_ext(ext: &str) -> bool {
     matches!(
         ext,
-        "rs" | "js" | "ts" | "tsx" | "jsx" | "py" | "go" | "java" | "c" | "h"
-            | "cpp" | "hpp" | "cc" | "cs" | "rb" | "swift" | "kt" | "scala"
-            | "lua" | "sh" | "bash" | "zsh" | "fish" | "pl" | "pm"
-            | "html" | "htm" | "css" | "scss" | "sass" | "less"
-            | "json" | "yaml" | "yml" | "toml" | "xml" | "csv"
-            | "md" | "txt" | "rst" | "ini" | "cfg" | "conf"
-            | "sql" | "graphql" | "gql" | "proto"
-            | "vue" | "svelte" | "astro"
-            | "dockerfile" | "makefile" | "cmake"
-            | "r" | "jl" | "ex" | "exs" | "erl" | "hrl"
-            | "zig" | "nim" | "dart" | "v" | "vhdl"
+        "rs" | "js"
+            | "ts"
+            | "tsx"
+            | "jsx"
+            | "py"
+            | "go"
+            | "java"
+            | "c"
+            | "h"
+            | "cpp"
+            | "hpp"
+            | "cc"
+            | "cs"
+            | "rb"
+            | "swift"
+            | "kt"
+            | "scala"
+            | "lua"
+            | "sh"
+            | "bash"
+            | "zsh"
+            | "fish"
+            | "pl"
+            | "pm"
+            | "html"
+            | "htm"
+            | "css"
+            | "scss"
+            | "sass"
+            | "less"
+            | "json"
+            | "yaml"
+            | "yml"
+            | "toml"
+            | "xml"
+            | "csv"
+            | "md"
+            | "txt"
+            | "rst"
+            | "ini"
+            | "cfg"
+            | "conf"
+            | "sql"
+            | "graphql"
+            | "gql"
+            | "proto"
+            | "vue"
+            | "svelte"
+            | "astro"
+            | "dockerfile"
+            | "makefile"
+            | "cmake"
+            | "r"
+            | "jl"
+            | "ex"
+            | "exs"
+            | "erl"
+            | "hrl"
+            | "zig"
+            | "nim"
+            | "dart"
+            | "v"
+            | "vhdl"
     )
 }
 
@@ -1741,9 +1864,23 @@ fn is_text_ext(ext: &str) -> bool {
 fn is_ignored_dir(name: &str) -> bool {
     matches!(
         name,
-        "node_modules" | ".git" | ".svn" | ".hg" | "target" | "build" | "dist"
-            | ".next" | ".nuxt" | "__pycache__" | ".tox" | ".venv" | "venv"
-            | ".idea" | ".vscode" | ".cache" | "vendor"
+        "node_modules"
+            | ".git"
+            | ".svn"
+            | ".hg"
+            | "target"
+            | "build"
+            | "dist"
+            | ".next"
+            | ".nuxt"
+            | "__pycache__"
+            | ".tox"
+            | ".venv"
+            | "venv"
+            | ".idea"
+            | ".vscode"
+            | ".cache"
+            | "vendor"
     )
 }
 
@@ -1796,7 +1933,10 @@ pub fn browse_directory(cwd: String, dir: String) -> Result<BrowseDirResponse, S
             // Also accept extensionless files with known names.
             let fname_lower = name.to_lowercase();
             let is_text = is_text_ext(&ext)
-                || matches!(fname_lower.as_str(), "makefile" | "dockerfile" | "rakefile" | "gemfile" | "procfile");
+                || matches!(
+                    fname_lower.as_str(),
+                    "makefile" | "dockerfile" | "rakefile" | "gemfile" | "procfile"
+                );
 
             if !is_text {
                 continue;

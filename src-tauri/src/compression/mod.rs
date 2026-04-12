@@ -161,7 +161,9 @@ fn classify_and_compress(
     // Check for JSON that could be crushed
     if flags.tool_crusher {
         let trimmed = content.trim();
-        if (trimmed.starts_with('{') || trimmed.starts_with('[')) && serde_json::from_str::<serde_json::Value>(trimmed).is_ok() {
+        if (trimmed.starts_with('{') || trimmed.starts_with('['))
+            && serde_json::from_str::<serde_json::Value>(trimmed).is_ok()
+        {
             let result = tool_crusher::crush(content);
             if let Some(compressed) = result {
                 return Some((compressed, "tool_crusher"));

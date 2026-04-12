@@ -27,8 +27,8 @@ use database::get_port_from_db;
 use dlp_pattern_config::DEFAULT_PORT;
 use std::sync::{Arc, Mutex};
 use tauri::{
-    tray::{TrayIconBuilder, TrayIconEvent, MouseButton, MouseButtonState},
-    AppHandle, Manager, WindowEvent, PhysicalPosition,
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    AppHandle, Manager, PhysicalPosition, WindowEvent,
 };
 use tokio::sync::watch;
 
@@ -92,14 +92,17 @@ pub fn run() {
             .unwrap_or_else(get_port_from_db);
 
         if std::env::var("QPORT").is_ok() {
-            println!("[SERVER] Using port {} from QPORT environment variable", port);
+            println!(
+                "[SERVER] Using port {} from QPORT environment variable",
+                port
+            );
         }
 
         let mut current_port = SERVER_PORT.lock().unwrap();
         *current_port = port;
     }
 
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
@@ -119,8 +122,13 @@ pub fn run() {
             });
 
             // Build tray icon with click handler to toggle popup
-            let _tray = TrayIconBuilder::new()
-                .icon(app.default_window_icon().unwrap().clone())
+            let Some(icon) = app.default_window_icon().cloned() else {
+                eprintln!("[TRAY] No default window icon found; skipping tray icon setup.");
+                return Ok(());
+            };
+
+            if let Err(err) = TrayIconBuilder::new()
+                .icon(icon)
                 .on_tray_icon_event(|tray, event| {
                     if let TrayIconEvent::Click {
                         button: MouseButton::Left,
@@ -148,7 +156,8 @@ pub fn run() {
                                 let x = pos.x - (popup_width / 2.0) + (size.width / 2.0);
                                 let y = pos.y + size.height + 4.0;
 
-                                let _ = popup.set_position(PhysicalPosition::new(x as i32, y as i32));
+                                let _ =
+                                    popup.set_position(PhysicalPosition::new(x as i32, y as i32));
                             }
 
                             // Reload the page to fetch fresh stats
@@ -158,7 +167,10 @@ pub fn run() {
                         }
                     }
                 })
-                .build(app)?;
+                .build(app)
+            {
+                eprintln!("[TRAY] Failed to build tray icon: {err}");
+            }
 
             Ok(())
         })
@@ -242,7 +254,10 @@ pub fn run() {
             commands::get_import_graph,
             // Garden disk browsing
             commands::browse_directory,
-        ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        ]);
+
+    if let Err(err) = app.run(tauri::generate_context!()) {
+        eprintln!("[TAURI] Error while running tauri application: {err}");
+        std::process::exit(1);
+    }
 }

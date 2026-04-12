@@ -55,7 +55,9 @@ fn compress_if_beneficial(command: &str, output: &str, flags: &AdvancedCompressi
     // JSON). This path goes through CompressionCache (cache lookup + store)
     // and produces named footers like [diff_compressor: ...].
     let db_path = crate::dlp_pattern_config::get_db_path();
-    if let Some(result) = crate::compression::try_advanced_compress(output, Some(command), db_path, flags) {
+    if let Some(result) =
+        crate::compression::try_advanced_compress(output, Some(command), db_path, flags)
+    {
         let saved = result.original_tokens - result.compressed_tokens;
         let pct = (saved as f64 / result.original_tokens as f64 * 100.0).round() as usize;
         let compressor = result.compressor.unwrap_or("advanced");

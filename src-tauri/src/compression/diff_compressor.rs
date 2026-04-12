@@ -303,7 +303,6 @@ fn compress_files(
     let mut compressed_files: Vec<CompressedFile> = Vec::new();
 
     for diff_file in diff_files.iter() {
-
         let (compressed_hunks, hunks_removed) = compress_hunks(&diff_file.hunks, config);
         stats.hunks_kept += compressed_hunks.len();
         stats.hunks_removed += hunks_removed;
@@ -322,7 +321,10 @@ fn compress_files(
     (compressed_files, stats)
 }
 
-fn compress_hunks(hunks: &[DiffHunk], config: &DiffCompressorConfig) -> (Vec<CompressedHunk>, usize) {
+fn compress_hunks(
+    hunks: &[DiffHunk],
+    config: &DiffCompressorConfig,
+) -> (Vec<CompressedHunk>, usize) {
     if hunks.is_empty() {
         return (Vec::new(), 0);
     }
@@ -482,7 +484,10 @@ fn format_output(files: &[CompressedFile], stats: &DiffStats) -> String {
     if stats.hunks_removed > 0 || stats.files_affected > 0 || stats.files_omitted > 0 {
         let mut parts = vec![
             format!("{} files changed", stats.files_affected),
-            format!("+{} -{} lines", stats.total_additions, stats.total_deletions),
+            format!(
+                "+{} -{} lines",
+                stats.total_additions, stats.total_deletions
+            ),
         ];
         if stats.files_omitted > 0 {
             parts.push(format!("{} files omitted", stats.files_omitted));

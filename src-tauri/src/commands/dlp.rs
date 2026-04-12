@@ -44,8 +44,8 @@ pub fn get_dlp_settings() -> Result<DlpSettings, String> {
             let patterns: Vec<String> = serde_json::from_str(&patterns_json).unwrap_or_default();
 
             let negative_patterns_json: Option<String> = row.get(5)?;
-            let negative_patterns: Option<Vec<String>> = negative_patterns_json
-                .and_then(|json| serde_json::from_str(&json).ok());
+            let negative_patterns: Option<Vec<String>> =
+                negative_patterns_json.and_then(|json| serde_json::from_str(&json).ok());
 
             Ok(DlpPattern {
                 id: row.get(0)?,
@@ -450,8 +450,5 @@ pub fn test_dlp_pattern(
     // If all matches were excluded by negative patterns, indicate exclusion
     let excluded = matches.is_empty() && !compiled.negative_regexes.is_empty();
 
-    Ok(TestPatternResult {
-        matches,
-        excluded,
-    })
+    Ok(TestPatternResult { matches, excluded })
 }

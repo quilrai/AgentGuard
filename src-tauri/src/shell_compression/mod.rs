@@ -23,7 +23,8 @@ pub fn compress_command(
 ) -> ShellCompressionResult {
     let cmd_result = executor::run_command(command, cwd);
 
-    let comp = compress::compress_and_measure(command, &cmd_result.stdout, &cmd_result.stderr, flags);
+    let comp =
+        compress::compress_and_measure(command, &cmd_result.stdout, &cmd_result.stderr, flags);
 
     ShellCompressionResult {
         output: comp.output,

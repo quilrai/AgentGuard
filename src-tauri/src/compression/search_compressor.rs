@@ -210,7 +210,9 @@ fn select_matches(
     sorted_files.sort_by(|a, b| {
         let score_a: f64 = a.1.matches.iter().map(|m| m.score).sum();
         let score_b: f64 = b.1.matches.iter().map(|m| m.score).sum();
-        score_b.partial_cmp(&score_a).unwrap_or(std::cmp::Ordering::Equal)
+        score_b
+            .partial_cmp(&score_a)
+            .unwrap_or(std::cmp::Ordering::Equal)
     });
 
     // Track matches from files that are beyond max_files (entirely dropped)
@@ -245,7 +247,10 @@ fn select_matches(
         let mut keep_indices: Vec<usize> = Vec::new();
 
         // Always keep first (if budget allows)
-        if config.always_keep_first && !fm.matches.is_empty() && keep_indices.len() < remaining_slots {
+        if config.always_keep_first
+            && !fm.matches.is_empty()
+            && keep_indices.len() < remaining_slots
+        {
             keep_indices.push(0);
         }
 
@@ -328,7 +333,10 @@ fn format_output(
 
         if let Some(&omitted) = omission_map.get(file_path.as_str()) {
             if omitted > 0 {
-                lines.push(format!("[... and {} more matches in {}]", omitted, file_path));
+                lines.push(format!(
+                    "[... and {} more matches in {}]",
+                    omitted, file_path
+                ));
             }
         }
     }

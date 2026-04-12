@@ -72,7 +72,8 @@ fn lang_key(ext: &str) -> Option<&'static str> {
 
 fn import_query(lang_key: &str, language: &Language) -> Option<Query> {
     let src = match lang_key {
-        "javascript" | "typescript" => r#"
+        "javascript" | "typescript" => {
+            r#"
             (import_statement
               source: (string) @source)
             (import_statement
@@ -87,8 +88,10 @@ fn import_query(lang_key: &str, language: &Language) -> Option<Query> {
               function: (identifier) @_fn
               arguments: (arguments (string) @source)
               (#eq? @_fn "require"))
-        "#,
-        "python" => r#"
+        "#
+        }
+        "python" => {
+            r#"
             (import_statement
               name: (dotted_name) @name)
             (import_from_statement
@@ -97,8 +100,10 @@ fn import_query(lang_key: &str, language: &Language) -> Option<Query> {
             (import_from_statement
               module_name: (relative_import) @source
               name: (dotted_name) @name)
-        "#,
-        "rust" => r#"
+        "#
+        }
+        "rust" => {
+            r#"
             (use_declaration
               argument: (scoped_identifier) @name)
             (use_declaration
@@ -109,34 +114,45 @@ fn import_query(lang_key: &str, language: &Language) -> Option<Query> {
                 path: (scoped_identifier) @source))
             (use_declaration
               argument: (identifier) @name)
-        "#,
-        "go" => r#"
+        "#
+        }
+        "go" => {
+            r#"
             (import_spec
               path: (interpreted_string_literal) @source)
             (import_spec
               name: (package_identifier) @name
               path: (interpreted_string_literal) @source)
-        "#,
-        "java" => r#"
+        "#
+        }
+        "java" => {
+            r#"
             (import_declaration
               (scoped_identifier) @name)
-        "#,
-        "c" | "cpp" => r#"
+        "#
+        }
+        "c" | "cpp" => {
+            r#"
             (preproc_include
               path: (string_literal) @source)
             (preproc_include
               path: (system_lib_string) @source)
-        "#,
-        "ruby" => r#"
+        "#
+        }
+        "ruby" => {
+            r#"
             (call
               method: (identifier) @_fn
               arguments: (argument_list (string (string_content) @source))
               (#match? @_fn "^(require|require_relative|load)$"))
-        "#,
-        "csharp" => r#"
+        "#
+        }
+        "csharp" => {
+            r#"
             (using_directive
               (qualified_name) @name)
-        "#,
+        "#
+        }
         _ => return None,
     };
     Query::new(language, src).ok()
@@ -144,7 +160,8 @@ fn import_query(lang_key: &str, language: &Language) -> Option<Query> {
 
 fn definition_query(lang_key: &str, language: &Language) -> Option<Query> {
     let src = match lang_key {
-        "javascript" | "typescript" => r#"
+        "javascript" | "typescript" => {
+            r#"
             (function_declaration
               name: (identifier) @name)
             (class_declaration
@@ -165,14 +182,18 @@ fn definition_query(lang_key: &str, language: &Language) -> Option<Query> {
             (export_statement
               declaration: (class_declaration
                 name: (identifier) @name))
-        "#,
-        "python" => r#"
+        "#
+        }
+        "python" => {
+            r#"
             (function_definition
               name: (identifier) @name)
             (class_definition
               name: (identifier) @name)
-        "#,
-        "rust" => r#"
+        "#
+        }
+        "rust" => {
+            r#"
             (function_item
               name: (identifier) @name)
             (struct_item
@@ -185,8 +206,10 @@ fn definition_query(lang_key: &str, language: &Language) -> Option<Query> {
               trait: (type_identifier) @name)
             (type_item
               name: (type_identifier) @name)
-        "#,
-        "go" => r#"
+        "#
+        }
+        "go" => {
+            r#"
             (function_declaration
               name: (identifier) @name)
             (method_declaration
@@ -194,8 +217,10 @@ fn definition_query(lang_key: &str, language: &Language) -> Option<Query> {
             (type_declaration
               (type_spec
                 name: (type_identifier) @name))
-        "#,
-        "java" => r#"
+        "#
+        }
+        "java" => {
+            r#"
             (method_declaration
               name: (identifier) @name)
             (class_declaration
@@ -204,8 +229,10 @@ fn definition_query(lang_key: &str, language: &Language) -> Option<Query> {
               name: (identifier) @name)
             (enum_declaration
               name: (identifier) @name)
-        "#,
-        "c" => r#"
+        "#
+        }
+        "c" => {
+            r#"
             (function_definition
               declarator: (function_declarator
                 declarator: (identifier) @name))
@@ -215,8 +242,10 @@ fn definition_query(lang_key: &str, language: &Language) -> Option<Query> {
               name: (type_identifier) @name)
             (type_definition
               declarator: (type_identifier) @name)
-        "#,
-        "cpp" => r#"
+        "#
+        }
+        "cpp" => {
+            r#"
             (function_definition
               declarator: (function_declarator
                 declarator: (identifier) @name))
@@ -229,8 +258,10 @@ fn definition_query(lang_key: &str, language: &Language) -> Option<Query> {
               name: (type_identifier) @name)
             (enum_specifier
               name: (type_identifier) @name)
-        "#,
-        "ruby" => r#"
+        "#
+        }
+        "ruby" => {
+            r#"
             (method
               name: (identifier) @name)
             (singleton_method
@@ -239,8 +270,10 @@ fn definition_query(lang_key: &str, language: &Language) -> Option<Query> {
               name: (constant) @name)
             (module
               name: (constant) @name)
-        "#,
-        "csharp" => r#"
+        "#
+        }
+        "csharp" => {
+            r#"
             (method_declaration
               name: (identifier) @name)
             (class_declaration
@@ -251,7 +284,8 @@ fn definition_query(lang_key: &str, language: &Language) -> Option<Query> {
               name: (identifier) @name)
             (enum_declaration
               name: (identifier) @name)
-        "#,
+        "#
+        }
         _ => return None,
     };
     Query::new(language, src).ok()
@@ -269,11 +303,7 @@ pub fn extract_symbols(file_path: &str, source: &str) -> Vec<ExtractedSymbol> {
         return Vec::new();
     }
 
-    let ext = file_path
-        .rsplit('.')
-        .next()
-        .unwrap_or("")
-        .to_lowercase();
+    let ext = file_path.rsplit('.').next().unwrap_or("").to_lowercase();
 
     let language = match language_for_ext(&ext) {
         Some(l) => l,
@@ -310,11 +340,17 @@ pub fn extract_symbols(file_path: &str, source: &str) -> Vec<ExtractedSymbol> {
                 let cap_name = query.capture_names()[cap.index as usize];
                 let text = cap.node.utf8_text(src_bytes).unwrap_or("").to_string();
                 // Strip quotes from string literals.
-                let text = text.trim_matches(|c| c == '"' || c == '\'' || c == '`').to_string();
+                let text = text
+                    .trim_matches(|c| c == '"' || c == '\'' || c == '`')
+                    .to_string();
 
                 match cap_name {
-                    "name" => { name = Some(text); }
-                    "source" => { source_path = Some(text); }
+                    "name" => {
+                        name = Some(text);
+                    }
+                    "source" => {
+                        source_path = Some(text);
+                    }
                     _ => {}
                 }
             }
@@ -454,11 +490,7 @@ pub fn paths_from_bash_for_symbols(cmd: &str, cwd: &std::path::Path) -> Vec<Stri
 
 /// Check if we support the file extension for symbol extraction.
 pub fn is_supported_extension(file_path: &str) -> bool {
-    let ext = file_path
-        .rsplit('.')
-        .next()
-        .unwrap_or("")
-        .to_lowercase();
+    let ext = file_path.rsplit('.').next().unwrap_or("").to_lowercase();
     language_for_ext(&ext).is_some()
 }
 
@@ -511,8 +543,12 @@ class Server:
         let symbols = extract_symbols("app.py", src);
         let imports: Vec<_> = symbols.iter().filter(|s| s.kind == "import").collect();
         assert!(!imports.is_empty(), "should find imports");
-        assert!(symbols.iter().any(|s| s.name == "main" && s.kind == "function"));
-        assert!(symbols.iter().any(|s| s.name == "Server" && s.kind == "class"));
+        assert!(symbols
+            .iter()
+            .any(|s| s.name == "main" && s.kind == "function"));
+        assert!(symbols
+            .iter()
+            .any(|s| s.name == "Server" && s.kind == "class"));
     }
 
     #[test]
@@ -540,10 +576,18 @@ trait Handler {
 "#;
         let symbols = extract_symbols("main.rs", src);
         assert!(symbols.iter().any(|s| s.kind == "import"));
-        assert!(symbols.iter().any(|s| s.name == "handle_request" && s.kind == "function"));
-        assert!(symbols.iter().any(|s| s.name == "AppState" && s.kind == "struct"));
-        assert!(symbols.iter().any(|s| s.name == "Status" && s.kind == "enum"));
-        assert!(symbols.iter().any(|s| s.name == "Handler" && s.kind == "trait"));
+        assert!(symbols
+            .iter()
+            .any(|s| s.name == "handle_request" && s.kind == "function"));
+        assert!(symbols
+            .iter()
+            .any(|s| s.name == "AppState" && s.kind == "struct"));
+        assert!(symbols
+            .iter()
+            .any(|s| s.name == "Status" && s.kind == "enum"));
+        assert!(symbols
+            .iter()
+            .any(|s| s.name == "Handler" && s.kind == "trait"));
     }
 
     #[test]

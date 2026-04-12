@@ -141,7 +141,9 @@ pub fn validate_verhoeff(matched: &str) -> bool {
     if all_same {
         return false;
     }
-    let ascending: Vec<u8> = (0..12).map(|i| ((digits[0] as u16 + i) % 10) as u8).collect();
+    let ascending: Vec<u8> = (0..12)
+        .map(|i| ((digits[0] as u16 + i) % 10) as u8)
+        .collect();
     if digits == ascending {
         return false;
     }
@@ -276,7 +278,6 @@ pub fn get_builtin_patterns() -> &'static [BuiltinPattern] {
             validator: None,
             validator_name: None,
         },
-
         // ═════════════════════════════════════════════════════════════
         // PII — India
         // ═════════════════════════════════════════════════════════════
@@ -287,9 +288,7 @@ pub fn get_builtin_patterns() -> &'static [BuiltinPattern] {
         BuiltinPattern {
             name: "Aadhaar Number (India)",
             pattern_type: "regex",
-            patterns: &[
-                r"\b[2-9][0-9]{3}[\s\-]?[0-9]{4}[\s\-]?[0-9]{4}\b",
-            ],
+            patterns: &[r"\b[2-9][0-9]{3}[\s\-]?[0-9]{4}[\s\-]?[0-9]{4}\b"],
             negative_pattern_type: Some("regex"),
             negative_patterns: Some(&[
                 r"(?i)example|sample|placeholder|dummy|fake|test|xxxx|mock|template|0000.?0000.?0000|1111.?1111.?1111|1234.?5678.?9012",
@@ -306,9 +305,7 @@ pub fn get_builtin_patterns() -> &'static [BuiltinPattern] {
         BuiltinPattern {
             name: "PAN Card (India)",
             pattern_type: "regex",
-            patterns: &[
-                r"\b[A-Z]{3}[PCHABGJLFT][A-Z][0-9]{4}[A-Z]\b",
-            ],
+            patterns: &[r"\b[A-Z]{3}[PCHABGJLFT][A-Z][0-9]{4}[A-Z]\b"],
             negative_pattern_type: Some("regex"),
             negative_patterns: Some(&[
                 r"(?i)example|sample|placeholder|dummy|fake|test|mock|template|ABCDE1234F|AAAAA\d{4}A",
@@ -360,9 +357,7 @@ pub fn get_builtin_patterns() -> &'static [BuiltinPattern] {
         BuiltinPattern {
             name: "Driving License (India)",
             pattern_type: "regex",
-            patterns: &[
-                r"\b[A-Z]{2}[\-\s]?[0-9]{2}[\-\s]?(?:19|20)[0-9]{2}[\-\s]?[0-9]{7}\b",
-            ],
+            patterns: &[r"\b[A-Z]{2}[\-\s]?[0-9]{2}[\-\s]?(?:19|20)[0-9]{2}[\-\s]?[0-9]{7}\b"],
             negative_pattern_type: Some("regex"),
             negative_patterns: Some(&[
                 r"(?i)example|sample|placeholder|dummy|fake|test|mock|template",
@@ -372,7 +367,6 @@ pub fn get_builtin_patterns() -> &'static [BuiltinPattern] {
             validator: None,
             validator_name: None,
         },
-
         // ═════════════════════════════════════════════════════════════
         // PII — USA
         // ═════════════════════════════════════════════════════════════
@@ -434,7 +428,6 @@ pub fn get_builtin_patterns() -> &'static [BuiltinPattern] {
             validator: None,
             validator_name: None,
         },
-
         // ═════════════════════════════════════════════════════════════
         // PII — Europe
         // ═════════════════════════════════════════════════════════════
@@ -534,7 +527,6 @@ pub fn get_builtin_patterns() -> &'static [BuiltinPattern] {
             validator: None,
             validator_name: None,
         },
-
         // ═════════════════════════════════════════════════════════════
         // PII — Global (multi-region)
         // ═════════════════════════════════════════════════════════════

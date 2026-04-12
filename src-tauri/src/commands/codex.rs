@@ -48,13 +48,12 @@ fn get_codex_config_toml_path() -> Result<PathBuf, String> {
 fn read_codex_hooks_json() -> Result<serde_json::Value, String> {
     let path = get_codex_hooks_json_path()?;
     if path.exists() {
-        let content = fs::read_to_string(&path)
-            .map_err(|e| format!("Failed to read hooks.json: {}", e))?;
+        let content =
+            fs::read_to_string(&path).map_err(|e| format!("Failed to read hooks.json: {}", e))?;
         if content.trim().is_empty() {
             return Ok(serde_json::json!({}));
         }
-        serde_json::from_str(&content)
-            .map_err(|e| format!("Failed to parse hooks.json: {}", e))
+        serde_json::from_str(&content).map_err(|e| format!("Failed to parse hooks.json: {}", e))
     } else {
         Ok(serde_json::json!({}))
     }
@@ -69,8 +68,7 @@ fn write_codex_hooks_json(value: &serde_json::Value) -> Result<(), String> {
     }
     let content = serde_json::to_string_pretty(value)
         .map_err(|e| format!("Failed to serialize hooks.json: {}", e))?;
-    fs::write(&path, content)
-        .map_err(|e| format!("Failed to write hooks.json: {}", e))?;
+    fs::write(&path, content).map_err(|e| format!("Failed to write hooks.json: {}", e))?;
     Ok(())
 }
 
@@ -101,14 +99,16 @@ fn ensure_codex_hooks_feature_enabled() -> Result<(), String> {
     }
 
     if !path.exists() {
-        let content = format!("{}\n{} = true\n", CODEX_FEATURES_HEADER, CODEX_HOOKS_FEATURE_KEY);
-        fs::write(&path, content)
-            .map_err(|e| format!("Failed to write config.toml: {}", e))?;
+        let content = format!(
+            "{}\n{} = true\n",
+            CODEX_FEATURES_HEADER, CODEX_HOOKS_FEATURE_KEY
+        );
+        fs::write(&path, content).map_err(|e| format!("Failed to write config.toml: {}", e))?;
         return Ok(());
     }
 
-    let original = fs::read_to_string(&path)
-        .map_err(|e| format!("Failed to read config.toml: {}", e))?;
+    let original =
+        fs::read_to_string(&path).map_err(|e| format!("Failed to read config.toml: {}", e))?;
     let lines: Vec<&str> = original.lines().collect();
 
     // Locate the [features] section (if any) and find the index range it covers
@@ -148,8 +148,7 @@ fn ensure_codex_hooks_feature_enabled() -> Result<(), String> {
         new_content.push('\n');
         new_content.push_str(CODEX_HOOKS_FEATURE_KEY);
         new_content.push_str(" = true\n");
-        fs::write(&path, new_content)
-            .map_err(|e| format!("Failed to write config.toml: {}", e))?;
+        fs::write(&path, new_content).map_err(|e| format!("Failed to write config.toml: {}", e))?;
         return Ok(());
     };
     let end = features_end.unwrap_or(lines.len());
@@ -157,18 +156,19 @@ fn ensure_codex_hooks_feature_enabled() -> Result<(), String> {
     // Case B/C/D: scan inside the section for an existing codex_hooks key.
     let mut updated_lines: Vec<String> = lines.iter().map(|s| s.to_string()).collect();
     let mut found_key = false;
-    for (i, line) in lines.iter().enumerate().skip(start + 1).take(end - start - 1) {
+    for (i, line) in lines
+        .iter()
+        .enumerate()
+        .skip(start + 1)
+        .take(end - start - 1)
+    {
         let trimmed = line.trim_start();
         // Skip comments / blank lines.
         if trimmed.is_empty() || trimmed.starts_with('#') {
             continue;
         }
         // Match `codex_hooks` with any whitespace around the `=`.
-        let key_part = trimmed
-            .split('=')
-            .next()
-            .map(|s| s.trim())
-            .unwrap_or("");
+        let key_part = trimmed.split('=').next().map(|s| s.trim()).unwrap_or("");
         if key_part == CODEX_HOOKS_FEATURE_KEY {
             // Force the value to true. Preserve any leading indentation.
             let leading_ws_len = line.len() - trimmed.len();
@@ -188,8 +188,7 @@ fn ensure_codex_hooks_feature_enabled() -> Result<(), String> {
     if original.ends_with('\n') && !new_content.ends_with('\n') {
         new_content.push('\n');
     }
-    fs::write(&path, new_content)
-        .map_err(|e| format!("Failed to write config.toml: {}", e))?;
+    fs::write(&path, new_content).map_err(|e| format!("Failed to write config.toml: {}", e))?;
     Ok(())
 }
 
@@ -322,23 +321,41 @@ struct ScriptSpec {
 }
 
 const SCRIPT_SPECS: &[ScriptSpec] = &[
-    ScriptSpec { file_name: "llmwatcher-codex-user-prompt-submit.sh", endpoint: "user_prompt_submit", print_response: true },
-    ScriptSpec { file_name: "llmwatcher-codex-pre-bash.sh",          endpoint: "pre_bash",            print_response: true },
-    ScriptSpec { file_name: "llmwatcher-codex-post-tool.sh",         endpoint: "post_tool",           print_response: false },
-    ScriptSpec { file_name: "llmwatcher-codex-stop.sh",              endpoint: "stop",                print_response: false },
-    ScriptSpec { file_name: "llmwatcher-codex-session-start.sh",     endpoint: "session_start",       print_response: false },
+    ScriptSpec {
+        file_name: "llmwatcher-codex-user-prompt-submit.sh",
+        endpoint: "user_prompt_submit",
+        print_response: true,
+    },
+    ScriptSpec {
+        file_name: "llmwatcher-codex-pre-bash.sh",
+        endpoint: "pre_bash",
+        print_response: true,
+    },
+    ScriptSpec {
+        file_name: "llmwatcher-codex-post-tool.sh",
+        endpoint: "post_tool",
+        print_response: false,
+    },
+    ScriptSpec {
+        file_name: "llmwatcher-codex-stop.sh",
+        endpoint: "stop",
+        print_response: false,
+    },
+    ScriptSpec {
+        file_name: "llmwatcher-codex-session-start.sh",
+        endpoint: "session_start",
+        print_response: false,
+    },
 ];
 
 fn write_script(spec: &ScriptSpec, port: u16) -> Result<String, String> {
     let dir = get_codex_hooks_dir()?;
     if !dir.exists() {
-        fs::create_dir_all(&dir)
-            .map_err(|e| format!("Failed to create hooks directory: {}", e))?;
+        fs::create_dir_all(&dir).map_err(|e| format!("Failed to create hooks directory: {}", e))?;
     }
     let path = dir.join(spec.file_name);
     let content = generate_forwarder_script(port, spec.endpoint, spec.print_response);
-    fs::write(&path, content)
-        .map_err(|e| format!("Failed to write {}: {}", spec.file_name, e))?;
+    fs::write(&path, content).map_err(|e| format!("Failed to write {}: {}", spec.file_name, e))?;
 
     #[cfg(unix)]
     {
@@ -449,7 +466,10 @@ fn add_hook_entry(
 
     let mut new_entry = serde_json::Map::new();
     if let Some(matcher) = install.matcher {
-        new_entry.insert("matcher".to_string(), serde_json::Value::String(matcher.to_string()));
+        new_entry.insert(
+            "matcher".to_string(),
+            serde_json::Value::String(matcher.to_string()),
+        );
     }
     new_entry.insert(
         "hooks".to_string(),
@@ -560,10 +580,7 @@ pub fn uninstall_codex_hooks() -> Result<String, String> {
                 }
             }
         }
-        let is_empty = hooks_json
-            .as_object()
-            .map(|o| o.is_empty())
-            .unwrap_or(true);
+        let is_empty = hooks_json.as_object().map(|o| o.is_empty()).unwrap_or(true);
         if is_empty {
             let _ = fs::remove_file(&path);
         } else {

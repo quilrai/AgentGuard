@@ -164,7 +164,10 @@ pub fn install_ctx_read_hook_claude() -> Result<String, String> {
             .map_err(|e| format!("Failed to set script permissions: {e}"))?;
     }
 
-    let script_path_str = script_path.to_str().ok_or("Invalid script path")?.to_string();
+    let script_path_str = script_path
+        .to_str()
+        .ok_or("Invalid script path")?
+        .to_string();
 
     // Update settings.json
     let mut settings = read_claude_settings()?;
@@ -219,9 +222,7 @@ pub fn uninstall_ctx_read_hook_claude() -> Result<String, String> {
     let mut settings = read_claude_settings()?;
     if let Some(obj) = settings.as_object_mut() {
         if let Some(hooks) = obj.get_mut("hooks").and_then(|v| v.as_object_mut()) {
-            if let Some(pre_tool_use) =
-                hooks.get_mut("PreToolUse").and_then(|v| v.as_array_mut())
-            {
+            if let Some(pre_tool_use) = hooks.get_mut("PreToolUse").and_then(|v| v.as_array_mut()) {
                 pre_tool_use.retain(|entry| !is_ctx_read_entry(entry));
 
                 if pre_tool_use.is_empty() {
@@ -274,4 +275,3 @@ fn is_ctx_read_entry(entry: &serde_json::Value) -> bool {
         })
         .unwrap_or(false)
 }
-

@@ -83,14 +83,12 @@ fn crush_value(
 ) -> (serde_json::Value, bool) {
     if depth >= config.max_depth {
         return match value {
-            serde_json::Value::Object(map) => (
-                serde_json::json!({"__depth_exceeded": map.len()}),
-                true,
-            ),
-            serde_json::Value::Array(arr) => (
-                serde_json::json!({"__depth_exceeded": arr.len()}),
-                true,
-            ),
+            serde_json::Value::Object(map) => {
+                (serde_json::json!({"__depth_exceeded": map.len()}), true)
+            }
+            serde_json::Value::Array(arr) => {
+                (serde_json::json!({"__depth_exceeded": arr.len()}), true)
+            }
             serde_json::Value::String(s) if s.len() > config.max_string_length => {
                 let cut = safe_truncate_pos(s, config.max_string_length);
                 let truncated = &s[..cut];
@@ -154,10 +152,8 @@ fn crush_value(
                     serde_json::Value::Number(truncated_count.into()),
                 );
                 if !summary.is_empty() {
-                    truncation_info.insert(
-                        "__summary".to_string(),
-                        serde_json::Value::String(summary),
-                    );
+                    truncation_info
+                        .insert("__summary".to_string(), serde_json::Value::String(summary));
                 }
                 new_arr.push(serde_json::Value::Object(truncation_info));
 
@@ -198,7 +194,9 @@ mod tests {
     #[test]
     fn large_array_truncated() {
         let items: Vec<serde_json::Value> = (0..50)
-            .map(|i| serde_json::json!({"id": i, "name": format!("item_{}", i), "status": "active"}))
+            .map(
+                |i| serde_json::json!({"id": i, "name": format!("item_{}", i), "status": "active"}),
+            )
             .collect();
         let json = serde_json::to_string(&items).unwrap();
 

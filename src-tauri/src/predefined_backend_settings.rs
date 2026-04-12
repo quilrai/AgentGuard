@@ -43,9 +43,7 @@ impl TokenSavingSettings {
 
     /// Returns true if any advanced compressor is enabled
     pub fn any_advanced_enabled(&self) -> bool {
-        self.search_compressor
-            || self.diff_compressor
-            || self.tool_crusher
+        self.search_compressor || self.diff_compressor || self.tool_crusher
     }
 }
 

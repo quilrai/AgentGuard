@@ -9,7 +9,7 @@ use rusqlite::Connection;
 
 /// Compute a truncated MD5 hex hash for content (16 hex chars).
 pub fn content_hash(content: &str) -> String {
-    use md5::{Md5, Digest};
+    use md5::{Digest, Md5};
     let mut hasher = Md5::new();
     hasher.update(content.as_bytes());
     let result = hasher.finalize();
@@ -25,7 +25,7 @@ fn ensure_table(conn: &Connection) {
             tokens_saved INTEGER DEFAULT 0,
             created_at TEXT NOT NULL,
             hit_count INTEGER DEFAULT 0
-        )"
+        )",
     );
 }
 

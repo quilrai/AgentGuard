@@ -34,16 +34,12 @@
 //   - TOOL_ENDPOINT    -> ClaudeTool     (PreToolUse / PostToolUse rows)
 //   - SESSION_ENDPOINT -> ClaudeSession  (SessionStart / SessionEnd rows)
 
-use crate::database::{Database, RealUsage, DLP_ACTION_BLOCKED, DLP_ACTION_PASSED, DLP_ACTION_RATELIMITED};
+use crate::database::{
+    Database, RealUsage, DLP_ACTION_BLOCKED, DLP_ACTION_PASSED, DLP_ACTION_RATELIMITED,
+};
 use crate::dlp::{check_dlp_patterns, DlpDetection};
 use crate::predefined_backend_settings::CustomBackendSettings;
-use axum::{
-    extract::State,
-    http::StatusCode,
-    response::IntoResponse,
-    routing::post,
-    Json, Router,
-};
+use axum::{extract::State, http::StatusCode, response::IntoResponse, routing::post, Json, Router};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::{Arc, Mutex};
@@ -180,7 +176,10 @@ pub struct PreToolUseHookOutput {
     pub hook_event_name: &'static str,
     #[serde(rename = "permissionDecision")]
     pub permission_decision: String,
-    #[serde(rename = "permissionDecisionReason", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "permissionDecisionReason",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub permission_decision_reason: Option<String>,
 }
 
@@ -394,8 +393,7 @@ fn read_latest_turn_usage(transcript_path: &str) -> Option<RealUsage> {
         if let Some(u) = msg.get("usage") {
             usage.input_tokens += json_i64(u, "input_tokens").unwrap_or(0) as i32;
             usage.output_tokens += json_i64(u, "output_tokens").unwrap_or(0) as i32;
-            usage.cache_read_tokens +=
-                json_i64(u, "cache_read_input_tokens").unwrap_or(0) as i32;
+            usage.cache_read_tokens += json_i64(u, "cache_read_input_tokens").unwrap_or(0) as i32;
             usage.cache_creation_tokens +=
                 json_i64(u, "cache_creation_input_tokens").unwrap_or(0) as i32;
             found_any = true;
@@ -423,7 +421,13 @@ async fn user_prompt_submit_handler(
         Ok(v) => v,
         Err(e) => {
             println!("[CLAUDE_HOOK] user_prompt_submit parse error: {}", e);
-            return (StatusCode::OK, Json(UserPromptSubmitResponse { decision: None, reason: None }));
+            return (
+                StatusCode::OK,
+                Json(UserPromptSubmitResponse {
+                    decision: None,
+                    reason: None,
+                }),
+            );
         }
     };
     println!(
@@ -492,12 +496,19 @@ async fn user_prompt_submit_handler(
             reason: Some(format_detection_message(&detections)),
         }
     } else {
-        UserPromptSubmitResponse { decision: None, reason: None }
+        UserPromptSubmitResponse {
+            decision: None,
+            reason: None,
+        }
     };
     let response_body_json = serde_json::to_string(&response).unwrap_or_default();
 
     let response_status = if is_blocked { 403 } else { 200 };
-    let dlp_action = if is_blocked { DLP_ACTION_BLOCKED } else { DLP_ACTION_PASSED };
+    let dlp_action = if is_blocked {
+        DLP_ACTION_BLOCKED
+    } else {
+        DLP_ACTION_PASSED
+    };
 
     if let Ok(request_id) = state.db.log_agent_hook_request(
         BACKEND,
@@ -527,7 +538,11 @@ fn pre_tool_response(blocked: bool, reason: Option<String>) -> PreToolUseRespons
     PreToolUseResponse {
         hook_specific_output: PreToolUseHookOutput {
             hook_event_name: "PreToolUse",
-            permission_decision: if blocked { "deny".to_string() } else { "allow".to_string() },
+            permission_decision: if blocked {
+                "deny".to_string()
+            } else {
+                "allow".to_string()
+            },
             permission_decision_reason: reason,
         },
     }
@@ -604,7 +619,11 @@ fn handle_pre_tool(
     let response_body_json = serde_json::to_string(&response).unwrap_or_default();
 
     let response_status = if is_blocked { 403 } else { 200 };
-    let dlp_action = if is_blocked { DLP_ACTION_BLOCKED } else { DLP_ACTION_PASSED };
+    let dlp_action = if is_blocked {
+        DLP_ACTION_BLOCKED
+    } else {
+        DLP_ACTION_PASSED
+    };
 
     if let Ok(request_id) = state.db.log_agent_hook_request(
         BACKEND,
@@ -731,7 +750,12 @@ async fn post_tool_handler(
         Ok(v) => v,
         Err(e) => {
             println!("[CLAUDE_HOOK] post_tool parse error: {}", e);
-            return (StatusCode::OK, Json(GenericResponse { status: "ok".to_string() }));
+            return (
+                StatusCode::OK,
+                Json(GenericResponse {
+                    status: "ok".to_string(),
+                }),
+            );
         }
     };
     println!(
@@ -802,9 +826,19 @@ async fn post_tool_handler(
     }
 
     // ---- Symbol extraction (best-effort, fire-and-forget) ----
-    extract_symbols_for_tool(&state.db, &input.tool_name, &input.tool_input, input.cwd.as_deref());
+    extract_symbols_for_tool(
+        &state.db,
+        &input.tool_name,
+        &input.tool_input,
+        input.cwd.as_deref(),
+    );
 
-    (StatusCode::OK, Json(GenericResponse { status: "ok".to_string() }))
+    (
+        StatusCode::OK,
+        Json(GenericResponse {
+            status: "ok".to_string(),
+        }),
+    )
 }
 
 /// If the tool touched a file (Read/Write/Edit), read it from disk and
@@ -825,8 +859,7 @@ fn extract_symbols_for_tool(
         return;
     }
 
-    let file_path = match json_str(tool_input, "file_path")
-        .or_else(|| json_str(tool_input, "path"))
+    let file_path = match json_str(tool_input, "file_path").or_else(|| json_str(tool_input, "path"))
     {
         Some(p) => p,
         None => return,
@@ -873,7 +906,12 @@ async fn stop_handler(
         Ok(v) => v,
         Err(e) => {
             println!("[CLAUDE_HOOK] stop parse error: {}", e);
-            return (StatusCode::OK, Json(GenericResponse { status: "ok".to_string() }));
+            return (
+                StatusCode::OK,
+                Json(GenericResponse {
+                    status: "ok".to_string(),
+                }),
+            );
         }
     };
     println!("[CLAUDE_HOOK] stop - session: {}", input.session_id);
@@ -921,7 +959,12 @@ async fn stop_handler(
         );
     }
 
-    (StatusCode::OK, Json(GenericResponse { status: "ok".to_string() }))
+    (
+        StatusCode::OK,
+        Json(GenericResponse {
+            status: "ok".to_string(),
+        }),
+    )
 }
 
 /// POST /claude_hook/session_start
@@ -934,7 +977,12 @@ async fn session_start_handler(
         Ok(v) => v,
         Err(e) => {
             println!("[CLAUDE_HOOK] session_start parse error: {}", e);
-            return (StatusCode::OK, Json(GenericResponse { status: "ok".to_string() }));
+            return (
+                StatusCode::OK,
+                Json(GenericResponse {
+                    status: "ok".to_string(),
+                }),
+            );
         }
     };
     println!(
@@ -947,7 +995,10 @@ async fn session_start_handler(
         if let Ok(mut c) = cache.lock() {
             let cleared = c.clear();
             if cleared > 0 {
-                println!("[CLAUDE_HOOK] session_start - cleared {} ctx_read cache entries", cleared);
+                println!(
+                    "[CLAUDE_HOOK] session_start - cleared {} ctx_read cache entries",
+                    cleared
+                );
             }
         }
     }
@@ -985,7 +1036,12 @@ async fn session_start_handler(
         DLP_ACTION_PASSED,
     );
 
-    (StatusCode::OK, Json(GenericResponse { status: "ok".to_string() }))
+    (
+        StatusCode::OK,
+        Json(GenericResponse {
+            status: "ok".to_string(),
+        }),
+    )
 }
 
 /// POST /claude_hook/session_end
@@ -997,7 +1053,12 @@ async fn session_end_handler(
         Ok(v) => v,
         Err(e) => {
             println!("[CLAUDE_HOOK] session_end parse error: {}", e);
-            return (StatusCode::OK, Json(GenericResponse { status: "ok".to_string() }));
+            return (
+                StatusCode::OK,
+                Json(GenericResponse {
+                    status: "ok".to_string(),
+                }),
+            );
         }
     };
     println!(
@@ -1036,7 +1097,12 @@ async fn session_end_handler(
         DLP_ACTION_PASSED,
     );
 
-    (StatusCode::OK, Json(GenericResponse { status: "ok".to_string() }))
+    (
+        StatusCode::OK,
+        Json(GenericResponse {
+            status: "ok".to_string(),
+        }),
+    )
 }
 
 // ============================================================================

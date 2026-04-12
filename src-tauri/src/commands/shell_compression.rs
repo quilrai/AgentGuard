@@ -16,74 +16,176 @@ use std::os::unix::fs::PermissionsExt;
 /// Claude Code gets the broadest list including cat/head/tail/pytest/mypy.
 const CLAUDE_REWRITE_COMMANDS: &[&str] = &[
     // VCS & collaboration
-    "git", "gh",
+    "git",
+    "gh",
     // Build tools
-    "cargo", "make", "cmake", "ctest", "bazel", "blaze",
+    "cargo",
+    "make",
+    "cmake",
+    "ctest",
+    "bazel",
+    "blaze",
     // JS/TS ecosystem
-    "npm", "pnpm", "yarn", "bun", "deno", "eslint", "prettier", "tsc",
-    "vitest", "next", "vite", "playwright", "cypress",
+    "npm",
+    "pnpm",
+    "yarn",
+    "bun",
+    "deno",
+    "eslint",
+    "prettier",
+    "tsc",
+    "vitest",
+    "next",
+    "vite",
+    "playwright",
+    "cypress",
     // Containers & orchestration
-    "docker", "docker-compose", "kubectl", "helm",
+    "docker",
+    "docker-compose",
+    "kubectl",
+    "helm",
     // Python
-    "pip", "pip3", "ruff", "pytest", "mypy", "poetry", "uv",
+    "pip",
+    "pip3",
+    "ruff",
+    "pytest",
+    "mypy",
+    "poetry",
+    "uv",
     // Go
-    "go", "golangci-lint", "golint",
+    "go",
+    "golangci-lint",
+    "golint",
     // Ruby
-    "rubocop", "bundle", "rake", "rspec",
+    "rubocop",
+    "bundle",
+    "rake",
+    "rspec",
     // JVM
-    "mvn", "gradle", "gradlew",
+    "mvn",
+    "gradle",
+    "gradlew",
     // .NET
     "dotnet",
     // Mobile
-    "flutter", "dart", "swift",
+    "flutter",
+    "dart",
+    "swift",
     // Other languages
-    "zig", "mix", "iex", "composer",
+    "zig",
+    "mix",
+    "iex",
+    "composer",
     // Infrastructure
-    "terraform", "ansible", "ansible-playbook", "aws",
-    "systemctl", "journalctl",
+    "terraform",
+    "ansible",
+    "ansible-playbook",
+    "aws",
+    "systemctl",
+    "journalctl",
     // Databases
-    "prisma", "psql", "mysql", "mariadb",
+    "prisma",
+    "psql",
+    "mysql",
+    "mariadb",
     // Shell utilities
-    "curl", "wget", "grep", "rg", "find", "ls",
-    "cat", "head", "tail",
+    "curl",
+    "wget",
+    "grep",
+    "rg",
+    "find",
+    "ls",
+    "cat",
+    "head",
+    "tail",
     // Environment
-    "env", "printenv",
+    "env",
+    "printenv",
 ];
 
 /// Cursor gets the same broad list minus a few agent-specific ones (cat/head/tail/pytest/mypy).
 const CURSOR_REWRITE_COMMANDS: &[&str] = &[
     // VCS & collaboration
-    "git", "gh",
+    "git",
+    "gh",
     // Build tools
-    "cargo", "make", "cmake", "ctest", "bazel", "blaze",
+    "cargo",
+    "make",
+    "cmake",
+    "ctest",
+    "bazel",
+    "blaze",
     // JS/TS ecosystem
-    "npm", "pnpm", "yarn", "bun", "deno", "eslint", "prettier", "tsc",
-    "vitest", "next", "vite", "playwright", "cypress",
+    "npm",
+    "pnpm",
+    "yarn",
+    "bun",
+    "deno",
+    "eslint",
+    "prettier",
+    "tsc",
+    "vitest",
+    "next",
+    "vite",
+    "playwright",
+    "cypress",
     // Containers & orchestration
-    "docker", "docker-compose", "kubectl", "helm",
+    "docker",
+    "docker-compose",
+    "kubectl",
+    "helm",
     // Python
-    "pip", "pip3", "ruff", "poetry", "uv",
+    "pip",
+    "pip3",
+    "ruff",
+    "poetry",
+    "uv",
     // Go
-    "go", "golangci-lint", "golint",
+    "go",
+    "golangci-lint",
+    "golint",
     // Ruby
-    "rubocop", "bundle", "rake", "rspec",
+    "rubocop",
+    "bundle",
+    "rake",
+    "rspec",
     // JVM
-    "mvn", "gradle", "gradlew",
+    "mvn",
+    "gradle",
+    "gradlew",
     // .NET
     "dotnet",
     // Mobile
-    "flutter", "dart", "swift",
+    "flutter",
+    "dart",
+    "swift",
     // Other languages
-    "zig", "mix", "iex", "composer",
+    "zig",
+    "mix",
+    "iex",
+    "composer",
     // Infrastructure
-    "terraform", "ansible", "ansible-playbook", "aws",
-    "systemctl", "journalctl",
+    "terraform",
+    "ansible",
+    "ansible-playbook",
+    "aws",
+    "systemctl",
+    "journalctl",
     // Databases
-    "prisma", "psql", "mysql", "mariadb",
+    "prisma",
+    "psql",
+    "mysql",
+    "mariadb",
     // Shell utilities
-    "curl", "wget", "grep", "rg", "find", "ls",
+    "curl",
+    "wget",
+    "grep",
+    "rg",
+    "find",
+    "ls",
     // Environment
-    "env", "printenv",
+    "env",
+    "printenv",
 ];
 
 /// Generate the compression hook shell script content.
@@ -100,16 +202,27 @@ fn generate_compression_hook_script(port: u16, commands: &[&str], backend_name: 
     // Commands that the engine supports when invoked with no arguments.
     // Must match the bare forms in shell_compression/patterns/mod.rs.
     let bare_ok = &[
-        "ls", "env", "printenv", "make", "terraform", "eslint",
-        "prettier", "vitest", "tsc", "ctest",
+        "ls",
+        "env",
+        "printenv",
+        "make",
+        "terraform",
+        "eslint",
+        "prettier",
+        "vitest",
+        "tsc",
+        "ctest",
     ];
-    let case_patterns: Vec<String> = commands.iter().flat_map(|cmd| {
-        let mut pats = vec![format!("{}\\ *", cmd)];
-        if bare_ok.contains(cmd) {
-            pats.push(cmd.to_string());
-        }
-        pats
-    }).collect();
+    let case_patterns: Vec<String> = commands
+        .iter()
+        .flat_map(|cmd| {
+            let mut pats = vec![format!("{}\\ *", cmd)];
+            if bare_ok.contains(cmd) {
+                pats.push(cmd.to_string());
+            }
+            pats
+        })
+        .collect();
     let case_line = case_patterns.join("|");
 
     format!(
@@ -204,8 +317,7 @@ fn read_claude_settings() -> Result<serde_json::Value, String> {
     if path.exists() {
         let content = fs::read_to_string(&path)
             .map_err(|e| format!("Failed to read settings.json: {}", e))?;
-        serde_json::from_str(&content)
-            .map_err(|e| format!("Failed to parse settings.json: {}", e))
+        serde_json::from_str(&content).map_err(|e| format!("Failed to parse settings.json: {}", e))
     } else {
         Ok(serde_json::json!({}))
     }
@@ -222,8 +334,7 @@ fn write_claude_settings(settings: &serde_json::Value) -> Result<(), String> {
 
     let content = serde_json::to_string_pretty(settings)
         .map_err(|e| format!("Failed to serialize settings: {}", e))?;
-    fs::write(&path, content)
-        .map_err(|e| format!("Failed to write settings.json: {}", e))?;
+    fs::write(&path, content).map_err(|e| format!("Failed to write settings.json: {}", e))?;
     Ok(())
 }
 
@@ -255,18 +366,23 @@ pub fn install_compression_hook_claude() -> Result<String, String> {
             .map_err(|e| format!("Failed to set script permissions: {}", e))?;
     }
 
-    let script_path_str = script_path.to_str().ok_or("Invalid script path")?.to_string();
+    let script_path_str = script_path
+        .to_str()
+        .ok_or("Invalid script path")?
+        .to_string();
 
     // Update settings.json to add PreToolUse hook
     let mut settings = read_claude_settings()?;
-    let obj = settings.as_object_mut()
+    let obj = settings
+        .as_object_mut()
         .ok_or("settings.json is not a valid JSON object")?;
 
     // Get or create hooks object
     if !obj.contains_key("hooks") {
         obj.insert("hooks".to_string(), serde_json::json!({}));
     }
-    let hooks = obj.get_mut("hooks")
+    let hooks = obj
+        .get_mut("hooks")
         .and_then(|v| v.as_object_mut())
         .ok_or("Failed to access hooks object")?;
 
@@ -274,20 +390,24 @@ pub fn install_compression_hook_claude() -> Result<String, String> {
     if !hooks.contains_key("PreToolUse") {
         hooks.insert("PreToolUse".to_string(), serde_json::json!([]));
     }
-    let pre_tool_use = hooks.get_mut("PreToolUse")
+    let pre_tool_use = hooks
+        .get_mut("PreToolUse")
         .and_then(|v| v.as_array_mut())
         .ok_or("Failed to access PreToolUse array")?;
 
     // Remove any existing compress hook entry so we can re-add a fresh one.
     pre_tool_use.retain(|entry| {
-        let is_ours = entry.get("hooks")
+        let is_ours = entry
+            .get("hooks")
             .and_then(|h| h.as_array())
-            .map(|arr| arr.iter().any(|hook| {
-                hook.get("command")
-                    .and_then(|c| c.as_str())
-                    .map(|s| s.contains("llmwatcher-compress"))
-                    .unwrap_or(false)
-            }))
+            .map(|arr| {
+                arr.iter().any(|hook| {
+                    hook.get("command")
+                        .and_then(|c| c.as_str())
+                        .map(|s| s.contains("llmwatcher-compress"))
+                        .unwrap_or(false)
+                })
+            })
             .unwrap_or(false);
         !is_ours
     });
@@ -302,7 +422,8 @@ pub fn install_compression_hook_claude() -> Result<String, String> {
 
     // Enforce canonical ordering (DLP → ctx_read → compression).
     {
-        let hooks = obj.get_mut("hooks")
+        let hooks = obj
+            .get_mut("hooks")
             .and_then(|v| v.as_object_mut())
             .ok_or("Failed to access hooks object")?;
         super::hook_ordering::enforce_pretooluse_order(hooks);
@@ -327,14 +448,17 @@ pub fn uninstall_compression_hook_claude() -> Result<String, String> {
         if let Some(hooks) = obj.get_mut("hooks").and_then(|v| v.as_object_mut()) {
             if let Some(pre_tool_use) = hooks.get_mut("PreToolUse").and_then(|v| v.as_array_mut()) {
                 pre_tool_use.retain(|entry| {
-                    !entry.get("hooks")
+                    !entry
+                        .get("hooks")
                         .and_then(|h| h.as_array())
-                        .map(|arr| arr.iter().any(|hook| {
-                            hook.get("command")
-                                .and_then(|c| c.as_str())
-                                .map(|s| s.contains("llmwatcher-compress"))
-                                .unwrap_or(false)
-                        }))
+                        .map(|arr| {
+                            arr.iter().any(|hook| {
+                                hook.get("command")
+                                    .and_then(|c| c.as_str())
+                                    .map(|s| s.contains("llmwatcher-compress"))
+                                    .unwrap_or(false)
+                            })
+                        })
                         .unwrap_or(false)
                 });
 
@@ -363,20 +487,26 @@ pub fn check_compression_hook_claude() -> Result<bool, String> {
     }
 
     let settings = read_claude_settings()?;
-    let installed = settings.get("hooks")
+    let installed = settings
+        .get("hooks")
         .and_then(|h| h.get("PreToolUse"))
         .and_then(|p| p.as_array())
-        .map(|arr| arr.iter().any(|entry| {
-            entry.get("hooks")
-                .and_then(|h| h.as_array())
-                .map(|hooks| hooks.iter().any(|hook| {
-                    hook.get("command")
-                        .and_then(|c| c.as_str())
-                        .map(|s| s.contains("llmwatcher-compress"))
-                        .unwrap_or(false)
-                }))
-                .unwrap_or(false)
-        }))
+        .map(|arr| {
+            arr.iter().any(|entry| {
+                entry
+                    .get("hooks")
+                    .and_then(|h| h.as_array())
+                    .map(|hooks| {
+                        hooks.iter().any(|hook| {
+                            hook.get("command")
+                                .and_then(|c| c.as_str())
+                                .map(|s| s.contains("llmwatcher-compress"))
+                                .unwrap_or(false)
+                        })
+                    })
+                    .unwrap_or(false)
+            })
+        })
         .unwrap_or(false);
 
     Ok(installed)
@@ -423,7 +553,8 @@ pub fn install_compression_hook_cursor() -> Result<String, String> {
 
     // Write the hook script
     let script_path = get_cursor_compression_script_path()?;
-    let script_content = generate_compression_hook_script(port, CURSOR_REWRITE_COMMANDS, "cursor-hooks");
+    let script_content =
+        generate_compression_hook_script(port, CURSOR_REWRITE_COMMANDS, "cursor-hooks");
     fs::write(&script_path, &script_content)
         .map_err(|e| format!("Failed to write hook script: {}", e))?;
 
@@ -437,7 +568,10 @@ pub fn install_compression_hook_cursor() -> Result<String, String> {
             .map_err(|e| format!("Failed to set script permissions: {}", e))?;
     }
 
-    let script_path_str = script_path.to_str().ok_or("Invalid script path")?.to_string();
+    let script_path_str = script_path
+        .to_str()
+        .ok_or("Invalid script path")?
+        .to_string();
 
     // Update hooks.json
     let hooks_json_path = get_cursor_hooks_json_path()?;
@@ -464,7 +598,10 @@ pub fn install_compression_hook_cursor() -> Result<String, String> {
         command: script_path_str.clone(),
     };
 
-    let hook_list = config.hooks.entry("beforeShellExecution".to_string()).or_default();
+    let hook_list = config
+        .hooks
+        .entry("beforeShellExecution".to_string())
+        .or_default();
     let already_exists = hook_list
         .iter()
         .any(|entry| entry.command.contains("llmwatcher-compress"));
@@ -525,13 +662,14 @@ pub fn check_compression_hook_cursor() -> Result<bool, String> {
 
     let content = fs::read_to_string(&hooks_json_path)
         .map_err(|e| format!("Failed to read hooks.json: {}", e))?;
-    let config: CursorHooksConfig = serde_json::from_str(&content)
-        .map_err(|e| format!("Failed to parse hooks.json: {}", e))?;
+    let config: CursorHooksConfig =
+        serde_json::from_str(&content).map_err(|e| format!("Failed to parse hooks.json: {}", e))?;
 
     let installed = config.hooks.values().any(|entries| {
-        entries.iter().any(|entry| entry.command.contains("llmwatcher-compress"))
+        entries
+            .iter()
+            .any(|entry| entry.command.contains("llmwatcher-compress"))
     });
 
     Ok(installed)
 }
-

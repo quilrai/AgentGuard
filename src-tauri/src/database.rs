@@ -85,14 +85,16 @@ impl Database {
         let conn = Connection::open(path)?;
 
         // SQLite performance settings
-        conn.execute_batch("
+        conn.execute_batch(
+            "
             PRAGMA journal_mode = WAL;
             PRAGMA synchronous = NORMAL;
             PRAGMA cache_size = -64000;
             PRAGMA temp_store = MEMORY;
             PRAGMA busy_timeout = 5000;
             PRAGMA auto_vacuum = FULL;
-        ")?;
+        ",
+        )?;
 
         // Create requests table
         conn.execute(
@@ -316,7 +318,6 @@ impl Database {
         Ok(())
     }
 
-
     #[allow(clippy::too_many_arguments)]
     pub fn log_request(
         &self,
@@ -427,12 +428,7 @@ impl Database {
             conn.execute(
                 "INSERT INTO tool_calls (request_id, tool_call_id, tool_name, tool_input)
                  VALUES (?1, ?2, ?3, ?4)",
-                rusqlite::params![
-                    request_id,
-                    tool_call.id,
-                    tool_call.name,
-                    input_json,
-                ],
+                rusqlite::params![request_id, tool_call.id, tool_call.name, input_json,],
             )?;
         }
 
@@ -460,7 +456,6 @@ pub struct RealUsage {
 }
 
 impl Database {
-
     /// Log an agent hook request (creates new entry, or upgrades an existing
     /// row keyed on `correlation_id` for the given `backend`).
     ///
@@ -492,7 +487,10 @@ impl Database {
         let conn = self.conn.lock().unwrap();
         let timestamp = chrono::Utc::now().to_rfc3339();
 
-        println!("[DB] log_agent_hook_request - backend: {}, correlation_id: {}, endpoint: {}", backend, correlation_id, endpoint_name);
+        println!(
+            "[DB] log_agent_hook_request - backend: {}, correlation_id: {}, endpoint: {}",
+            backend, correlation_id, endpoint_name
+        );
 
         // Check if entry already exists for this correlation_id (within last 5 minutes for faster lookup)
         let cutoff = (chrono::Utc::now() - chrono::Duration::minutes(5)).to_rfc3339();
@@ -505,7 +503,10 @@ impl Database {
             .ok();
 
         if let Some(id) = existing_id {
-            println!("[DB] log_agent_hook_request - found existing entry id: {}, updating", id);
+            println!(
+                "[DB] log_agent_hook_request - found existing entry id: {}, updating",
+                id
+            );
             // Update existing entry - only upgrade dlp_action (blocked > redacted > passed)
             conn.execute(
                 "UPDATE requests SET
@@ -600,7 +601,9 @@ impl Database {
             let latency_ms = chrono::DateTime::parse_from_rfc3339(&timestamp_str)
                 .map(|start_time| {
                     let now = chrono::Utc::now();
-                    (now.signed_duration_since(start_time)).num_milliseconds().max(0) as i64
+                    (now.signed_duration_since(start_time))
+                        .num_milliseconds()
+                        .max(0) as i64
                 })
                 .unwrap_or(0);
 
@@ -817,7 +820,10 @@ impl Database {
         // Find and update the request (within last 5 minutes for faster lookup)
         let cutoff = (chrono::Utc::now() - chrono::Duration::minutes(5)).to_rfc3339();
 
-        println!("[DB] add_agent_hook_thinking_tokens - backend: {}, correlation_id: {}", backend, correlation_id);
+        println!(
+            "[DB] add_agent_hook_thinking_tokens - backend: {}, correlation_id: {}",
+            backend, correlation_id
+        );
 
         let rows_affected = conn.execute(
             "UPDATE requests SET
@@ -827,7 +833,10 @@ impl Database {
             rusqlite::params![thinking_word_count, cutoff, backend, correlation_id],
         )?;
 
-        println!("[DB] add_agent_hook_thinking_tokens - rows_affected: {}", rows_affected);
+        println!(
+            "[DB] add_agent_hook_thinking_tokens - rows_affected: {}",
+            rows_affected
+        );
 
         Ok(rows_affected > 0)
     }
@@ -853,7 +862,11 @@ impl Database {
     }
 
     /// Update settings for a predefined backend
-    pub fn update_predefined_backend_settings(&self, name: &str, settings: &str) -> Result<(), rusqlite::Error> {
+    pub fn update_predefined_backend_settings(
+        &self,
+        name: &str,
+        settings: &str,
+    ) -> Result<(), rusqlite::Error> {
         let conn = self.conn.lock().unwrap();
         let updated_at = chrono::Utc::now().to_rfc3339();
 
@@ -905,13 +918,7 @@ impl Database {
 
         for sym in symbols {
             stmt.execute(rusqlite::params![
-                cwd,
-                file_path,
-                sym.kind,
-                sym.name,
-                sym.source,
-                sym.line,
-                now,
+                cwd, file_path, sym.kind, sym.name, sym.source, sym.line, now,
             ])?;
         }
 

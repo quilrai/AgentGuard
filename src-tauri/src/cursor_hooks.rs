@@ -8,13 +8,7 @@
 use crate::database::{Database, DLP_ACTION_BLOCKED, DLP_ACTION_PASSED, DLP_ACTION_RATELIMITED};
 use crate::dlp::{check_dlp_patterns, DlpDetection};
 use crate::predefined_backend_settings::CustomBackendSettings;
-use axum::{
-    extract::State,
-    http::StatusCode,
-    response::IntoResponse,
-    routing::post,
-    Json, Router,
-};
+use axum::{extract::State, http::StatusCode, response::IntoResponse, routing::post, Json, Router};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::Arc;
@@ -363,7 +357,9 @@ async fn before_submit_prompt_handler(
     // Calculate total token count first
     let mut total_token_count = estimate_tokens(&input.prompt);
     for attachment in &input.attachments {
-        if let (Some(file_path), Some(att_type)) = (&attachment.file_path, &attachment.attachment_type) {
+        if let (Some(file_path), Some(att_type)) =
+            (&attachment.file_path, &attachment.attachment_type)
+        {
             if att_type == "file" {
                 if let Ok(content) = std::fs::read_to_string(file_path) {
                     total_token_count += estimate_tokens(&content);
@@ -429,7 +425,9 @@ async fn before_submit_prompt_handler(
 
         // Also check attached files
         for attachment in &input.attachments {
-            if let (Some(file_path), Some(att_type)) = (&attachment.file_path, &attachment.attachment_type) {
+            if let (Some(file_path), Some(att_type)) =
+                (&attachment.file_path, &attachment.attachment_type)
+            {
                 if att_type == "file" {
                     match std::fs::read_to_string(file_path) {
                         Ok(content) => {
@@ -472,7 +470,11 @@ async fn before_submit_prompt_handler(
     let response_body_json = serde_json::to_string(&response).unwrap_or_default();
 
     // Log to database
-    let dlp_action = if is_blocked { DLP_ACTION_BLOCKED } else { DLP_ACTION_PASSED };
+    let dlp_action = if is_blocked {
+        DLP_ACTION_BLOCKED
+    } else {
+        DLP_ACTION_PASSED
+    };
     match state.db.log_agent_hook_request(
         "cursor-hooks",
         &input.generation_id,
@@ -489,7 +491,10 @@ async fn before_submit_prompt_handler(
         dlp_action,
     ) {
         Ok(request_id) => {
-            println!("[CURSOR_HOOK] before_submit_prompt - logged request_id: {}", request_id);
+            println!(
+                "[CURSOR_HOOK] before_submit_prompt - logged request_id: {}",
+                request_id
+            );
             // Log DLP detections if any
             if !all_detections.is_empty() {
                 let _ = state.db.log_dlp_detections(request_id, &all_detections);
@@ -601,7 +606,9 @@ async fn before_read_file_handler(
         // Also check attached files if present
         if let Some(attachments) = &input.attachments {
             for attachment in attachments {
-                if let (Some(file_path), Some(att_type)) = (&attachment.file_path, &attachment.attachment_type) {
+                if let (Some(file_path), Some(att_type)) =
+                    (&attachment.file_path, &attachment.attachment_type)
+                {
                     if att_type == "file" {
                         match std::fs::read_to_string(file_path) {
                             Ok(att_content) => {
@@ -653,7 +660,11 @@ async fn before_read_file_handler(
 
     // Log to database
     let response_status = if is_blocked { 403 } else { 200 };
-    let dlp_action = if is_blocked { DLP_ACTION_BLOCKED } else { DLP_ACTION_PASSED };
+    let dlp_action = if is_blocked {
+        DLP_ACTION_BLOCKED
+    } else {
+        DLP_ACTION_PASSED
+    };
 
     if let Ok(request_id) = state.db.log_agent_hook_request(
         "cursor-hooks",
@@ -748,7 +759,11 @@ async fn before_tab_file_read_handler(
     // Log to database
     let token_count = estimate_tokens(&content);
     let response_status = if is_blocked { 403 } else { 200 };
-    let dlp_action = if is_blocked { DLP_ACTION_BLOCKED } else { DLP_ACTION_PASSED };
+    let dlp_action = if is_blocked {
+        DLP_ACTION_BLOCKED
+    } else {
+        DLP_ACTION_PASSED
+    };
 
     if let Ok(request_id) = state.db.log_agent_hook_request(
         "cursor-hooks",
@@ -772,14 +787,20 @@ async fn before_tab_file_read_handler(
 
     // ---- Symbol extraction (best-effort) ----
     if crate::symbols::is_supported_extension(&input.file_path) {
-        let cwd = metadata.workspace_roots.first().cloned().unwrap_or_default();
+        let cwd = metadata
+            .workspace_roots
+            .first()
+            .cloned()
+            .unwrap_or_default();
         if !cwd.is_empty() {
             let file_content = std::fs::read_to_string(&input.file_path).unwrap_or_default();
             if !file_content.is_empty() {
                 let symbols = crate::symbols::extract_symbols(&input.file_path, &file_content);
                 if !symbols.is_empty() {
                     let rel = if input.file_path.starts_with(&cwd) {
-                        input.file_path[cwd.len()..].trim_start_matches('/').to_string()
+                        input.file_path[cwd.len()..]
+                            .trim_start_matches('/')
+                            .to_string()
                     } else {
                         input.file_path.clone()
                     };
@@ -828,7 +849,12 @@ async fn after_agent_response_handler(
         _ => {}
     }
 
-    (StatusCode::OK, Json(GenericResponse { status: "ok".to_string() }))
+    (
+        StatusCode::OK,
+        Json(GenericResponse {
+            status: "ok".to_string(),
+        }),
+    )
 }
 
 /// POST /cursor_hook/after_agent_thought
@@ -845,11 +871,10 @@ async fn after_agent_thought_handler(
     let token_count = estimate_tokens(&input.text);
 
     // Add thinking token count to output tokens
-    match state.db.add_agent_hook_thinking_tokens(
-        "cursor-hooks",
-        &input.generation_id,
-        token_count,
-    ) {
+    match state
+        .db
+        .add_agent_hook_thinking_tokens("cursor-hooks", &input.generation_id, token_count)
+    {
         Ok(false) => {
             println!(
                 "[CURSOR_HOOK] WARNING: No entry found for generation_id: {} in after_agent_thought",
@@ -865,7 +890,12 @@ async fn after_agent_thought_handler(
         _ => {}
     }
 
-    (StatusCode::OK, Json(GenericResponse { status: "ok".to_string() }))
+    (
+        StatusCode::OK,
+        Json(GenericResponse {
+            status: "ok".to_string(),
+        }),
+    )
 }
 
 /// POST /cursor_hook/after_tab_file_edit
@@ -876,7 +906,9 @@ async fn after_tab_file_edit_handler(
 ) -> impl IntoResponse {
     println!(
         "[CURSOR_HOOK] after_tab_file_edit - generation_id: {}, file: {}, edits: {}",
-        input.generation_id, input.file_path, input.edits.len()
+        input.generation_id,
+        input.file_path,
+        input.edits.len()
     );
 
     // Calculate token count from new_string in all edits (represents output/generated code)
@@ -913,7 +945,12 @@ async fn after_tab_file_edit_handler(
         _ => {}
     }
 
-    (StatusCode::OK, Json(GenericResponse { status: "ok".to_string() }))
+    (
+        StatusCode::OK,
+        Json(GenericResponse {
+            status: "ok".to_string(),
+        }),
+    )
 }
 
 /// POST /cursor_hook/before_shell_execution
@@ -981,7 +1018,11 @@ async fn before_shell_execution_handler(
 
     // Log to database
     let response_status = if is_blocked { 403 } else { 200 };
-    let dlp_action = if is_blocked { DLP_ACTION_BLOCKED } else { DLP_ACTION_PASSED };
+    let dlp_action = if is_blocked {
+        DLP_ACTION_BLOCKED
+    } else {
+        DLP_ACTION_PASSED
+    };
 
     if let Ok(request_id) = state.db.log_agent_hook_request(
         "cursor-hooks",
@@ -998,12 +1039,18 @@ async fn before_shell_execution_handler(
         None,
         dlp_action,
     ) {
-        println!("[CURSOR_HOOK] before_shell_execution - logged request_id: {}", request_id);
+        println!(
+            "[CURSOR_HOOK] before_shell_execution - logged request_id: {}",
+            request_id
+        );
 
         // Log DLP detections if any
         if !detections.is_empty() {
             let _ = state.db.log_dlp_detections(request_id, &detections);
-            println!("[CURSOR_HOOK] before_shell_execution - logged {} DLP detections", detections.len());
+            println!(
+                "[CURSOR_HOOK] before_shell_execution - logged {} DLP detections",
+                detections.len()
+            );
         }
 
         // Log as tool call (shell execution)
@@ -1022,7 +1069,10 @@ async fn before_shell_execution_handler(
         println!("[CURSOR_HOOK] before_shell_execution - FAILED to log request");
     }
 
-    println!("[CURSOR_HOOK] before_shell_execution - returning response: {:?}", response);
+    println!(
+        "[CURSOR_HOOK] before_shell_execution - returning response: {:?}",
+        response
+    );
     (StatusCode::OK, Json(response))
 }
 
@@ -1098,7 +1148,11 @@ async fn before_mcp_execution_handler(
 
     // Log to database
     let response_status = if is_blocked { 403 } else { 200 };
-    let dlp_action = if is_blocked { DLP_ACTION_BLOCKED } else { DLP_ACTION_PASSED };
+    let dlp_action = if is_blocked {
+        DLP_ACTION_BLOCKED
+    } else {
+        DLP_ACTION_PASSED
+    };
 
     if let Ok(request_id) = state.db.log_agent_hook_request(
         "cursor-hooks",
@@ -1115,12 +1169,18 @@ async fn before_mcp_execution_handler(
         None,
         dlp_action,
     ) {
-        println!("[CURSOR_HOOK] before_mcp_execution - logged request_id: {}", request_id);
+        println!(
+            "[CURSOR_HOOK] before_mcp_execution - logged request_id: {}",
+            request_id
+        );
 
         // Log DLP detections if any
         if !detections.is_empty() {
             let _ = state.db.log_dlp_detections(request_id, &detections);
-            println!("[CURSOR_HOOK] before_mcp_execution - logged {} DLP detections", detections.len());
+            println!(
+                "[CURSOR_HOOK] before_mcp_execution - logged {} DLP detections",
+                detections.len()
+            );
         }
 
         // Log as tool call (MCP execution)
@@ -1135,7 +1195,10 @@ async fn before_mcp_execution_handler(
         println!("[CURSOR_HOOK] before_mcp_execution - FAILED to log request");
     }
 
-    println!("[CURSOR_HOOK] before_mcp_execution - returning response: {:?}", response);
+    println!(
+        "[CURSOR_HOOK] before_mcp_execution - returning response: {:?}",
+        response
+    );
     (StatusCode::OK, Json(response))
 }
 
@@ -1143,10 +1206,7 @@ async fn before_mcp_execution_handler(
 // Router
 // ============================================================================
 
-pub fn create_cursor_hooks_router(
-    db: Database,
-    settings: CustomBackendSettings,
-) -> Router {
+pub fn create_cursor_hooks_router(db: Database, settings: CustomBackendSettings) -> Router {
     let state = CursorHooksState {
         db,
         settings: Arc::new(settings),
@@ -1156,7 +1216,10 @@ pub fn create_cursor_hooks_router(
         .route("/before_submit_prompt", post(before_submit_prompt_handler))
         .route("/before_read_file", post(before_read_file_handler))
         .route("/before_tab_file_read", post(before_tab_file_read_handler))
-        .route("/before_shell_execution", post(before_shell_execution_handler))
+        .route(
+            "/before_shell_execution",
+            post(before_shell_execution_handler),
+        )
         .route("/before_mcp_execution", post(before_mcp_execution_handler))
         .route("/after_agent_response", post(after_agent_response_handler))
         .route("/after_agent_thought", post(after_agent_thought_handler))

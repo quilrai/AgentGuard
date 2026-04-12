@@ -47,8 +47,7 @@ pub fn enforce_pretooluse_order(hooks: &mut serde_json::Map<String, serde_json::
 
     // Keep everything else (DLP / guardian) in its original relative order.
     arr.retain(|e| {
-        !entry_has_marker(e, "llmwatcher-ctx-read")
-            && !entry_has_marker(e, "llmwatcher-compress")
+        !entry_has_marker(e, "llmwatcher-ctx-read") && !entry_has_marker(e, "llmwatcher-compress")
     });
 
     arr.extend(ctx_read);
