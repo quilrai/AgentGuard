@@ -6,7 +6,7 @@
 
 use crate::builtin_patterns::get_validator_by_name;
 use crate::database::open_connection;
-use crate::pattern_utils::{compile_pattern_set, count_unique_chars, is_match_excluded_by_context};
+use crate::pattern_utils::{compile_pattern_set, count_unique_chars, is_match_excluded};
 use regex::Regex;
 use std::collections::HashSet;
 
@@ -174,10 +174,9 @@ pub fn check_dlp_patterns_with_offset(text: &str, file_line_offset: usize) -> Ve
                     continue;
                 }
 
-                // Check if this match should be excluded based on its context
-                // Context = 30 chars before + match + 30 chars after
-                if is_match_excluded_by_context(text, m.start(), m.end(), &pattern.negative_regexes)
-                {
+                // Skip matches that are excluded by negative context or are
+                // merely substrings inside larger encoded/random-looking blobs.
+                if is_match_excluded(text, m.start(), m.end(), &pattern.negative_regexes) {
                     continue;
                 }
 

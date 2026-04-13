@@ -8,6 +8,10 @@ use std::collections::HashSet;
 
 /// Context window size (characters before and after a match) for negative pattern checking
 pub const NEGATIVE_CONTEXT_WINDOW: usize = 30;
+/// Minimum token length for considering a surrounding blob as encoded/random payload.
+pub const ENCODED_TOKEN_MIN_LEN: usize = 48;
+/// Minimum amount of extra encoded-looking content around a match before we suppress it.
+pub const ENCODED_TOKEN_MIN_EXTRA_CHARS: usize = 12;
 
 /// Result of compiling patterns - includes both positive and negative regexes
 #[derive(Clone)]
@@ -107,6 +111,114 @@ pub fn is_match_excluded_by_context(
     false
 }
 
+fn is_encoded_blob_byte(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || matches!(b, b'+' | b'/' | b'=' | b'_' | b'-' | b'%')
+}
+
+fn encoded_blob_bounds(text: &str, match_start: usize, match_end: usize) -> (usize, usize) {
+    let bytes = text.as_bytes();
+
+    let mut start = match_start;
+    while start > 0 && is_encoded_blob_byte(bytes[start - 1]) {
+        start -= 1;
+    }
+
+    let mut end = match_end;
+    while end < bytes.len() && is_encoded_blob_byte(bytes[end]) {
+        end += 1;
+    }
+
+    (start, end)
+}
+
+fn looks_like_hex_blob(token: &str) -> bool {
+    token.len() >= 64 && token.as_bytes().iter().all(|b| b.is_ascii_hexdigit())
+}
+
+fn count_url_encoded_triplets(token: &str) -> usize {
+    let bytes = token.as_bytes();
+    let mut i = 0usize;
+    let mut count = 0usize;
+
+    while i + 2 < bytes.len() {
+        if bytes[i] == b'%'
+            && bytes[i + 1].is_ascii_hexdigit()
+            && bytes[i + 2].is_ascii_hexdigit()
+        {
+            count += 1;
+            i += 3;
+        } else {
+            i += 1;
+        }
+    }
+
+    count
+}
+
+fn looks_like_url_encoded_blob(token: &str) -> bool {
+    if token.len() < ENCODED_TOKEN_MIN_LEN {
+        return false;
+    }
+
+    let triplets = count_url_encoded_triplets(token);
+    triplets >= 8 && triplets * 3 >= token.len() / 3
+}
+
+fn looks_like_base64ish_blob(token: &str) -> bool {
+    if token.len() < ENCODED_TOKEN_MIN_LEN {
+        return false;
+    }
+
+    if !token
+        .as_bytes()
+        .iter()
+        .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'+' | b'/' | b'=' | b'_' | b'-'))
+    {
+        return false;
+    }
+
+    let has_signal_char = token
+        .as_bytes()
+        .iter()
+        .any(|b| matches!(b, b'+' | b'/' | b'=' | b'_' | b'-'));
+    let has_upper = token.as_bytes().iter().any(|b| b.is_ascii_uppercase());
+    let has_lower = token.as_bytes().iter().any(|b| b.is_ascii_lowercase());
+    let has_digit = token.as_bytes().iter().any(|b| b.is_ascii_digit());
+    let len_multiple_of_four = token.len() % 4 == 0;
+
+    (has_signal_char || len_multiple_of_four) && has_upper && has_lower && has_digit
+}
+
+/// Ignore substring matches that appear inside larger encoded/random-looking blobs.
+/// This suppresses accidental hits inside base64/base64url/hex/url-encoded payloads
+/// without suppressing detections where the matched value is itself the whole token.
+pub fn is_match_excluded_by_encoding(text: &str, match_start: usize, match_end: usize) -> bool {
+    let (blob_start, blob_end) = encoded_blob_bounds(text, match_start, match_end);
+    let blob = &text[blob_start..blob_end];
+
+    if blob.len() < ENCODED_TOKEN_MIN_LEN {
+        return false;
+    }
+
+    let extra_chars = (match_start - blob_start) + (blob_end - match_end);
+    if extra_chars < ENCODED_TOKEN_MIN_EXTRA_CHARS {
+        return false;
+    }
+
+    looks_like_hex_blob(blob) || looks_like_url_encoded_blob(blob) || looks_like_base64ish_blob(blob)
+}
+
+/// Shared exclusion logic for individual matches.
+pub fn is_match_excluded(
+    text: &str,
+    match_start: usize,
+    match_end: usize,
+    negative_regexes: &[Regex],
+) -> bool {
+    is_match_excluded_by_context(text, match_start, match_end, negative_regexes)
+        || is_match_excluded_by_encoding(text, match_start, match_end)
+}
+
 /// Count unique characters in a string
 pub fn count_unique_chars(s: &str) -> usize {
     s.chars().collect::<HashSet<_>>().len()
@@ -141,8 +253,9 @@ pub fn collect_matches_with_negative_context(
                 continue;
             }
 
-            // Check if this match should be excluded based on its context
-            if is_match_excluded_by_context(text, m.start(), m.end(), negative_regexes) {
+            // Skip matches that are excluded by negative context or are merely
+            // substrings inside larger encoded/random-looking blobs.
+            if is_match_excluded(text, m.start(), m.end(), negative_regexes) {
                 continue;
             }
 
@@ -264,5 +377,45 @@ mod tests {
         let regexes = compile_patterns(&vec![r"\d+".to_string()], "regex").unwrap();
         let result = collect_matches_with_negative_context("123 456 123", &regexes, &[], 0, None);
         assert_eq!(result.matches.len(), 2); // unique: 123, 456
+    }
+
+    #[test]
+    fn test_encoded_blob_suppresses_internal_match() {
+        let text =
+            "QmFzZTY0VVJMU2VnbWVudF9QcmVmaXhfc2stQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVowMTIzNDU2Nzg5";
+        let pos_regexes = compile_patterns(&vec![r"sk-[A-Za-z0-9]{20,}".to_string()], "regex")
+            .unwrap();
+
+        let result = collect_matches_with_negative_context(text, &pos_regexes, &[], 0, None);
+        assert!(
+            result.matches.is_empty(),
+            "unexpected matches inside encoded blob: {:?}",
+            result.matches
+        );
+    }
+
+    #[test]
+    fn test_encoded_blob_does_not_suppress_full_token_match() {
+        let text = "sk-ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcd";
+        let pos_regexes = compile_patterns(&vec![r"sk-[A-Za-z0-9]{20,}".to_string()], "regex")
+            .unwrap();
+
+        let result = collect_matches_with_negative_context(text, &pos_regexes, &[], 0, None);
+        assert_eq!(result.matches, vec![text.to_string()]);
+    }
+
+    #[test]
+    fn test_url_encoded_blob_suppresses_internal_match() {
+        let text = "%51%57%78%68%5A%47%52%70%62%6B%39%77%5A%57%35%54%52%56%4E%42%54%55%56%66%63%32%74%74%78%6F%78%62%2D%31%32%33%34%35%36%37%38%39%30%41%42%43%44%45%46%47%48%49%4A";
+        let pos_regexes =
+            compile_patterns(&vec![r"xox[baprs]-[a-zA-Z0-9\-]{10,}".to_string()], "regex")
+                .unwrap();
+
+        let result = collect_matches_with_negative_context(text, &pos_regexes, &[], 0, None);
+        assert!(
+            result.matches.is_empty(),
+            "unexpected matches inside url-encoded blob: {:?}",
+            result.matches
+        );
     }
 }

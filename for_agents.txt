@@ -1,4 +1,4 @@
-LLMwatcher — local DLP + observability layer for AI coding agents.
+klooLLMwatcher — local DLP + observability layer for AI coding agents.
 
 Tauri desktop app (Rust backend, web frontend). Runs a local HTTP server
 on localhost:8008. Agent CLIs/IDEs install hook scripts that POST to this

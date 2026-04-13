@@ -51,7 +51,9 @@ const COMMON_NEGATIVE_KEYWORDS: &[&str] = &[
 /// database — the DB stores the validator_name string, and we look it up here.
 pub fn get_validator_by_name(name: &str) -> Option<fn(&str) -> bool> {
     match name {
+        "iban" => Some(validate_iban),
         "luhn" => Some(validate_luhn),
+        "uk_nino" => Some(validate_uk_nino),
         "verhoeff" => Some(validate_verhoeff),
         _ => None,
     }
@@ -158,6 +160,76 @@ pub fn validate_verhoeff(matched: &str) -> bool {
     c == 0
 }
 
+// ── IBAN checksum (ISO 13616 / MOD 97-10) ────────────────────────────
+// Used to reject account-number-shaped false positives.
+
+pub fn validate_iban(matched: &str) -> bool {
+    let compact = strip_separators(matched).to_ascii_uppercase();
+
+    if compact.len() < 15 || compact.len() > 34 {
+        return false;
+    }
+
+    if !compact.chars().all(|c| c.is_ascii_alphanumeric()) {
+        return false;
+    }
+
+    let mut rearranged = String::with_capacity(compact.len());
+    rearranged.push_str(&compact[4..]);
+    rearranged.push_str(&compact[..4]);
+
+    let mut remainder: u32 = 0;
+    for ch in rearranged.chars() {
+        match ch {
+            '0'..='9' => {
+                remainder = (remainder * 10 + ch.to_digit(10).unwrap_or(0)) % 97;
+            }
+            'A'..='Z' => {
+                let val = (ch as u32) - ('A' as u32) + 10;
+                remainder = (remainder * 100 + val) % 97;
+            }
+            _ => return false,
+        }
+    }
+
+    remainder == 1
+}
+
+// ── UK National Insurance Number validity rules ──────────────────────
+// The regex handles the broad shape; this rejects known invalid prefixes
+// and obvious fake serials such as all-zero digits.
+
+pub fn validate_uk_nino(matched: &str) -> bool {
+    let compact = strip_separators(matched).to_ascii_uppercase();
+
+    if compact.len() != 9 {
+        return false;
+    }
+
+    let bytes = compact.as_bytes();
+    let first = bytes[0] as char;
+    let second = bytes[1] as char;
+    let suffix = bytes[8] as char;
+
+    if matches!(first, 'D' | 'F' | 'I' | 'Q' | 'U' | 'V')
+        || matches!(second, 'D' | 'F' | 'I' | 'Q' | 'U' | 'V')
+    {
+        return false;
+    }
+
+    let prefix = &compact[..2];
+    if matches!(prefix, "BG" | "GB" | "NK" | "KN" | "TN" | "NT" | "ZZ") {
+        return false;
+    }
+
+    if !matches!(suffix, 'A' | 'B' | 'C' | 'D') {
+        return false;
+    }
+
+    let digits = &compact[2..8];
+    digits.chars().all(|c| c.is_ascii_digit()) && digits != "000000"
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 // Pattern definitions
 // ═══════════════════════════════════════════════════════════════════════
@@ -171,32 +243,32 @@ pub fn get_builtin_patterns() -> &'static [BuiltinPattern] {
             pattern_type: "regex",
             patterns: &[
                 // OpenAI
-                r"sk-[a-zA-Z0-9]{20,}",
-                r"sk-proj-[a-zA-Z0-9\-_]{20,}",
+                r"\bsk-[a-zA-Z0-9]{20,}\b",
+                r"\bsk-proj-[a-zA-Z0-9\-_]{20,}\b",
                 // Anthropic
-                r"sk-ant-[a-zA-Z0-9\-_]{20,}",
+                r"\bsk-ant-[a-zA-Z0-9\-_]{20,}\b",
                 // AWS Access Key ID
-                r"AKIA[0-9A-Z]{16}",
+                r"\bAKIA[0-9A-Z]{16}\b",
                 // GitHub tokens
-                r"ghp_[a-zA-Z0-9]{36}",
-                r"gho_[a-zA-Z0-9]{36}",
-                r"ghu_[a-zA-Z0-9]{36}",
-                r"ghs_[a-zA-Z0-9]{36}",
-                r"ghr_[a-zA-Z0-9]{36}",
-                r"github_pat_[a-zA-Z0-9_]{22,}",
+                r"\bghp_[a-zA-Z0-9]{36}\b",
+                r"\bgho_[a-zA-Z0-9]{36}\b",
+                r"\bghu_[a-zA-Z0-9]{36}\b",
+                r"\bghs_[a-zA-Z0-9]{36}\b",
+                r"\bghr_[a-zA-Z0-9]{36}\b",
+                r"\bgithub_pat_[a-zA-Z0-9_]{22,}\b",
                 // Slack tokens
-                r"xox[baprs]-[a-zA-Z0-9\-]{10,}",
-                r"xapp-[0-9]+-[A-Za-z0-9\-]+",
+                r"\bxox[baprs]-[a-zA-Z0-9\-]{10,}\b",
+                r"\bxapp-[0-9]+-[A-Za-z0-9\-]+\b",
                 // Stripe keys
-                r"sk_live_[a-zA-Z0-9]{24,}",
-                r"sk_test_[a-zA-Z0-9]{24,}",
-                r"pk_live_[a-zA-Z0-9]{24,}",
-                r"pk_test_[a-zA-Z0-9]{24,}",
-                r"rk_live_[a-zA-Z0-9]{24,}",
-                r"rk_test_[a-zA-Z0-9]{24,}",
+                r"\bsk_live_[a-zA-Z0-9]{24,}\b",
+                r"\bsk_test_[a-zA-Z0-9]{24,}\b",
+                r"\bpk_live_[a-zA-Z0-9]{24,}\b",
+                r"\bpk_test_[a-zA-Z0-9]{24,}\b",
+                r"\brk_live_[a-zA-Z0-9]{24,}\b",
+                r"\brk_test_[a-zA-Z0-9]{24,}\b",
                 // Google
-                r"AIza[0-9A-Za-z\-_]{35}",
-                r"ya29\.[0-9A-Za-z\-_]+",
+                r"\bAIza[0-9A-Za-z\-_]{35}\b",
+                r"\bya29\.[0-9A-Za-z\-_]+\b",
                 // Private keys
                 r"-----BEGIN\s+(RSA\s+)?PRIVATE\s+KEY-----",
                 r"-----BEGIN\s+OPENSSH\s+PRIVATE\s+KEY-----",
@@ -204,16 +276,16 @@ pub fn get_builtin_patterns() -> &'static [BuiltinPattern] {
                 r"-----BEGIN\s+DSA\s+PRIVATE\s+KEY-----",
                 r"-----BEGIN\s+PGP\s+PRIVATE\s+KEY\s+BLOCK-----",
                 // SendGrid
-                r"SG\.[a-zA-Z0-9_\-]{22,}\.[a-zA-Z0-9_\-]{22,}",
+                r"\bSG\.[a-zA-Z0-9_\-]{22,}\.[a-zA-Z0-9_\-]{22,}\b",
                 // Twilio
-                r"AC[a-f0-9]{32}",
-                r"SK[a-f0-9]{32}",
+                r"\bAC[a-f0-9]{32}\b",
+                r"\bSK[a-f0-9]{32}\b",
                 // Discord webhooks
                 r"https://discord(?:app)?\.com/api/webhooks/\d+/[A-Za-z0-9_\-]+",
                 // Slack webhooks
                 r"https://hooks\.slack\.com/services/T[A-Z0-9]+/B[A-Z0-9]+/[a-zA-Z0-9]+",
                 // JWT tokens
-                r"eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}",
+                r"\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b",
             ],
             negative_pattern_type: Some("keyword"),
             negative_patterns: Some(COMMON_NEGATIVE_KEYWORDS),
@@ -243,16 +315,29 @@ pub fn get_builtin_patterns() -> &'static [BuiltinPattern] {
             name: "Database Credentials",
             pattern_type: "regex",
             patterns: &[
-                // Connection strings
-                r"postgres(?:ql)?://\S{10,}",
-                r"mysql://\S{10,}",
-                r"mongodb(?:\+srv)?://\S{10,}",
-                r"redis://:\S{6,}@\S+",
-                r"(?i)Server=[^;]+;.*(?:Password|Pwd)=[^;]{4,}",
-                r"jdbc:[a-z]+://\S{10,}",
+                // Connection strings with embedded credentials
+                r#"\bpostgres(?:ql)?://[^:/\s@]+:[^@\s"'`\\\[\]\{\}<>,]{6,}@[^/\s"'`\\\[\]\{\}<>]+(?:/[^\s"'`\\]*)?"#,
+                r#"\bmysql://[^:/\s@]+:[^@\s"'`\\\[\]\{\}<>,]{6,}@[^/\s"'`\\\[\]\{\}<>]+(?:/[^\s"'`\\]*)?"#,
+                r#"\bmongodb(?:\+srv)?://[^:/\s@]+:[^@\s"'`\\\[\]\{\}<>,]{6,}@[^/\s"'`\\\[\]\{\}<>]+(?:/[^\s"'`\\]*)?"#,
+                r#"(?i)\bServer=[A-Za-z0-9._:,\\-]+;(?:[^;\n\r]*;)*(?:Password|Pwd)=[^;\s"'`\\\[\]\{\}<>,]{4,}"#,
+                r#"(?i)\bjdbc:[a-z0-9]+://[^\s"'`\\]+(?:\?|;)[^\n\r]*(?:password|pwd)=[^&;\s"'`\\\[\]\{\}<>,]{4,}"#,
                 // Password assignments
-                r"(?i)(?:db|database|postgres|mysql|mongo|redis|mssql|sql)_?password\s*[=:]\s*\S{8,}",
+                r#"(?i)\b(?:db|database|postgres|mysql|mongo|redis|mssql|sql)_?password\s*[=:]\s*["']?[^,\s"'`\\\[\]\{\}<>]{8,}["']?"#,
             ],
+            negative_pattern_type: Some("regex"),
+            negative_patterns: Some(&[
+                r"(?i)example\.com|localhost|127\.0\.0\.1|placeholder|dummy|fake|your.|sample|template|password123|changeme|xxxx|test_?db|mock|todo|\$\{|%s|\{\{",
+            ]),
+            min_occurrences: 1,
+            min_unique_chars: 8,
+            validator: None,
+            validator_name: None,
+        },
+        // ── Redis Credentials ────────────────────────────────────────
+        BuiltinPattern {
+            name: "Redis Credentials",
+            pattern_type: "regex",
+            patterns: &[r#"\brediss?://(?:[^:/\s@]+:|:)[^@\s"'`\\\[\]\{\}<>,]{6,}@[^/\s"'`\\\[\]\{\}<>]+(?:/[^\s"'`\\]*)?"#],
             negative_pattern_type: Some("regex"),
             negative_patterns: Some(&[
                 r"(?i)example\.com|localhost|127\.0\.0\.1|placeholder|dummy|fake|your.|sample|template|password123|changeme|xxxx|test_?db|mock|todo|\$\{|%s|\{\{",
@@ -466,8 +551,8 @@ pub fn get_builtin_patterns() -> &'static [BuiltinPattern] {
             ]),
             min_occurrences: 1,
             min_unique_chars: 4,
-            validator: None,
-            validator_name: None,
+            validator: Some(validate_iban),
+            validator_name: Some("iban"),
         },
         // ── UK National Insurance Number (NIN) ──────────────────────
         // Format: 2 letters + 6 digits + 1 letter (A-D).
@@ -478,17 +563,17 @@ pub fn get_builtin_patterns() -> &'static [BuiltinPattern] {
             pattern_type: "regex",
             patterns: &[
                 // Valid prefix chars: [A-CEGHJ-PR-TW-Z] (excludes D,F,I,Q,U,V)
-                // Invalid combos BG,GB,NK,KN,TN,NT,ZZ are caught by negative patterns
+                // Invalid combos BG,GB,NK,KN,TN,NT,ZZ are rejected by validator
                 r"\b[A-CEGHJ-PR-TW-Z]{2}[\s\-]?[0-9]{2}[\s\-]?[0-9]{2}[\s\-]?[0-9]{2}[\s\-]?[A-D]\b",
             ],
             negative_pattern_type: Some("regex"),
             negative_patterns: Some(&[
-                r"(?i)example|sample|placeholder|dummy|fake|test|mock|template|AA\s?00\s?00\s?00\s?A|^BG|^GB|^NK|^KN|^TN|^NT|^ZZ",
+                r"(?i)example|sample|placeholder|dummy|fake|test|mock|template|AA\s?00\s?00\s?00\s?A",
             ]),
             min_occurrences: 1,
             min_unique_chars: 4,
-            validator: None,
-            validator_name: None,
+            validator: Some(validate_uk_nino),
+            validator_name: Some("uk_nino"),
         },
         // ── German Tax ID (Steuerliche Identifikationsnummer) ───────
         // 11 digits, first digit non-zero. Requires context keyword to
@@ -569,6 +654,39 @@ pub fn get_builtin_patterns() -> &'static [BuiltinPattern] {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pattern_utils::{
+        collect_matches_with_negative_context, compile_pattern_set, filter_by_min_occurrences,
+    };
+
+    fn matches_for_builtin(name: &str, text: &str) -> Vec<String> {
+        let builtin = get_builtin_patterns()
+            .iter()
+            .find(|bp| bp.name == name)
+            .unwrap_or_else(|| panic!("missing builtin pattern: {}", name));
+
+        let patterns: Vec<String> = builtin.patterns.iter().map(|p| (*p).to_string()).collect();
+        let negative_patterns = builtin
+            .negative_patterns
+            .map(|patterns| patterns.iter().map(|p| (*p).to_string()).collect::<Vec<_>>());
+
+        let compiled = compile_pattern_set(
+            &patterns,
+            builtin.pattern_type,
+            negative_patterns.as_ref(),
+            builtin.negative_pattern_type,
+        )
+        .unwrap_or_else(|e| panic!("failed to compile '{}': {}", name, e));
+
+        let match_result = collect_matches_with_negative_context(
+            text,
+            &compiled.regexes,
+            &compiled.negative_regexes,
+            builtin.min_unique_chars,
+            builtin.validator,
+        );
+
+        filter_by_min_occurrences(match_result, builtin.min_occurrences)
+    }
 
     #[test]
     fn test_luhn_valid() {
@@ -615,6 +733,31 @@ mod tests {
     }
 
     #[test]
+    fn test_iban_valid() {
+        assert!(validate_iban("GB82 WEST 1234 5698 7654 32"));
+        assert!(validate_iban("DE75512108001245126199"));
+    }
+
+    #[test]
+    fn test_iban_invalid() {
+        assert!(!validate_iban("GB82 WEST 1234 5698 7654 31"));
+        assert!(!validate_iban("DE75512108001245126198"));
+    }
+
+    #[test]
+    fn test_uk_nino_valid() {
+        assert!(validate_uk_nino("AB 12 34 56 C"));
+        assert!(validate_uk_nino("JR123456D"));
+    }
+
+    #[test]
+    fn test_uk_nino_invalid() {
+        assert!(!validate_uk_nino("BG 12 34 56 A"));
+        assert!(!validate_uk_nino("AB 00 00 00 A"));
+        assert!(!validate_uk_nino("DQ123456A"));
+    }
+
+    #[test]
     fn test_strip_separators() {
         assert_eq!(strip_separators("4532 0151 1283 0366"), "4532015112830366");
         assert_eq!(strip_separators("4532-0151-1283-0366"), "4532015112830366");
@@ -644,5 +787,96 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn test_database_credentials_ignore_regex_literals() {
+        let text = r#"These are regex patterns, not real credentials:
+redis://:\S{6,}@\S+
+mysql://\S{10,}
+Server=[^;]+;.*(?:Password|Pwd)=[^;]{4,}"#;
+
+        let matches = matches_for_builtin("Database Credentials", text);
+        assert!(matches.is_empty(), "unexpected matches: {:?}", matches);
+    }
+
+    #[test]
+    fn test_database_credentials_require_embedded_credentials() {
+        let text = "Connect using mysql://db.prod.internal:3306/appdb for local testing notes.";
+        let matches = matches_for_builtin("Database Credentials", text);
+        assert!(matches.is_empty(), "unexpected matches: {:?}", matches);
+    }
+
+    #[test]
+    fn test_database_credentials_match_real_connection_strings_and_assignments() {
+        let text = r#"
+primary = "postgres://appuser:Sup3rSecret!@db.prod.internal:5432/app"
+secondary = "Server=db.prod.internal,1433;Database=app;User Id=sa;Password=Sup3rSecret!"
+db_password = "Sup3rSecret!"
+"#;
+
+        let matches = matches_for_builtin("Database Credentials", text);
+        assert_eq!(matches.len(), 3, "unexpected matches: {:?}", matches);
+        assert!(matches.iter().any(|m| m.contains("postgres://appuser:Sup3rSecret!@db.prod.internal:5432/app")));
+        assert!(matches.iter().any(|m| m.contains("Server=db.prod.internal,1433;Database=app;User Id=sa;Password=Sup3rSecret!")));
+        assert!(matches.iter().any(|m| m.contains(r#"db_password = "Sup3rSecret!""#)));
+    }
+
+    #[test]
+    fn test_redis_credentials_ignore_regex_literals_but_match_real_uris() {
+        let literal = r#"redis://:\S{6,}@\S+"#;
+        let literal_matches = matches_for_builtin("Redis Credentials", literal);
+        assert!(
+            literal_matches.is_empty(),
+            "unexpected matches: {:?}",
+            literal_matches
+        );
+
+        let real = "redis://:Sup3rSecret!@cache.prod.internal:6379/0";
+        let real_matches = matches_for_builtin("Redis Credentials", real);
+        assert_eq!(real_matches, vec![real.to_string()]);
+    }
+
+    #[test]
+    fn test_api_keys_ignore_matches_embedded_in_encoded_blobs() {
+        let text =
+            "QmFzZTY0VVJMU2VnbWVudF9QcmVmaXhfc2stQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVowMTIzNDU2Nzg5";
+        let matches = matches_for_builtin("API Keys", text);
+        assert!(matches.is_empty(), "unexpected matches: {:?}", matches);
+    }
+
+    #[test]
+    fn test_api_keys_still_match_standalone_jwt() {
+        let jwt = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4iLCJhZG1pbiI6dHJ1ZX0.c2lnbmF0dXJlU2VnbWVudEFiY0RlZjEyMzQ1Njc4OTA";
+        let matches = matches_for_builtin("API Keys", jwt);
+        assert_eq!(matches, vec![jwt.to_string()]);
+    }
+
+    #[test]
+    fn test_iban_builtin_rejects_bad_checksum() {
+        let text = "payment details: GB82 WEST 1234 5698 7654 31";
+        let matches = matches_for_builtin("IBAN (Europe)", text);
+        assert!(matches.is_empty(), "unexpected matches: {:?}", matches);
+    }
+
+    #[test]
+    fn test_iban_builtin_accepts_valid_value() {
+        let text = "payment details: GB82 WEST 1234 5698 7654 32";
+        let matches = matches_for_builtin("IBAN (Europe)", text);
+        assert_eq!(matches, vec!["GB82 WEST 1234 5698 7654 32".to_string()]);
+    }
+
+    #[test]
+    fn test_uk_nino_builtin_rejects_invalid_prefix() {
+        let text = "national insurance number: BG 12 34 56 A";
+        let matches = matches_for_builtin("UK National Insurance Number", text);
+        assert!(matches.is_empty(), "unexpected matches: {:?}", matches);
+    }
+
+    #[test]
+    fn test_uk_nino_builtin_accepts_valid_value() {
+        let text = "national insurance number: AB 12 34 56 C";
+        let matches = matches_for_builtin("UK National Insurance Number", text);
+        assert_eq!(matches, vec!["AB 12 34 56 C".to_string()]);
     }
 }
