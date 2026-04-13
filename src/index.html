@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="components.css" />
     <link rel="stylesheet" href="pages.css" />
     <link rel="stylesheet" href="pages-garden.css" />
+    <link rel="stylesheet" href="pages-guide.css" />
     <link rel="stylesheet" href="dark-mode.css" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Vibefriend</title>
@@ -16,6 +17,9 @@
   </head>
 
   <body>
+    <!-- Guided setup overlay (Quilly walkthrough) -->
+    <div id="guide-overlay" hidden></div>
+
     <div class="app-container">
       <!-- Top Bar -->
       <header class="topbar">
@@ -63,6 +67,23 @@
           <button class="topbar-nav-item" data-route="logs"><i data-lucide="scroll-text"></i><span>Logs</span></button>
         </nav>
         <div class="topbar-right">
+          <div class="topbar-help-wrap">
+            <button class="topbar-help-btn" id="topbar-help-btn" type="button" title="Help & Settings">
+              <i data-lucide="help-circle"></i>
+            </button>
+            <div class="topbar-help-menu" id="topbar-help-menu" hidden>
+              <div class="topbar-help-menu-arrow"></div>
+              <button class="topbar-help-menu-item" id="menu-setup-guide" type="button">
+                <i data-lucide="compass"></i>
+                <span>Setup guide</span>
+              </button>
+              <div class="topbar-help-menu-sep"></div>
+              <button class="topbar-help-menu-item topbar-help-menu-item--danger" id="menu-reset-all" type="button">
+                <i data-lucide="trash-2"></i>
+                <span>Reset all settings</span>
+              </button>
+            </div>
+          </div>
           <div class="proxy-status" id="proxy-status">
             <span class="status-dot starting" id="proxy-status-dot"></span>
             <span id="proxy-status-text">Starting server...</span>

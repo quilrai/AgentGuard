@@ -1,0 +1,420 @@
+/* ============================================================================
+ * Guided setup — Quilly walkthrough overlay
+ * ========================================================================= */
+
+/* Overlay container */
+#guide-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.35s ease;
+  pointer-events: none;
+}
+
+#guide-overlay.show {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.guide-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(10, 12, 14, 0.88);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+/* Panel */
+.guide-panel {
+  position: relative;
+  width: 520px;
+  max-width: calc(100vw - 48px);
+  max-height: calc(100vh - 80px);
+  background:
+    radial-gradient(ellipse at 50% -20%, rgba(113, 208, 131, 0.08) 0%, transparent 60%),
+    linear-gradient(180deg, #1c1f23 0%, #16191c 100%);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 20px;
+  overflow: hidden;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.04) inset,
+    0 32px 80px -20px rgba(0, 0, 0, 0.7),
+    0 0 0 1px rgba(0, 0, 0, 0.3);
+  animation: guide-slide-up 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes guide-slide-up {
+  from { opacity: 0; transform: translateY(24px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Panel head */
+.guide-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 28px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.guide-step-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #71D083;
+}
+
+/* Step dots */
+.guide-dots {
+  display: flex;
+  gap: 6px;
+}
+
+.guide-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+  transition: background 0.3s, transform 0.3s, box-shadow 0.3s;
+}
+
+.guide-dot.active {
+  background: #71D083;
+  transform: scale(1.3);
+  box-shadow: 0 0 8px rgba(113, 208, 131, 0.5);
+}
+
+.guide-dot.done {
+  background: rgba(113, 208, 131, 0.4);
+}
+
+/* Panel body */
+.guide-panel-body {
+  padding: 28px 28px 24px;
+}
+
+/* ============================================================================
+ * Quilly mascot + speech bubble
+ * ========================================================================= */
+
+.guide-quilly {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 28px;
+}
+
+.guide-quilly-icon {
+  flex-shrink: 0;
+  width: 52px;
+  height: 52px;
+  background: radial-gradient(circle, rgba(113, 208, 131, 0.15) 0%, rgba(113, 208, 131, 0.03) 70%);
+  border: 1px solid rgba(113, 208, 131, 0.2);
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 20px -4px rgba(113, 208, 131, 0.3);
+  animation: quilly-bob 3s ease-in-out infinite;
+}
+
+.guide-quilly-icon svg {
+  width: 30px;
+  height: 30px;
+}
+
+@keyframes quilly-bob {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-3px); }
+}
+
+/* Mood variants — subtle icon glow changes */
+.quilly-wave .guide-quilly-icon  { animation: quilly-wave 2s ease-in-out infinite; }
+.quilly-celebrate .guide-quilly-icon { animation: quilly-celebrate 0.6s ease-in-out 3; }
+
+@keyframes quilly-wave {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  25%      { transform: translateY(-2px) rotate(3deg); }
+  75%      { transform: translateY(-2px) rotate(-3deg); }
+}
+
+@keyframes quilly-celebrate {
+  0%, 100% { transform: scale(1) rotate(0deg); }
+  25%      { transform: scale(1.1) rotate(-5deg); }
+  75%      { transform: scale(1.1) rotate(5deg); }
+}
+
+/* Speech bubble */
+.guide-bubble {
+  position: relative;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 14px;
+  padding: 16px 20px;
+  flex: 1;
+}
+
+.guide-bubble-arrow {
+  position: absolute;
+  left: -7px;
+  top: 18px;
+  width: 12px;
+  height: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-right: none;
+  border-top: none;
+  transform: rotate(45deg);
+}
+
+.guide-bubble-text {
+  font-size: 0.88rem;
+  line-height: 1.55;
+  color: #c4c8cc;
+}
+
+.guide-bubble-text strong {
+  color: #71D083;
+  font-weight: 600;
+}
+
+/* ============================================================================
+ * Agent list (hook install step)
+ * ========================================================================= */
+
+.guide-agent-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 24px;
+}
+
+.guide-agent {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  transition: border-color 0.25s, background 0.25s;
+}
+
+.guide-agent--installed {
+  border-color: rgba(113, 208, 131, 0.25);
+  background: rgba(113, 208, 131, 0.04);
+}
+
+.guide-agent-icon {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #888;
+  flex-shrink: 0;
+}
+
+.guide-agent-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.guide-agent-icon--claude { color: #e8a87c; }
+.guide-agent-icon--codex  { color: #7ec8e3; }
+.guide-agent-icon--cursor { color: #b39ddb; }
+
+.guide-agent--installed .guide-agent-icon { color: #71D083; }
+
+.guide-agent-name {
+  flex: 1;
+  font-size: 0.88rem;
+  font-weight: 500;
+  color: #d0d4d8;
+}
+
+.guide-agent-btn {
+  padding: 6px 16px;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s, transform 0.15s;
+}
+
+.guide-agent-btn--add {
+  background: rgba(113, 208, 131, 0.15);
+  color: #71D083;
+  border: 1px solid rgba(113, 208, 131, 0.3);
+}
+
+.guide-agent-btn--add:hover:not(:disabled) {
+  background: rgba(113, 208, 131, 0.25);
+  transform: translateY(-1px);
+}
+
+.guide-agent-btn--done {
+  background: rgba(113, 208, 131, 0.08);
+  color: #71D083;
+  border: 1px solid rgba(113, 208, 131, 0.2);
+  cursor: default;
+}
+
+.guide-agent-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ============================================================================
+ * Feature card (Guardian / Token Saver steps)
+ * ========================================================================= */
+
+.guide-feature-card {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 14px;
+  padding: 20px;
+  margin-bottom: 24px;
+}
+
+.guide-feature-items {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.guide-feature-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.82rem;
+  color: #9ba1a6;
+}
+
+.guide-feature-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: rgba(113, 208, 131, 0.5);
+  flex-shrink: 0;
+}
+
+/* ============================================================================
+ * Buttons
+ * ========================================================================= */
+
+.guide-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.guide-btn {
+  padding: 10px 24px;
+  border: none;
+  border-radius: 10px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.15s, box-shadow 0.2s;
+}
+
+.guide-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.guide-btn--primary {
+  background: linear-gradient(135deg, #71D083 0%, #4a8a3a 100%);
+  color: #0d1117;
+  box-shadow: 0 4px 16px -4px rgba(113, 208, 131, 0.4);
+}
+
+.guide-btn--primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 24px -4px rgba(113, 208, 131, 0.55);
+}
+
+.guide-btn--skip {
+  background: transparent;
+  color: #666;
+  font-weight: 500;
+}
+
+.guide-btn--skip:hover {
+  color: #999;
+}
+
+.guide-btn--recommend {
+  width: 100%;
+  padding: 11px 20px;
+  background: rgba(113, 208, 131, 0.1);
+  color: #71D083;
+  border: 1px solid rgba(113, 208, 131, 0.25);
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.guide-btn--recommend:hover:not(:disabled) {
+  background: rgba(113, 208, 131, 0.18);
+  transform: translateY(-1px);
+}
+
+.guide-btn--recommend:disabled {
+  opacity: 0.7;
+  cursor: default;
+  border-color: rgba(113, 208, 131, 0.15);
+}
+
+.guide-checkmark {
+  color: #71D083;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+/* ============================================================================
+ * Summary (done step)
+ * ========================================================================= */
+
+.guide-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 24px;
+  padding: 16px 20px;
+  background: rgba(113, 208, 131, 0.04);
+  border: 1px solid rgba(113, 208, 131, 0.12);
+  border-radius: 12px;
+}
+
+.guide-summary-line {
+  font-size: 0.82rem;
+  color: #9ba1a6;
+  padding-left: 14px;
+  position: relative;
+}
+
+.guide-summary-line::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.6em;
+  width: 5px;
+  height: 1px;
+  background: rgba(113, 208, 131, 0.5);
+}
+
+.guide-summary-line strong {
+  color: #71D083;
+  font-weight: 600;
+}

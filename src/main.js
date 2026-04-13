@@ -15,6 +15,7 @@ import { initBackends, loadPredefinedBackends, refreshGuardianHooks } from './ba
 import { initTokenSaving, refreshTokenSaver } from './token-saving.js';
 import { initHome, loadHome, suspendHome, resumeHome } from './home.js';
 import { initGarden, loadGarden } from './garden.js';
+import { initGuide, startGuide, resetAllSettings } from './guide.js';
 
 const { openUrl } = window.__TAURI__.opener;
 
@@ -52,6 +53,9 @@ window.addEventListener('DOMContentLoaded', () => {
 
   // Initialize Garden
   initGarden();
+
+  // Initialize guided setup (auto-shows for new users)
+  initGuide();
 
   // Refresh buttons
   const refreshBtn = document.getElementById('refresh-btn');
@@ -107,6 +111,51 @@ window.addEventListener('DOMContentLoaded', () => {
   if (star) star.addEventListener('click', () => openUrl('https://github.com/quilrai/LLMWatcher'));
   const report = document.getElementById('reportIssue');
   if (report) report.addEventListener('click', () => openUrl('https://github.com/quilrai/LLMWatcher/issues'));
+  // Help menu (topbar)
+  const helpBtn = document.getElementById('topbar-help-btn');
+  const helpMenu = document.getElementById('topbar-help-menu');
+  if (helpBtn && helpMenu) {
+    helpBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isOpen = helpMenu.classList.contains('show');
+      if (isOpen) {
+        helpMenu.classList.remove('show');
+        setTimeout(() => { helpMenu.hidden = true; }, 180);
+      } else {
+        helpMenu.hidden = false;
+        requestAnimationFrame(() => helpMenu.classList.add('show'));
+      }
+    });
+    // Close on outside click
+    document.addEventListener('click', () => {
+      if (!helpMenu.hidden) {
+        helpMenu.classList.remove('show');
+        setTimeout(() => { helpMenu.hidden = true; }, 180);
+      }
+    });
+    helpMenu.addEventListener('click', (e) => e.stopPropagation());
+  }
+  const menuGuide = document.getElementById('menu-setup-guide');
+  if (menuGuide) menuGuide.addEventListener('click', () => {
+    helpMenu.classList.remove('show');
+    setTimeout(() => { helpMenu.hidden = true; }, 180);
+    startGuide();
+  });
+  const menuReset = document.getElementById('menu-reset-all');
+  if (menuReset) menuReset.addEventListener('click', async () => {
+    helpMenu.classList.remove('show');
+    setTimeout(() => { helpMenu.hidden = true; }, 180);
+    const ok = confirm('This will remove all hooks and reset all settings to defaults. Continue?');
+    if (!ok) return;
+    menuReset.disabled = true;
+    await resetAllSettings();
+    // Refresh the whole UI
+    loadHome();
+    loadPredefinedBackends();
+    refreshGuardianHooks();
+    refreshTokenSaver();
+    menuReset.disabled = false;
+  });
 
   // Re-run lucide once after dynamic icons are added
   setTimeout(() => lucide.createIcons(), 100);
