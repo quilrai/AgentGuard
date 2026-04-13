@@ -669,7 +669,6 @@ img {
 
 .feature-card {
   padding: 30px;
-  min-height: 100%;
 }
 
 .feature-card::before,
@@ -1092,7 +1091,17 @@ img {
 
   .logo-flow-center {
     order: -1;
-    min-height: 260px;
+    min-height: auto;
+    padding: 32px 0;
+  }
+
+  .logo-flow-line,
+  .logo-flow-tail {
+    display: none;
+  }
+
+  .logo-flow-side-right {
+    text-align: left;
   }
 
   .flow-points {
@@ -1112,23 +1121,31 @@ img {
   }
 
   .flow-lane {
-    grid-template-columns: 1fr;
+    grid-template-columns: 1fr 1fr;
     justify-items: flex-start;
+    gap: 10px;
   }
 
-  .flow-request,
-  .flow-result {
-    width: 100%;
-  }
-
-  .flow-result {
-    justify-content: flex-start;
-    text-align: left;
+  .flow-request-rail {
+    display: none;
   }
 
   .flow-core-badge {
-    width: 82px;
-    height: 82px;
+    width: 52px;
+    height: 52px;
+  }
+
+  .flow-core-letter {
+    font-size: 1.3rem;
+  }
+
+  .flow-core-name {
+    display: none;
+  }
+
+  .flow-result {
+    justify-content: flex-end;
+    text-align: right;
   }
 
   .section {
@@ -1197,24 +1214,37 @@ img {
   }
 
   .logo-flow-q {
-    width: 152px;
-    height: 152px;
-    border-width: 12px;
-    font-size: 4.2rem;
+    width: 120px;
+    height: 120px;
+    border-width: 10px;
+    font-size: 3.4rem;
   }
 
-  .logo-flow-line {
-    width: 88px;
+  .flow-lane {
+    grid-template-columns: auto 1fr auto auto;
+    gap: 8px;
+    padding: 12px 14px;
   }
 
-  .logo-flow-line-mid {
-    width: 98px;
+  .flow-core-badge {
+    width: 40px;
+    height: 40px;
   }
 
-  .logo-flow-tail {
-    width: 96px;
-    bottom: 76px;
-    right: 14px;
+  .flow-core-letter {
+    font-size: 1.1rem;
+  }
+
+  .flow-agent-chip {
+    min-height: 30px;
+    padding: 0 8px;
+    font-size: 0.72rem;
+    gap: 6px;
+  }
+
+  .flow-request-text,
+  .flow-result {
+    font-size: 0.82rem;
   }
 
   .steps-grid {
