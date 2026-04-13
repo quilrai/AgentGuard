@@ -974,3 +974,123 @@
 .garden-grove-sub {
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
 }
+
+/* ============ Quilly refactor suggestion badge + bubble ============ */
+
+.quilly-refactor-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 16px;
+  height: 16px;
+  border-radius: 8px;
+  background: #c45a3a;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  line-height: 1;
+  box-shadow: 0 1px 4px rgba(196, 90, 58, 0.5);
+  pointer-events: none;
+}
+
+.quilly-refactor-bubble {
+  background: rgba(20, 22, 24, 0.95);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(196, 90, 58, 0.3);
+  border-radius: 12px;
+  padding: 0;
+  min-width: 220px;
+  max-width: 280px;
+  animation: quillyBubbleIn 0.2s ease-out;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+.quilly-refactor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 11px;
+  font-weight: 600;
+  color: #c45a3a;
+}
+
+.quilly-refactor-dismiss {
+  background: none;
+  border: none;
+  color: #666;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+  transition: color 0.15s;
+}
+
+.quilly-refactor-dismiss:hover {
+  color: #c45a3a;
+}
+
+.quilly-refactor-body {
+  padding: 8px 12px 10px;
+}
+
+.quilly-refactor-hint {
+  font-size: 10px;
+  color: #888;
+  margin-bottom: 6px;
+}
+
+.quilly-refactor-file {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 4px;
+  font-size: 11px;
+  border-radius: 4px;
+  transition: background 0.12s;
+}
+
+.quilly-refactor-file--clickable {
+  cursor: pointer;
+}
+
+.quilly-refactor-file--clickable:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.quilly-refactor-file--clickable:hover .quilly-refactor-file-name {
+  color: #71D083;
+}
+
+.quilly-refactor-file-name {
+  color: #ccc;
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1;
+}
+
+.quilly-refactor-file-lines {
+  color: #c45a3a;
+  font-weight: 600;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.quilly-refactor-more {
+  font-size: 9px;
+  color: #666;
+  font-style: italic;
+  padding-top: 2px;
+}

@@ -271,6 +271,139 @@ async function loadFacts() {
 }
 
 // ============================================================================
+// Quilly refactor suggestions (files > 2000 lines)
+// ============================================================================
+
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function baseName(p) {
+  return p.split('/').pop() || p;
+}
+
+const IGNORE_REFACTOR_PATTERNS = [
+  /\.lock$/i,
+  /lock\.json$/i,
+  /package-lock\.json$/i,
+  /yarn\.lock$/i,
+  /pnpm-lock\.yaml$/i,
+  /Cargo\.lock$/i,
+  /Gemfile\.lock$/i,
+  /composer\.lock$/i,
+  /poetry\.lock$/i,
+  /Pipfile\.lock$/i,
+  /\.sum$/i,
+  /\.min\.js$/i,
+  /\.min\.css$/i,
+  /\.bundle\.js$/i,
+  /\.map$/i,
+  /\.generated\./i,
+  /\.pb\.go$/i,
+  /\.g\.dart$/i,
+  /\/dist\//i,
+  /\/build\//i,
+  /\/node_modules\//i,
+  /\/vendor\//i,
+];
+
+function isGeneratedOrLockFile(path) {
+  return IGNORE_REFACTOR_PATTERNS.some(re => re.test(path));
+}
+
+async function loadHomeRefactorSuggestions() {
+  const icon = document.getElementById('home-quilly-icon');
+  const badge = document.getElementById('home-quilly-badge');
+  const bubble = document.getElementById('home-quilly-bubble');
+  const area = document.getElementById('home-quilly-area');
+  if (!icon || !badge || !bubble || !area) return;
+
+  try {
+    const stats = await invoke('get_garden_stats', { timeRange: 'all' });
+    const projects = stats.projects || [];
+    if (projects.length === 0) {
+      area.style.display = 'none';
+      return;
+    }
+
+    // Fetch detail for all projects and collect big files.
+    const allBigFiles = [];
+    for (const p of projects) {
+      try {
+        const detail = await invoke('get_garden_detail', { cwd: p.cwd, timeRange: 'all' });
+        for (const f of (detail.files || [])) {
+          if (f.exists && f.lines > 2000 && !isGeneratedOrLockFile(f.path)) {
+            const fullPath = f.path.startsWith('/') ? f.path : `${p.cwd}/${f.path}`;
+            allBigFiles.push({ ...f, project: p.display_name, fullPath });
+          }
+        }
+      } catch (_) { /* skip project */ }
+    }
+
+    // Deduplicate by full path (same file may appear across projects).
+    const seen = new Set();
+    const uniqueBigFiles = allBigFiles.filter(f => {
+      if (seen.has(f.fullPath)) return false;
+      seen.add(f.fullPath);
+      return true;
+    });
+
+    if (uniqueBigFiles.length === 0) {
+      area.style.display = 'none';
+      return;
+    }
+
+    area.style.display = '';
+    badge.style.display = '';
+    badge.textContent = uniqueBigFiles.length;
+
+    const sorted = uniqueBigFiles.sort((a, b) => b.lines - a.lines).slice(0, 5);
+    const fileList = sorted.map(f =>
+      `<div class="quilly-refactor-file quilly-refactor-file--clickable" data-filepath="${esc(f.fullPath)}" title="${esc(f.path)}"><span class="quilly-refactor-file-name">${esc(baseName(f.path))}</span><span class="quilly-refactor-file-lines">${formatNumber(f.lines)} lines</span></div>`
+    ).join('');
+    const extra = uniqueBigFiles.length > 5 ? `<div class="quilly-refactor-more">+${uniqueBigFiles.length - 5} more</div>` : '';
+
+    bubble.innerHTML = `
+      <div class="quilly-refactor-header">
+        <span>Consider refactoring</span>
+        <button class="quilly-refactor-dismiss" id="home-quilly-dismiss" type="button" title="Dismiss">&times;</button>
+      </div>
+      <div class="quilly-refactor-body">
+        <div class="quilly-refactor-hint">${uniqueBigFiles.length} file${uniqueBigFiles.length === 1 ? '' : 's'} over 2,000 lines:</div>
+        ${fileList}
+        ${extra}
+      </div>
+    `;
+
+    // Toggle bubble on icon click.
+    icon.onclick = () => {
+      bubble.style.display = bubble.style.display === 'none' ? '' : 'none';
+    };
+
+    // Dismiss button.
+    document.getElementById('home-quilly-dismiss')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      bubble.style.display = 'none';
+    });
+
+    // Reveal file in Finder/Explorer on click.
+    bubble.querySelectorAll('.quilly-refactor-file--clickable').forEach(row => {
+      row.addEventListener('click', () => {
+        const fp = row.dataset.filepath;
+        if (fp && window.__TAURI__?.opener?.revealItemInDir) {
+          window.__TAURI__.opener.revealItemInDir(fp);
+        }
+      });
+    });
+  } catch (e) {
+    console.error('Failed to load refactor suggestions:', e);
+    area.style.display = 'none';
+  }
+}
+
+// ============================================================================
 // Public API
 // ============================================================================
 
@@ -289,6 +422,7 @@ export function loadHome() {
   loadGuardianCard();
   loadTokenSaverCard();
   loadFacts();
+  loadHomeRefactorSuggestions();
 }
 
 export function suspendHome() {

@@ -114,6 +114,13 @@ export function initGarden() {
       panel.style.display = showing ? 'none' : '';
     }
   });
+
+  // Dismiss the refactor suggestion bubble.
+  document.getElementById('quilly-refactor-dismiss')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const bubble = document.getElementById('quilly-refactor-bubble');
+    if (bubble) bubble.style.display = 'none';
+  });
 }
 
 export function loadGarden() {
@@ -186,6 +193,7 @@ function loadGardenDetail(cwd) {
       renderStatsRow();
       renderPictogramBar();
       renderCoinRows(gardenDetail);
+      renderRefactorSuggestion();
       // Load import graph in the background.
       invoke('get_import_graph', { cwd })
         .then(graph => {
@@ -258,6 +266,109 @@ function renderPictogramBar() {
     </span>
     <span class="garden-mod-chips">${modChips}</span>
   `;
+}
+
+// ============ Quilly refactor suggestion ============
+
+const IGNORE_REFACTOR_PATTERNS = [
+  /\.lock$/i,
+  /lock\.json$/i,
+  /package-lock\.json$/i,
+  /yarn\.lock$/i,
+  /pnpm-lock\.yaml$/i,
+  /Cargo\.lock$/i,
+  /Gemfile\.lock$/i,
+  /composer\.lock$/i,
+  /poetry\.lock$/i,
+  /Pipfile\.lock$/i,
+  /\.sum$/i,          // go.sum
+  /\.min\.js$/i,
+  /\.min\.css$/i,
+  /\.bundle\.js$/i,
+  /\.map$/i,          // source maps
+  /\.generated\./i,
+  /\.pb\.go$/i,       // protobuf generated
+  /\.g\.dart$/i,
+  /\/dist\//i,
+  /\/build\//i,
+  /\/node_modules\//i,
+  /\/vendor\//i,
+];
+
+function isGeneratedOrLockFile(path) {
+  return IGNORE_REFACTOR_PATTERNS.some(re => re.test(path));
+}
+
+function renderRefactorSuggestion() {
+  const bubble = document.getElementById('quilly-refactor-bubble');
+  const badge = document.getElementById('quilly-refactor-badge');
+  if (!gardenDetail) {
+    if (bubble) bubble.style.display = 'none';
+    if (badge) badge.style.display = 'none';
+    return;
+  }
+
+  const seenPaths = new Set();
+  const bigFiles = gardenDetail.files.filter(f => {
+    if (!f.exists || f.lines <= 2000 || isGeneratedOrLockFile(f.path)) return false;
+    if (seenPaths.has(f.path)) return false;
+    seenPaths.add(f.path);
+    return true;
+  });
+
+  if (bigFiles.length === 0) {
+    if (bubble) bubble.style.display = 'none';
+    if (badge) badge.style.display = 'none';
+    return;
+  }
+
+  // Show badge on Quilly icon.
+  if (badge) {
+    badge.style.display = '';
+    badge.textContent = bigFiles.length;
+  }
+
+  // Build suggestion bubble content.
+  if (bubble) {
+    const cwd = gardenDetail.cwd || '';
+    const fileList = bigFiles
+      .sort((a, b) => b.lines - a.lines)
+      .slice(0, 5)
+      .map(f => {
+        const fullPath = f.path.startsWith('/') ? f.path : `${cwd}/${f.path}`;
+        return `<div class="quilly-refactor-file quilly-refactor-file--clickable" data-filepath="${esc(fullPath)}" title="${esc(f.path)}"><span class="quilly-refactor-file-name">${esc(baseName(f.path))}</span><span class="quilly-refactor-file-lines">${formatNumber(f.lines)} lines</span></div>`;
+      })
+      .join('');
+    const extra = bigFiles.length > 5 ? `<div class="quilly-refactor-more">+${bigFiles.length - 5} more</div>` : '';
+    bubble.innerHTML = `
+      <div class="quilly-refactor-header">
+        <span>Consider refactoring</span>
+        <button class="quilly-refactor-dismiss" id="quilly-refactor-dismiss" type="button" title="Dismiss">&times;</button>
+      </div>
+      <div class="quilly-refactor-body">
+        <div class="quilly-refactor-hint">${bigFiles.length} file${bigFiles.length === 1 ? '' : 's'} over 2,000 lines:</div>
+        ${fileList}
+        ${extra}
+      </div>
+    `;
+    bubble.style.display = '';
+
+    // Re-attach dismiss handler.
+    document.getElementById('quilly-refactor-dismiss')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      bubble.style.display = 'none';
+    });
+
+    // Attach reveal-in-folder handlers.
+    bubble.querySelectorAll('.quilly-refactor-file--clickable').forEach(row => {
+      row.addEventListener('click', () => {
+        const fp = row.dataset.filepath;
+        if (fp && window.__TAURI__?.opener?.revealItemInDir) {
+          window.__TAURI__.opener.revealItemInDir(fp);
+        }
+      });
+    });
+  }
 }
 
 // ============ SVG scene ============
