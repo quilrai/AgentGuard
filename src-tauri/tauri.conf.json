@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "LLMwatcher",
+  "productName": "AgentGuard",
   "version": "0.1.0",
-  "identifier": "ai.quilr.llmwatcher",
+  "identifier": "ai.quilr.agentguard",
   "build": {
     "frontendDist": "../src"
   },
@@ -12,14 +12,14 @@
     "windows": [
       {
         "label": "main",
-        "title": "LLMwatcher",
+        "title": "AgentGuard",
         "width": 800,
         "height": 600,
         "visible": true
       },
       {
         "label": "tray_popup",
-        "title": "LLMwatcher",
+        "title": "AgentGuard",
         "url": "tray.html",
         "width": 320,
         "height": 420,

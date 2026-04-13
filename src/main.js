@@ -108,9 +108,9 @@ window.addEventListener('DOMContentLoaded', () => {
 
   // Footer links
   const star = document.getElementById('starGithub');
-  if (star) star.addEventListener('click', () => openUrl('https://github.com/quilrai/LLMWatcher'));
+  if (star) star.addEventListener('click', () => openUrl('https://github.com/quilrai/AgentGuard'));
   const report = document.getElementById('reportIssue');
-  if (report) report.addEventListener('click', () => openUrl('https://github.com/quilrai/LLMWatcher/issues'));
+  if (report) report.addEventListener('click', () => openUrl('https://github.com/quilrai/AgentGuard/issues'));
   // Help menu (topbar)
   const helpBtn = document.getElementById('topbar-help-btn');
   const helpMenu = document.getElementById('topbar-help-menu');

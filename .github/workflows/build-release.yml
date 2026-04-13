@@ -82,7 +82,7 @@ jobs:
         run: |
           cd src-tauri/target/release/bundle/dmg
           for f in *.dmg; do
-            mv "$f" "LLMWatcher-Apple-Silicon.dmg"
+            mv "$f" "AgentGuard-Apple-Silicon.dmg"
           done
 
       - name: Create GitHub Release

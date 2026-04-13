@@ -1,12 +1,12 @@
-# LLMWatcher
+# AgentGuard
 
-**[Download for Mac (Apple silicon) - 12MB](https://github.com/quilrai/LLMWatcher/releases/latest/download/LLMWatcher-Apple-Silicon.dmg)**
+**[Download for Mac (Apple silicon) - 12MB](https://github.com/quilrai/AgentGuard/releases/latest/download/AgentGuard-Apple-Silicon.dmg)**
 
 **Download Windows (Coming Soon)**
 
 Desktop App for monitoring and controlling llm requests (with focus on coding agents)
 
-![LLMWatcher screenshot](screenshots/home.png)
+![AgentGuard screenshot](screenshots/home.png)
 
 **Fully local (on-device), desktop app for**
 - block or get notified on high request or token usage by agents
@@ -17,8 +17,8 @@ Desktop App for monitoring and controlling llm requests (with focus on coding ag
 
 ## How it works
 
-- **codex and claude code**: Codex and Claude Code support a configurable base URL, which lets LLMWatcher route all requests through its local server.
-- **cursor**: Cursor has limited hooks that LLMWatcher uses to block or monitor requests (auto-redaction and exact token counts are not supported).
+- **codex and claude code**: Codex and Claude Code support a configurable base URL, which lets AgentGuard route all requests through its local server.
+- **cursor**: Cursor has limited hooks that AgentGuard uses to block or monitor requests (auto-redaction and exact token counts are not supported).
 
 **Custom LLM endpoints**
 - In the app, you can configure a custom chat completions endpoint
