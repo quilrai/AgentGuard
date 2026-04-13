@@ -31,6 +31,7 @@ use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     AppHandle, Manager, PhysicalPosition, WindowEvent,
 };
+use tauri_plugin_autostart::MacosLauncher;
 use tokio::sync::watch;
 
 #[cfg(target_os = "macos")]
@@ -108,6 +109,10 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_autostart::init(
+            MacosLauncher::LaunchAgent,
+            Some(vec![]),
+        ))
         .setup(|app| {
             // Spawn HTTP server with app handle for events
             let app_handle = app.handle().clone();

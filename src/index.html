@@ -67,23 +67,12 @@
           <button class="topbar-nav-item" data-route="logs"><i data-lucide="scroll-text"></i><span>Logs</span></button>
         </nav>
         <div class="topbar-right">
-          <div class="topbar-help-wrap">
-            <button class="topbar-help-btn" id="topbar-help-btn" type="button" title="Help & Settings">
-              <i data-lucide="help-circle"></i>
-            </button>
-            <div class="topbar-help-menu" id="topbar-help-menu" hidden>
-              <div class="topbar-help-menu-arrow"></div>
-              <button class="topbar-help-menu-item" id="menu-setup-guide" type="button">
-                <i data-lucide="compass"></i>
-                <span>Setup guide</span>
-              </button>
-              <div class="topbar-help-menu-sep"></div>
-              <button class="topbar-help-menu-item topbar-help-menu-item--danger" id="menu-reset-all" type="button">
-                <i data-lucide="trash-2"></i>
-                <span>Reset all settings</span>
-              </button>
+          <label class="topbar-autostart" id="menu-autostart" title="Launch AgentGuard when you log in">
+            <span class="topbar-autostart-label">Start at login</span>
+            <div class="autostart-toggle-wrap">
+              <input type="checkbox" id="autostart-checkbox" class="autostart-toggle" />
             </div>
-          </div>
+          </label>
           <div class="proxy-status" id="proxy-status">
             <span class="status-dot starting" id="proxy-status-dot"></span>
             <span id="proxy-status-text">Starting server...</span>
@@ -121,6 +110,14 @@
             <span class="footer-sep">·</span>
             <a class="footer-link" id="reportIssue" title="Report Issue">
               <i data-lucide="message-circle"></i><span>Report an issue</span>
+            </a>
+            <span class="footer-sep">·</span>
+            <a class="footer-link" id="menu-setup-guide" title="Setup guide">
+              <i data-lucide="compass"></i><span>Setup guide</span>
+            </a>
+            <span class="footer-sep">·</span>
+            <a class="footer-link footer-link--danger" id="menu-reset-all" title="Clear all settings">
+              <i data-lucide="trash-2"></i><span>Clear all settings</span>
             </a>
             <span class="footer-sep">·</span>
             <span class="footer-branding"><span class="made-by">made by</span> <a href="https://quilr.ai" target="_blank">Quilr.ai</a></span>

@@ -425,7 +425,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  color: #888;
+  color: #777;
   text-decoration: none;
   cursor: pointer;
   transition: color 0.2s;
@@ -433,6 +433,34 @@
 
 .footer-link:hover {
   color: #71D083;
+}
+
+#starGithub {
+  color: #c9a84c;
+}
+#starGithub:hover {
+  color: #fcd34d;
+}
+
+#reportIssue {
+  color: #7b9ec4;
+}
+#reportIssue:hover {
+  color: #93c5fd;
+}
+
+#menu-setup-guide {
+  color: #8bb48e;
+}
+#menu-setup-guide:hover {
+  color: #71D083;
+}
+
+.footer-link--danger {
+  color: #b07070;
+}
+.footer-link--danger:hover {
+  color: #f87171;
 }
 
 .footer-link svg {

@@ -351,6 +351,34 @@ function initDetectionsModal() {
   loadDetections();
 }
 
+// ============ Autostart (Launch at Login) ============
+
+async function loadAutostart() {
+  const cb = document.getElementById('autostart-checkbox');
+  if (!cb) return;
+  try {
+    const enabled = await invoke('plugin:autostart|is_enabled');
+    cb.checked = enabled;
+  } catch (e) {
+    console.error('Failed to check autostart status:', e);
+  }
+}
+
+async function toggleAutostart(enabled) {
+  try {
+    if (enabled) {
+      await invoke('plugin:autostart|enable');
+    } else {
+      await invoke('plugin:autostart|disable');
+    }
+  } catch (e) {
+    console.error('Failed to toggle autostart:', e);
+    // Revert checkbox on failure
+    const cb = document.getElementById('autostart-checkbox');
+    if (cb) cb.checked = !enabled;
+  }
+}
+
 // ============ Initialize Settings ============
 
 export function initSettings() {
@@ -398,8 +426,18 @@ export function initSettings() {
     }
   });
 
+  // Autostart toggle
+  const autostartCb = document.getElementById('autostart-checkbox');
+  if (autostartCb) {
+    autostartCb.addEventListener('change', (e) => {
+      e.stopPropagation(); // Don't close the menu
+      toggleAutostart(autostartCb.checked);
+    });
+  }
+
   // Load settings
   loadPortSetting();
+  loadAutostart();
 
   // Listen for server events (for real-time updates after initial load)
   listen('server-started', (event) => {

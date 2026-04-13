@@ -111,50 +111,20 @@ window.addEventListener('DOMContentLoaded', () => {
   if (star) star.addEventListener('click', () => openUrl('https://github.com/quilrai/AgentGuard'));
   const report = document.getElementById('reportIssue');
   if (report) report.addEventListener('click', () => openUrl('https://github.com/quilrai/AgentGuard/issues'));
-  // Help menu (topbar)
-  const helpBtn = document.getElementById('topbar-help-btn');
-  const helpMenu = document.getElementById('topbar-help-menu');
-  if (helpBtn && helpMenu) {
-    helpBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const isOpen = helpMenu.classList.contains('show');
-      if (isOpen) {
-        helpMenu.classList.remove('show');
-        setTimeout(() => { helpMenu.hidden = true; }, 180);
-      } else {
-        helpMenu.hidden = false;
-        requestAnimationFrame(() => helpMenu.classList.add('show'));
-      }
-    });
-    // Close on outside click
-    document.addEventListener('click', () => {
-      if (!helpMenu.hidden) {
-        helpMenu.classList.remove('show');
-        setTimeout(() => { helpMenu.hidden = true; }, 180);
-      }
-    });
-    helpMenu.addEventListener('click', (e) => e.stopPropagation());
-  }
+  // Setup guide & reset (now in home meta bar)
   const menuGuide = document.getElementById('menu-setup-guide');
-  if (menuGuide) menuGuide.addEventListener('click', () => {
-    helpMenu.classList.remove('show');
-    setTimeout(() => { helpMenu.hidden = true; }, 180);
-    startGuide();
-  });
+  if (menuGuide) menuGuide.addEventListener('click', () => startGuide());
   const menuReset = document.getElementById('menu-reset-all');
   if (menuReset) menuReset.addEventListener('click', async () => {
-    helpMenu.classList.remove('show');
-    setTimeout(() => { helpMenu.hidden = true; }, 180);
-    const ok = confirm('This will remove all hooks and reset all settings to defaults. Continue?');
+    const ok = confirm('This will remove all hooks and clear all settings to defaults. Continue?');
     if (!ok) return;
-    menuReset.disabled = true;
+    menuReset.style.pointerEvents = 'none';
     await resetAllSettings();
-    // Refresh the whole UI
     loadHome();
     loadPredefinedBackends();
     refreshGuardianHooks();
     refreshTokenSaver();
-    menuReset.disabled = false;
+    menuReset.style.pointerEvents = '';
   });
 
   // Re-run lucide once after dynamic icons are added
