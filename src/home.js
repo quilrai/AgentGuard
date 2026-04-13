@@ -360,9 +360,16 @@ async function loadHomeRefactorSuggestions() {
     badge.textContent = uniqueBigFiles.length;
 
     const sorted = uniqueBigFiles.sort((a, b) => b.lines - a.lines).slice(0, 5);
-    const fileList = sorted.map(f =>
-      `<div class="quilly-refactor-file quilly-refactor-file--clickable" data-filepath="${esc(f.fullPath)}" title="${esc(f.path)}"><span class="quilly-refactor-file-name">${esc(baseName(f.path))}</span><span class="quilly-refactor-file-lines">${formatNumber(f.lines)} lines</span></div>`
-    ).join('');
+    const fileList = sorted.map(f => {
+      const dir = f.path.includes('/') ? f.path.slice(0, f.path.lastIndexOf('/')) : '';
+      return `<div class="quilly-refactor-file quilly-refactor-file--clickable" data-filepath="${esc(f.fullPath)}" title="${esc(f.fullPath)}">
+        <div class="quilly-refactor-file-info">
+          <span class="quilly-refactor-file-name">${esc(baseName(f.path))}</span>
+          <span class="quilly-refactor-file-dir">${esc(f.project)}${dir ? ' / ' + esc(dir) : ''}</span>
+        </div>
+        <span class="quilly-refactor-file-lines">${formatNumber(f.lines)} lines</span>
+      </div>`;
+    }).join('');
     const extra = uniqueBigFiles.length > 5 ? `<div class="quilly-refactor-more">+${uniqueBigFiles.length - 5} more</div>` : '';
 
     bubble.innerHTML = `

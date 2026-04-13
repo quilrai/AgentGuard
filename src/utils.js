@@ -120,6 +120,20 @@ export function shortenModel(model) {
   return match ? `${match[1]}-${match[2]}` : model;
 }
 
+// Merge model stats that shorten to the same display name
+export function mergeModelStats(models) {
+  const merged = new Map();
+  for (const m of models) {
+    const short = shortenModel(m.model);
+    if (merged.has(short)) {
+      merged.get(short).count += m.count;
+    } else {
+      merged.set(short, { model: short, count: m.count });
+    }
+  }
+  return Array.from(merged.values()).sort((a, b) => b.count - a.count);
+}
+
 // Escape HTML for safe display
 export function escapeHtml(text) {
   const div = document.createElement('div');

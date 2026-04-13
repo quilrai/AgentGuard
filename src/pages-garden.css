@@ -1069,6 +1069,14 @@
   color: #71D083;
 }
 
+.quilly-refactor-file-info {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+
 .quilly-refactor-file-name {
   color: #ccc;
   font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
@@ -1077,7 +1085,14 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
-  flex: 1;
+}
+
+.quilly-refactor-file-dir {
+  color: #666;
+  font-size: 9px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .quilly-refactor-file-lines {

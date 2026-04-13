@@ -1,4 +1,4 @@
-import { charts, setCharts, colors, formatNumber, formatLatency, shortenModel } from './utils.js';
+import { charts, setCharts, colors, formatNumber, formatLatency, mergeModelStats } from './utils.js';
 
 // Extended color palette for charts
 const chartColors = [
@@ -25,8 +25,8 @@ export function createModelsChart(container, models) {
   const ctx = document.createElement('canvas');
   container.appendChild(ctx);
 
-  const data = models.slice(0, 5); // Top 5 models
-  const labels = data.map(m => shortenModel(m.model));
+  const data = mergeModelStats(models).slice(0, 5); // Top 5 models
+  const labels = data.map(m => m.model);
   const values = data.map(m => m.count);
 
   const newCharts = { ...charts };

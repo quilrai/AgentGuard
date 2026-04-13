@@ -7,7 +7,7 @@ import {
   formatNumber,
   colors,
   formatLatency,
-  shortenModel
+  mergeModelStats
 } from './utils.js';
 import { destroyCharts, createModelsChart, createTokenChart, createLatencyChart, createTokenSavingsChart, createToolInsightsChart } from './charts.js';
 
@@ -332,8 +332,8 @@ const chartColors = [
 ];
 
 function createFullscreenModelsChart(canvas, models) {
-  const data = models.slice(0, 10);
-  const labels = data.map(m => shortenModel(m.model));
+  const data = mergeModelStats(models).slice(0, 10);
+  const labels = data.map(m => m.model);
   const values = data.map(m => m.count);
 
   return new Chart(canvas, {

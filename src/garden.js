@@ -336,7 +336,14 @@ function renderRefactorSuggestion() {
       .slice(0, 5)
       .map(f => {
         const fullPath = f.path.startsWith('/') ? f.path : `${cwd}/${f.path}`;
-        return `<div class="quilly-refactor-file quilly-refactor-file--clickable" data-filepath="${esc(fullPath)}" title="${esc(f.path)}"><span class="quilly-refactor-file-name">${esc(baseName(f.path))}</span><span class="quilly-refactor-file-lines">${formatNumber(f.lines)} lines</span></div>`;
+        const dir = f.path.includes('/') ? f.path.slice(0, f.path.lastIndexOf('/')) : '';
+        return `<div class="quilly-refactor-file quilly-refactor-file--clickable" data-filepath="${esc(fullPath)}" title="${esc(f.path)}">
+          <div class="quilly-refactor-file-info">
+            <span class="quilly-refactor-file-name">${esc(baseName(f.path))}</span>
+            ${dir ? `<span class="quilly-refactor-file-dir">${esc(dir)}</span>` : ''}
+          </div>
+          <span class="quilly-refactor-file-lines">${formatNumber(f.lines)} lines</span>
+        </div>`;
       })
       .join('');
     const extra = bigFiles.length > 5 ? `<div class="quilly-refactor-more">+${bigFiles.length - 5} more</div>` : '';
