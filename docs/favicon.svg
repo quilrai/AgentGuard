@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="38%" r="68%">
+      <stop offset="0%" stop-color="#1a241a"/>
+      <stop offset="60%" stop-color="#0e150e"/>
+      <stop offset="100%" stop-color="#090d09"/>
+    </radialGradient>
+    <radialGradient id="hl" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="rgba(74,222,128,0.05)"/>
+      <stop offset="100%" stop-color="rgba(74,222,128,0)"/>
+    </radialGradient>
+    <filter id="lineGlow" x="-10%" y="-800%" width="120%" height="1700%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="5" result="blur"/>
+      <feColorMatrix in="blur" type="matrix"
+        values="0 0 0 0 0.20  0 0 0 0 0.74  0 0 0 0 0.40  0 0 0 1.6 0" result="cb"/>
+      <feMerge>
+        <feMergeNode in="cb"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="ringGlow" x="-35%" y="-35%" width="170%" height="170%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="14" result="blur"/>
+      <feColorMatrix in="blur" type="matrix"
+        values="0 0 0 0 0.20  0 0 0 0 0.74  0 0 0 0 0.40  0 0 0 2.4 0" result="cb"/>
+      <feMerge>
+        <feMergeNode in="cb"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background tile -->
+  <rect width="1024" height="1024" rx="226" fill="url(#bg)"/>
+  <ellipse cx="512" cy="505" rx="255" ry="240" fill="url(#hl)"/>
+
+  <!-- Input: 7 token lines (verbose) -->
+  <g stroke="#4ade80" stroke-linecap="round" opacity="0.76" filter="url(#lineGlow)">
+    <line x1="105" y1="358" x2="433" y2="358" stroke-width="9"/>
+    <line x1="90"  y1="407" x2="432" y2="407" stroke-width="9" stroke="#f87171"/>
+    <line x1="125" y1="456" x2="440" y2="456" stroke-width="9"/>
+    <line x1="95"  y1="505" x2="450" y2="505" stroke-width="9"/>
+    <line x1="112" y1="554" x2="440" y2="554" stroke-width="9" stroke="#f87171"/>
+    <line x1="85"  y1="603" x2="432" y2="603" stroke-width="9"/>
+    <line x1="105" y1="651" x2="433" y2="651" stroke-width="9"/>
+  </g>
+
+  <!-- Q ring: bold Quilr-style, aperture open on left (280° arc, radius 155, stroke 26) -->
+  <path d="M 393,405 A 155,155 0 1 1 393,605"
+    fill="none" stroke="#4ade80" stroke-width="26" stroke-linecap="round"
+    filter="url(#ringGlow)"/>
+
+  <!-- Q tail: starts inside the Q, crosses the ring at ~5 o'clock, extends outside -->
+  <path d="M 495,560 Q 575,635 700,705"
+    fill="none" stroke="#4ade80" stroke-width="26" stroke-linecap="round"
+    filter="url(#ringGlow)"/>
+
+  <!-- Output: 3 compressed token lines -->
+  <g stroke="#4ade80" stroke-linecap="round" opacity="0.94" filter="url(#lineGlow)">
+    <line x1="667" y1="460" x2="914" y2="460" stroke-width="9"/>
+    <line x1="667" y1="505" x2="914" y2="505" stroke-width="9"/>
+    <line x1="667" y1="550" x2="914" y2="550" stroke-width="9"/>
+  </g>
+</svg>

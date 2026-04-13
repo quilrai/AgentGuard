@@ -1,0 +1,423 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="LLMWatcher is a local desktop app for AI coding agents with two hero features: Guardian Agent for secrets and dependency protection, and Token Saver for shell and context compression."
+    />
+    <title>LLMWatcher</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&amp;family=Manrope:wght@400;500;600;700;800&amp;display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="page-glow page-glow-left" aria-hidden="true"></div>
+    <div class="page-glow page-glow-right" aria-hidden="true"></div>
+
+    <header class="site-header">
+      <div class="shell header-row">
+        <a class="brand" href="#top" aria-label="LLMWatcher home">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="60 330 880 400" role="img" aria-hidden="true">
+              <g stroke="currentColor" stroke-linecap="round" opacity="0.72">
+                <line x1="105" y1="358" x2="433" y2="358" stroke-width="18" />
+                <line x1="90" y1="407" x2="432" y2="407" stroke-width="18" class="brand-alert" />
+                <line x1="125" y1="456" x2="440" y2="456" stroke-width="18" />
+                <line x1="95" y1="505" x2="450" y2="505" stroke-width="18" />
+                <line x1="112" y1="554" x2="440" y2="554" stroke-width="18" class="brand-alert" />
+                <line x1="85" y1="603" x2="432" y2="603" stroke-width="18" />
+                <line x1="105" y1="651" x2="433" y2="651" stroke-width="18" />
+              </g>
+              <path
+                d="M 393,405 A 155,155 0 1 1 393,605"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="50"
+                stroke-linecap="round"
+              />
+              <path
+                d="M 495,560 Q 575,635 700,705"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="48"
+                stroke-linecap="round"
+              />
+              <g stroke="currentColor" stroke-linecap="round" opacity="0.92">
+                <line x1="667" y1="460" x2="914" y2="460" stroke-width="18" />
+                <line x1="667" y1="505" x2="914" y2="505" stroke-width="18" />
+                <line x1="667" y1="550" x2="914" y2="550" stroke-width="18" />
+              </g>
+            </svg>
+          </span>
+          <span class="brand-copy">
+            <span class="brand-name">LLMWatcher</span>
+            <span class="brand-sub">Local guardrails for AI coding agents</span>
+          </span>
+        </a>
+
+        <div class="header-actions">
+          <span class="header-badge">Free &amp; OSS</span>
+          <a class="header-link" href="https://github.com/quilrai/LLMWatcher" target="_blank" rel="noreferrer">
+            Star on GitHub
+          </a>
+          <a class="header-link" href="https://github.com/quilrai/LLMWatcher/issues" target="_blank" rel="noreferrer">
+            Report issue
+          </a>
+          <a class="header-link" href="https://quilr.ai" target="_blank" rel="noreferrer">
+            by QuilrAI
+          </a>
+        </div>
+      </div>
+    </header>
+
+    <main id="top">
+      <section class="hero shell">
+        <div class="hero-copy">
+          <div class="eyebrow">Local guardrails for AI coding agents</div>
+          <h1>
+            Guard every prompt.
+            <span class="accent-line">Spend fewer tokens.</span>
+          </h1>
+          <ul class="hero-points">
+            <li>Block secrets, risky installs, and oversized requests.</li>
+            <li>Compress shell, search, diff, and JSON noise.</li>
+            <li>Review the result in Logs, Analytics, and Garden.</li>
+          </ul>
+          <div class="hero-actions">
+            <a
+              class="button button-primary"
+              href="https://github.com/quilrai/LLMWatcher/releases/latest/download/LLMWatcher-Apple-Silicon.dmg"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Download for Mac
+            </a>
+            <a class="button button-secondary" href="https://github.com/quilrai/LLMWatcher" target="_blank" rel="noreferrer">
+              View the source
+            </a>
+          </div>
+        </div>
+
+        <div class="hero-stage">
+          <div class="hero-flow" aria-label="Request flow through LLMWatcher">
+            <div class="hero-flow-head">
+              <span class="note-label">Simple flow, local boundary</span>
+              <p>Lead with Guardian and Token Saver. Everything else explains what happened after.</p>
+            </div>
+
+            <div class="hero-flow-board">
+              <div class="flow-lane">
+                <div class="flow-agent-chip">
+                  <span class="agent-mark agent-mark-claude" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 1C12.5 6 18 11.5 23 12 18 12.5 12.5 18 12 23 11.5 18 6 12.5 1 12 6 11.5 11.5 6 12 1Z"/></svg>
+                  </span>
+                  <span>Claude Code</span>
+                </div>
+                <div class="flow-request">
+                  <span class="flow-request-text">Read <code>.env</code></span>
+                  <span class="flow-request-rail flow-request-rail-danger" aria-hidden="true"></span>
+                </div>
+                <div class="flow-core-badge flow-core-badge-guardian">
+                  <span class="flow-core-letter">Q</span>
+                  <span class="flow-core-name">Guardian</span>
+                </div>
+                <div class="flow-result flow-result-danger">Block secret</div>
+              </div>
+
+              <div class="flow-lane">
+                <div class="flow-agent-chip">
+                  <span class="agent-mark agent-mark-codex" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2.5L21 7.5V16.5L12 21.5L3 16.5V7.5Z"/><path d="M12 2.5V12L21 7.5" opacity="0.45"/><path d="M12 12L3 7.5" opacity="0.45"/><path d="M12 12V21.5" opacity="0.45"/></svg>
+                  </span>
+                  <span>Codex</span>
+                </div>
+                <div class="flow-request">
+                  <span class="flow-request-text"><code>npm install old-lib</code></span>
+                  <span class="flow-request-rail" aria-hidden="true"></span>
+                </div>
+                <div class="flow-core-badge flow-core-badge-guardian">
+                  <span class="flow-core-letter">Q</span>
+                  <span class="flow-core-name">Guardian</span>
+                </div>
+                <div class="flow-result">Flag vuln</div>
+              </div>
+
+              <div class="flow-lane">
+                <div class="flow-agent-chip">
+                  <span class="agent-mark agent-mark-claude" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 1C12.5 6 18 11.5 23 12 18 12.5 12.5 18 12 23 11.5 18 6 12.5 1 12 6 11.5 11.5 6 12 1Z"/></svg>
+                  </span>
+                  <span>Claude Code</span>
+                </div>
+                <div class="flow-request">
+                  <span class="flow-request-text"><code>cargo test</code></span>
+                  <span class="flow-request-rail flow-request-rail-warm" aria-hidden="true"></span>
+                </div>
+                <div class="flow-core-badge flow-core-badge-saver">
+                  <span class="flow-core-letter">Q</span>
+                  <span class="flow-core-name">Saver</span>
+                </div>
+                <div class="flow-result flow-result-warm">Shrink 68%</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section shell" id="features">
+        <div class="section-heading">
+          <span class="section-label">Core features</span>
+          <h2>Lead with the controls that change behavior.</h2>
+          <p>Two controls do the work. The rest helps you inspect the outcome.</p>
+        </div>
+
+        <div class="feature-grid">
+          <article class="feature-card feature-card-guardian">
+            <div class="feature-card-head">
+              <span class="feature-badge">Guardian Agent</span>
+              <h3>Change behavior before the request leaves.</h3>
+            </div>
+
+            <ul class="feature-list">
+              <li>DLP on prompts, tool inputs, and file reads.</li>
+              <li>Token caps for oversized requests.</li>
+              <li>Vulnerability Guard on installs and dependency writes.</li>
+              <li>Update Advisor for exact outdated pins.</li>
+            </ul>
+
+            <div class="signal-panel">
+              <div class="signal-panel-head">
+                <span>Examples</span>
+                <span class="signal-chip signal-chip-danger">blocked</span>
+              </div>
+              <ul class="signal-list">
+                <li><code>Read .env</code> → secret blocked</li>
+                <li><code>npm install legacy-package</code> → vulnerability flagged</li>
+                <li><code>large prompt</code> → token cap enforced</li>
+              </ul>
+            </div>
+          </article>
+
+          <article class="feature-card feature-card-saver">
+            <div class="feature-card-head">
+              <span class="feature-badge feature-badge-warm">Token Saver</span>
+              <h3>Cut waste before it reaches the model.</h3>
+            </div>
+
+            <ul class="feature-list">
+              <li>Compress verbose shell output.</li>
+              <li>Cache repeated file reads.</li>
+              <li>Shrink noisy search, diff, and JSON responses.</li>
+              <li>Track saved tokens in logs and analytics.</li>
+            </ul>
+
+            <div class="signal-panel signal-panel-warm">
+              <div class="signal-panel-head">
+                <span>Examples</span>
+                <span class="signal-chip signal-chip-warm">60-90% less</span>
+              </div>
+              <ul class="signal-list">
+                <li><code>cargo test</code> → output compressed</li>
+                <li><code>rg TODO</code> → best hits kept</li>
+                <li><code>cat same file again</code> → cached read</li>
+              </ul>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section class="section shell" id="how-it-works">
+        <div class="section-heading">
+          <span class="section-label">Flow</span>
+          <h2>Simple flow, local boundary.</h2>
+          <p>Requests go in. Guardian or Saver acts. Review surfaces keep the trail visible.</p>
+        </div>
+
+        <div class="logo-flow-card">
+          <div class="logo-flow-grid">
+            <div class="logo-flow-side">
+              <div class="logo-flow-item">
+                <span class="logo-flow-tag">Claude Code</span>
+                <p>Prompt with secret</p>
+              </div>
+              <div class="logo-flow-item">
+                <span class="logo-flow-tag">Codex</span>
+                <p><code>npm install</code></p>
+              </div>
+              <div class="logo-flow-item">
+                <span class="logo-flow-tag">Claude Code</span>
+                <p><code>cargo test</code></p>
+              </div>
+            </div>
+
+            <div class="logo-flow-center" aria-hidden="true">
+              <span class="logo-flow-line logo-flow-line-top"></span>
+              <span class="logo-flow-line logo-flow-line-mid"></span>
+              <span class="logo-flow-line logo-flow-line-bot"></span>
+              <div class="logo-flow-q">Q</div>
+              <span class="logo-flow-tail"></span>
+            </div>
+
+            <div class="logo-flow-side logo-flow-side-right">
+              <div class="logo-flow-item logo-flow-item-danger">
+                <span class="logo-flow-tag">Guardian</span>
+                <p>Block secret</p>
+              </div>
+              <div class="logo-flow-item">
+                <span class="logo-flow-tag">Guardian</span>
+                <p>Flag vuln</p>
+              </div>
+              <div class="logo-flow-item logo-flow-item-warm">
+                <span class="logo-flow-tag">Saver</span>
+                <p>Shrink output</p>
+              </div>
+            </div>
+          </div>
+
+          <ul class="flow-points">
+            <li>Guardian changes behavior.</li>
+            <li>Token Saver reduces context weight.</li>
+            <li>Logs, Analytics, and Garden show what happened.</li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="section shell" id="product">
+        <div class="section-heading">
+          <span class="section-label">Product surface</span>
+          <h2>Review surfaces stay short and useful.</h2>
+          <p>After Guardian and Saver act, the rest of the product makes the trail easy to read.</p>
+        </div>
+
+        <div class="product-grid">
+          <article class="product-card product-card-wide">
+            <span class="product-badge">Analytics</span>
+            <h3>Charts that answer whether it helped.</h3>
+            <ul class="product-list">
+              <li>models used</li>
+              <li>token totals and savings</li>
+              <li>latency and tool-call trends</li>
+            </ul>
+          </article>
+
+          <article class="product-card">
+            <span class="product-badge">Logs</span>
+            <h3>Compact event history.</h3>
+            <ul class="product-list">
+              <li>Guardian decisions</li>
+              <li>Token Saver reductions</li>
+              <li>exportable trail</li>
+            </ul>
+          </article>
+
+          <article class="product-card product-card-garden">
+            <span class="product-badge product-badge-muted">Also included</span>
+            <h3>Garden turns project activity into a visual map.</h3>
+            <ul class="product-list">
+              <li>groves for modules</li>
+              <li>trees for files</li>
+              <li>symbols and import edges</li>
+            </ul>
+          </article>
+        </div>
+
+        <figure class="shot-card shot-card-inline">
+          <div class="shot-window-bar" aria-hidden="true">
+            <span></span>
+            <span></span>
+            <span></span>
+          </div>
+          <img
+            src="assets/home.png"
+            alt="LLMWatcher home view showing Guardian Agent and Token Saver as the primary controls."
+          />
+          <figcaption>Guardian Agent and Token Saver stay on the home screen. Logs, Analytics, and Garden sit one click away.</figcaption>
+        </figure>
+      </section>
+
+      <section class="section shell" id="agents">
+        <div class="section-heading">
+          <span class="section-label">Supported agents</span>
+          <h2>Three integrations, with different depths of coverage.</h2>
+          <p>Guardian spans all three. Token Saver is deepest on Claude Code today.</p>
+        </div>
+
+        <div class="agent-grid">
+          <article class="agent-surface">
+            <div class="agent-surface-head">
+              <span class="agent-icon agent-icon-claude" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 1C12.5 6 18 11.5 23 12 18 12.5 12.5 18 12 23 11.5 18 6 12.5 1 12 6 11.5 11.5 6 12 1Z"/></svg>
+              </span>
+              <div>
+                <h3>Claude Code</h3>
+                <p>Most complete coverage</p>
+              </div>
+            </div>
+            <ul>
+              <li>Guardian Agent</li>
+              <li>Token Saver</li>
+              <li>Garden file and symbol signals</li>
+            </ul>
+          </article>
+
+          <article class="agent-surface">
+            <div class="agent-surface-head">
+              <span class="agent-icon agent-icon-codex" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2.5L21 7.5V16.5L12 21.5L3 16.5V7.5Z"/><path d="M12 2.5V12L21 7.5" opacity="0.45"/><path d="M12 12L3 7.5" opacity="0.45"/><path d="M12 12V21.5" opacity="0.45"/></svg>
+              </span>
+              <div>
+                <h3>Codex CLI</h3>
+                <p>Guardian-focused integration</p>
+              </div>
+            </div>
+            <ul>
+              <li>DLP and token cap checks</li>
+              <li>Dependency install protection</li>
+              <li>Garden paths inferred from bash tool usage</li>
+            </ul>
+          </article>
+
+          <article class="agent-surface">
+            <div class="agent-surface-head">
+              <span class="agent-icon agent-icon-cursor" aria-hidden="true">
+                <svg viewBox="0 0 467 533" fill="currentColor"><path d="M457.4 125.9 244.4 3c-6.8-4-15.3-4-22.1 0L9.3 125.9C3.5 129.3 0 135.4 0 142.1v248c0 6.6 3.5 12.8 9.3 16.1l213 123c6.9 4 15.3 4 22.2 0l213-123c5.8-3.3 9.3-9.5 9.3-16.1v-248c0-6.7-3.5-12.8-9.3-16.1ZM444 152 238.4 508.2c-1.4 2.4-5 1.4-5-1.4V273.6c0-4.7-2.5-9-6.5-11.3L24.9 145.7c-2.4-1.4-1.4-5.1 1.3-5.1h411.3c5.8 0 9.5 6.3 6.6 11.4Z"/></svg>
+              </span>
+              <div>
+                <h3>Cursor</h3>
+                <p>Hook-based outbound control</p>
+              </div>
+            </div>
+            <ul>
+              <li>Guardian-style allow or deny decisions</li>
+              <li>Dependency advice on supported surfaces</li>
+              <li>Project activity captured for Garden and logs</li>
+            </ul>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="shell footer-row">
+        <div>
+          <div class="footer-title">LLMWatcher</div>
+          <p>
+            Local DLP, dependency protection, token optimization, and observability for AI coding agents.
+          </p>
+        </div>
+        <div class="footer-links">
+          <a href="https://github.com/quilrai/LLMWatcher" target="_blank" rel="noreferrer">GitHub</a>
+          <a href="https://github.com/quilrai/LLMWatcher/releases" target="_blank" rel="noreferrer">Releases</a>
+          <a href="https://github.com/quilrai/LLMWatcher/issues" target="_blank" rel="noreferrer">Issues</a>
+        </div>
+      </div>
+    </footer>
+  </body>
+</html>
