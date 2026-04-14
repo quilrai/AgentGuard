@@ -175,7 +175,7 @@ function renderDone() {
       ${lines.map(l => `<div class="guide-summary-line">${l}</div>`).join('')}
     </div>
     <div class="guide-actions">
-      <button class="guide-btn guide-btn--primary" id="guide-finish">Start using Vibefriend</button>
+      <button class="guide-btn guide-btn--primary" id="guide-finish">Start using Agentguard</button>
     </div>
   `;
 }
