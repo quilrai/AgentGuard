@@ -1,32 +1,33 @@
-/* ============ Logs View Tabs ============ */
+/* ============ Logs View Tabs (inline in header) ============ */
 
-.logs-view-tabs {
+#logs-tab .page-header .logs-view-tabs {
   display: flex;
   gap: 4px;
-  padding: 0 0 12px 0;
-  border-bottom: 1px solid rgba(113, 208, 131, 0.1);
-  margin-bottom: 12px;
+  padding: 0;
+  border: none;
+  margin: 0;
 }
 
 .logs-view-tab {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 20px;
+  gap: 6px;
+  padding: 7px 14px;
   background: transparent;
   border: 1px solid rgba(113, 208, 131, 0.12);
   border-radius: 8px;
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   font-weight: 600;
   color: #888;
   cursor: pointer;
   transition: all 0.2s;
+  white-space: nowrap;
 }
 
 .logs-view-tab i,
 .logs-view-tab svg {
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
 }
 
 .logs-view-tab:hover {
@@ -41,74 +42,53 @@
   color: #71D083;
 }
 
-/* ============ Logs Toolbar & Pagination ============ */
+/* ============ Logs Header ============ */
+
+.content:has(#logs-tab.active) {
+  overflow-y: hidden;
+}
+
+#logs-tab.active {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
 
 #logs-tab .page-header {
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  background: #1D2021;
+  flex-shrink: 0;
   padding-bottom: 12px;
   margin-bottom: 0;
+  gap: 12px;
 }
 
-.logs-toolbar {
+#logs-tab .header-filters {
+  margin-left: auto;
+}
+
+#logs-content {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  padding-top: 12px;
   display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  position: sticky;
-  top: 52px;
-  z-index: 9;
-  background: #1D2021;
-  padding: 4px 0 12px 0;
-}
-
-.pagination {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 16px;
-}
-
-.pagination-btn {
-  padding: 8px 16px;
-  background: #1C1F20;
-  border: 1px solid rgba(113, 208, 131, 0.2);
-  border-radius: 6px;
-  font-size: 0.85rem;
-  font-weight: 500;
-  color: #e8e8e8;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.pagination-btn:hover:not(:disabled) {
-  background: rgba(113, 208, 131, 0.14);
-  border-color: #71D083;
-  color: #71D083;
-}
-
-.pagination-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.pagination-info {
-  font-size: 0.85rem;
-  color: #888;
+  flex-direction: column;
 }
 
 /* ============ Token Saving Table ============ */
 
 .ts-table-wrap {
-  overflow-x: auto;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
   border-radius: 10px;
   border: 1px solid rgba(113, 208, 131, 0.1);
 }
 
 .ts-table {
   width: 100%;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   font-size: 0.82rem;
 }
 
@@ -121,8 +101,11 @@
   letter-spacing: 0.5px;
   color: #888;
   background: #161819;
-  border-bottom: 1px solid rgba(113, 208, 131, 0.1);
   white-space: nowrap;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  box-shadow: 0 1px 0 rgba(113, 208, 131, 0.1);
 }
 
 .ts-row:not(:last-child) .ts-cell {
@@ -201,26 +184,6 @@
   font-size: 0.8rem;
   color: #1FD8A4;
   font-weight: 600;
-}
-
-.ts-pct {
-  min-width: 120px;
-}
-
-.ts-pct-bar-wrap {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  position: relative;
-}
-
-.ts-pct-bar {
-  height: 6px;
-  border-radius: 3px;
-  background: linear-gradient(90deg, #1FD8A4, #71D083);
-  min-width: 2px;
-  max-width: 80px;
-  flex-shrink: 0;
 }
 
 .ts-pct-label {
@@ -330,6 +293,9 @@
 /* ============ Guardian Agent Cards ============ */
 
 .guardian-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 10px;

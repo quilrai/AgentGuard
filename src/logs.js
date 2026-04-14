@@ -4,8 +4,6 @@ import {
   setLogsTimeRange,
   logsBackend,
   setLogsBackend,
-  logsPage,
-  setLogsPage,
   logsView,
   setLogsView,
   currentLogs,
@@ -75,12 +73,7 @@ function renderTokenSavingRow(log, index, cardNum, total) {
       <td class="ts-cell ts-tokens">${formatNumber(inputTokens)}</td>
       <td class="ts-cell ts-tokens">${formatNumber(outputTokens)}</td>
       <td class="ts-cell ts-saved">${formatNumber(saved)}</td>
-      <td class="ts-cell ts-pct">
-        <div class="ts-pct-bar-wrap">
-          <div class="ts-pct-bar" style="width: ${Math.min(pct, 100)}%"></div>
-          <span class="ts-pct-label">${pct}%</span>
-        </div>
-      </td>
+      <td class="ts-cell ts-pct"><span class="ts-pct-label">${pct}%</span></td>
     </tr>
     <tr class="ts-detail-row" id="ts-detail-${index}" style="display: none;">
       <td colspan="${colSpan}" class="ts-detail-cell">
@@ -109,7 +102,7 @@ function renderTokenSavingRow(log, index, cardNum, total) {
 }
 
 function renderTokenSavingView(logs, total) {
-  if (logs.length === 0 && logsPage === 0) {
+  if (logs.length === 0) {
     return `
       <div class="empty-state">
         <i data-lucide="zap-off"></i>
@@ -118,8 +111,6 @@ function renderTokenSavingView(logs, total) {
       </div>
     `;
   }
-
-  const startNum = logsPage * 10 + 1;
 
   return `
     <div class="ts-table-wrap">
@@ -137,7 +128,7 @@ function renderTokenSavingView(logs, total) {
           </tr>
         </thead>
         <tbody>
-          ${logs.map((log, i) => renderTokenSavingRow(log, i, startNum + i, total)).join('')}
+          ${logs.map((log, i) => renderTokenSavingRow(log, i, i + 1, total)).join('')}
         </tbody>
       </table>
     </div>
@@ -207,7 +198,7 @@ function renderGuardianCard(log, index, cardNum, total) {
 }
 
 function renderGuardianView(logs, total) {
-  if (logs.length === 0 && logsPage === 0) {
+  if (logs.length === 0) {
     return `
       <div class="empty-state">
         <i data-lucide="shield-check"></i>
@@ -217,11 +208,9 @@ function renderGuardianView(logs, total) {
     `;
   }
 
-  const startNum = logsPage * 10 + 1;
-
   return `
     <div class="guardian-list">
-      ${logs.map((log, i) => renderGuardianCard(log, i, startNum + i, total)).join('')}
+      ${logs.map((log, i) => renderGuardianCard(log, i, i + 1, total)).join('')}
     </div>
   `;
 }
@@ -266,18 +255,6 @@ async function loadGuardianDetections(index) {
 // Shared rendering & event handlers
 // ============================================================================
 
-function renderPagination(total) {
-  const paginationEl = document.getElementById('logs-pagination');
-  const totalPages = Math.ceil(total / 10) || 1;
-  const currentPage = logsPage + 1;
-
-  paginationEl.innerHTML = `
-    <button class="pagination-btn" id="logs-prev" ${logsPage === 0 ? 'disabled' : ''}>Previous</button>
-    <span class="pagination-info">Page ${currentPage} of ${totalPages} (${total} entries)</span>
-    <button class="pagination-btn" id="logs-next" ${currentPage >= totalPages ? 'disabled' : ''}>Next</button>
-  `;
-}
-
 function attachTokenSavingHandlers(container) {
   container.querySelectorAll('.ts-row').forEach(row => {
     row.addEventListener('click', () => {
@@ -310,28 +287,6 @@ function attachGuardianHandlers(container) {
   });
 }
 
-function attachPaginationHandlers() {
-  const paginationEl = document.getElementById('logs-pagination');
-  const prevBtn = paginationEl.querySelector('#logs-prev');
-  const nextBtn = paginationEl.querySelector('#logs-next');
-
-  if (prevBtn) {
-    prevBtn.addEventListener('click', () => {
-      if (logsPage > 0) {
-        setLogsPage(logsPage - 1);
-        loadMessageLogs();
-      }
-    });
-  }
-
-  if (nextBtn) {
-    nextBtn.addEventListener('click', () => {
-      setLogsPage(logsPage + 1);
-      loadMessageLogs();
-    });
-  }
-}
-
 // ============================================================================
 // Main loader
 // ============================================================================
@@ -347,12 +302,12 @@ export async function loadMessageLogs() {
       model: 'all',
       dlpAction: 'all',
       search: '',
-      page: logsPage,
+      page: 0,
+      pageSize: 10000,
       view: logsView,
     });
 
     setCurrentLogs(result.logs);
-    renderPagination(result.total);
 
     if (logsView === 'token_saving') {
       content.innerHTML = renderTokenSavingView(result.logs, result.total);
@@ -361,8 +316,6 @@ export async function loadMessageLogs() {
       content.innerHTML = renderGuardianView(result.logs, result.total);
       attachGuardianHandlers(content);
     }
-
-    attachPaginationHandlers();
 
     // Re-render lucide icons for dynamically added content
     if (window.lucide) window.lucide.createIcons();
@@ -400,7 +353,6 @@ export function initLogsBackendFilter() {
   const select = document.getElementById('logs-backend-select');
   select.addEventListener('change', () => {
     setLogsBackend(select.value);
-    setLogsPage(0);
     loadMessageLogs();
   });
 }
@@ -409,7 +361,6 @@ export function initLogsTimeFilter() {
   const select = document.getElementById('logs-time-select');
   select.addEventListener('change', () => {
     setLogsTimeRange(select.value);
-    setLogsPage(0);
     loadMessageLogs();
   });
 }
@@ -420,7 +371,6 @@ export function initLogsViewTabs() {
       document.querySelectorAll('.logs-view-tab').forEach(t => t.classList.remove('active'));
       tab.classList.add('active');
       setLogsView(tab.dataset.view);
-      setLogsPage(0);
       loadMessageLogs();
     });
   });

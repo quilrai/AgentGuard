@@ -459,6 +459,7 @@ pub fn get_message_logs(
     dlp_action: String,
     search: String,
     page: i64,
+    #[allow(non_snake_case)] pageSize: Option<i64>,
     view: Option<String>,
 ) -> Result<PaginatedLogs, String> {
     let conn = open_connection().map_err(|e| e.to_string())?;
@@ -526,7 +527,8 @@ pub fn get_message_logs(
         )
         .unwrap_or(0);
 
-    let offset = page * 10;
+    let per_page = pageSize.unwrap_or(10).min(10000);
+    let offset = page * per_page;
 
     let mut stmt = conn
         .prepare(&format!(
@@ -537,13 +539,13 @@ pub fn get_message_logs(
              FROM requests
              WHERE timestamp >= ?1{}
              ORDER BY id DESC
-             LIMIT 10 OFFSET ?2",
+             LIMIT ?2 OFFSET ?3",
             filters
         ))
         .map_err(|e| e.to_string())?;
 
     let logs: Vec<MessageLog> = stmt
-        .query_map(rusqlite::params![&cutoff_ts, offset], |row| {
+        .query_map(rusqlite::params![&cutoff_ts, per_page, offset], |row| {
             Ok(MessageLog {
                 id: row.get(0)?,
                 timestamp: row.get(1)?,

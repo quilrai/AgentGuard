@@ -25,7 +25,7 @@ export function setCurrentBackend(value) {
 }
 
 // Logs tab filters
-export let logsTimeRange = '1h';
+export let logsTimeRange = 'all';
 
 export function setLogsTimeRange(value) {
   logsTimeRange = value;

@@ -81,13 +81,11 @@
   margin: 0;
 }
 
-#analytics-tab .page-header,
-#logs-tab .page-header {
+#analytics-tab .page-header {
   margin-bottom: 24px;
 }
 
-#analytics-tab .page-title,
-#logs-tab .page-title {
+#analytics-tab .page-title {
   margin-right: auto;
   font-size: 2.2rem;
   margin-bottom: 0;
