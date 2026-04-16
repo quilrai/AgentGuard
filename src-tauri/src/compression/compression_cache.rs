@@ -71,12 +71,14 @@ pub fn store_compressed(db_path: &str, hash: &str, compressed: &str, tokens_save
 }
 
 /// Return cache statistics.
+#[cfg(test)]
 pub struct CacheStats {
     pub entries: usize,
     pub total_tokens_saved: i64,
     pub total_hits: i64,
 }
 
+#[cfg(test)]
 pub fn get_stats(db_path: &str) -> Option<CacheStats> {
     let conn = Connection::open(db_path).ok()?;
     ensure_table(&conn);

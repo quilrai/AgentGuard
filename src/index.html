@@ -65,8 +65,6 @@
           <button class="topbar-nav-item" data-route="analytics"><i data-lucide="bar-chart-3"></i><span>Analytics</span></button>
           <span class="topbar-nav-sep"></span>
           <button class="topbar-nav-item" data-route="logs"><i data-lucide="scroll-text"></i><span>Logs</span></button>
-          <span class="topbar-nav-sep"></span>
-          <button class="topbar-nav-item" data-route="behaviour"><i data-lucide="brain"></i><span>Behaviour</span></button>
         </nav>
         <div class="topbar-right">
           <label class="topbar-autostart" id="menu-autostart" title="Launch AgentGuard when you log in">
@@ -138,6 +136,20 @@
             <span class="footer-branding"><span class="made-by">made by</span> <a href="https://quilr.ai" target="_blank">Quilr.ai</a></span>
           </div>
           <div class="home-wrap">
+
+            <button class="home-card-banner" id="behaviour-card" data-route="behaviour" type="button">
+              <span class="home-card-banner-icon">
+                <i data-lucide="brain"></i>
+              </span>
+              <span class="home-card-banner-text">
+                <span class="home-card-banner-title">Agent Behaviour Analysis</span>
+                <span class="home-card-banner-sub">Find out if your agent is becoming lazier, drifting off task, or regressing over time.</span>
+              </span>
+              <span class="home-card-banner-cta">
+                Open <i data-lucide="arrow-right"></i>
+              </span>
+            </button>
+
             <div class="home-cards">
 
               <button class="home-card" id="guardian-card" data-route="guardian" type="button">
@@ -553,6 +565,11 @@
 
         <!-- ============ BEHAVIOUR ============ -->
         <div id="behaviour-tab" class="tab-content">
+          <div class="page-back-header page-back-header--compact">
+            <button class="back-link" data-route="home" type="button">
+              <i data-lucide="arrow-left"></i> Back
+            </button>
+          </div>
           <div class="page-header">
             <h1 class="page-title">Agent Behaviour</h1>
             <div class="header-filters">

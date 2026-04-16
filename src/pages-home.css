@@ -20,7 +20,7 @@
   justify-content: center;
   max-width: 920px;
   margin: 0 auto;
-  padding: 48px 24px 32px;
+  padding: 20px 24px 16px;
   width: 100%;
 }
 
@@ -32,14 +32,128 @@
   max-width: 800px;
 }
 
+/* Wide banner card (sits above the two main cards) */
+.home-card-banner {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  width: 100%;
+  max-width: 800px;
+  margin-bottom: 16px;
+  padding: 12px 18px;
+  text-align: left;
+  background:
+    radial-gradient(circle at 92% -30%, rgba(113, 208, 131, 0.10) 0%, transparent 55%),
+    linear-gradient(180deg, #1F2328 0%, #181B1E 100%);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 14px;
+  cursor: pointer;
+  font-family: inherit;
+  color: inherit;
+  transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1),
+              border-color 0.3s ease,
+              box-shadow 0.3s ease;
+  overflow: hidden;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.04) inset,
+    0 10px 28px -22px rgba(0, 0, 0, 0.55);
+}
+
+.home-card-banner:hover {
+  transform: translateY(-1px);
+  border-color: rgba(113, 208, 131, 0.28);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.05) inset,
+    0 18px 36px -24px rgba(0, 0, 0, 0.7),
+    0 0 0 1px rgba(113, 208, 131, 0.04);
+}
+
+.home-card-banner:focus-visible {
+  outline: 2px solid #71D083;
+  outline-offset: 2px;
+}
+
+.home-card-banner-icon {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: linear-gradient(160deg, rgba(113, 208, 131, 0.18) 0%, rgba(31, 216, 164, 0.06) 100%);
+  border: 1px solid rgba(113, 208, 131, 0.22);
+  color: #1FD8A4;
+  box-shadow:
+    0 0 16px -4px rgba(31, 216, 164, 0.35),
+    0 1px 0 rgba(255, 255, 255, 0.06) inset;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.home-card-banner:hover .home-card-banner-icon {
+  transform: translateY(-1px) rotate(-2deg);
+  box-shadow:
+    0 0 22px -4px rgba(31, 216, 164, 0.55),
+    0 1px 0 rgba(255, 255, 255, 0.08) inset;
+}
+
+.home-card-banner-icon svg {
+  width: 18px;
+  height: 18px;
+  stroke-width: 1.75;
+}
+
+.home-card-banner-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.home-card-banner-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #E8EAED;
+  letter-spacing: -0.005em;
+}
+
+.home-card-banner-sub {
+  font-size: 0.78rem;
+  color: #8a8f95;
+  line-height: 1.4;
+}
+
+.home-card-banner-cta {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: #1FD8A4;
+  white-space: nowrap;
+}
+
+.home-card-banner-cta svg {
+  width: 14px;
+  height: 14px;
+  transition: transform 0.25s ease;
+}
+
+.home-card-banner:hover .home-card-banner-cta svg {
+  transform: translateX(3px);
+}
+
 .home-card {
   position: relative;
   display: flex;
   flex-direction: column;
   align-items: stretch;
   text-align: left;
-  padding: 26px 26px 22px;
-  min-height: 250px;
+  padding: 20px 22px 18px;
+  min-height: 210px;
   background:
     radial-gradient(circle at 88% -10%, rgba(113, 208, 131, 0.10) 0%, transparent 45%),
     linear-gradient(180deg, #1F2328 0%, #181B1E 100%);
@@ -130,7 +244,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 22px;
+  margin-bottom: 14px;
   position: relative;
   z-index: 1;
 }
@@ -220,9 +334,9 @@
 
 .home-card-sub {
   font-size: 0.8rem;
-  line-height: 1.45;
+  line-height: 1.4;
   color: #7a8086;
-  margin-bottom: 16px;
+  margin-bottom: 10px;
   position: relative;
   z-index: 1;
   max-width: 30ch;
@@ -261,8 +375,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: 18px;
-  padding-top: 14px;
+  margin-top: 12px;
+  padding-top: 10px;
   border-top: 1px solid rgba(255, 255, 255, 0.05);
   font-size: 0.72rem;
   color: #6c7278;
@@ -327,7 +441,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  margin: 56px 0 32px;
+  margin: 24px 0 18px;
   position: relative;
 }
 
@@ -356,7 +470,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 20px;
+  gap: 12px;
 }
 
 .home-fact {

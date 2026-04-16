@@ -232,6 +232,7 @@ pub fn summarize_search_omissions(omission_map: &HashMap<String, usize>) -> Stri
 
 /// Summarize omissions from a diff compressor.
 /// E.g. "3 hunks omitted across 2 files"
+#[cfg(test)]
 pub fn summarize_diff_omissions(hunks_removed: usize, files_affected: usize) -> String {
     if hunks_removed == 0 {
         return String::new();

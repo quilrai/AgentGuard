@@ -13,6 +13,7 @@ pub struct BuiltinPattern {
     /// Optional post-match validator function. Called with the raw matched string
     /// (whitespace/separators stripped as needed). Return true to keep the match.
     /// Used for checksum validation (Luhn, Verhoeff, etc.).
+    #[allow(dead_code)]
     pub validator: Option<fn(&str) -> bool>,
     /// Key to look up the validator at runtime when loading from DB.
     /// Must match a key in `get_validator_by_name()`.

@@ -2466,8 +2466,6 @@ pub fn get_agent_behaviour(time_range: String, backend: String) -> Result<Behavi
                 v
             };
 
-            let turn_total_tools: i64 = tool_counts.iter().map(|t| t.count).sum();
-
             // Overview point for line chart
             all_overview.push(BehaviourOverviewPoint {
                 timestamp: prompt.timestamp.clone(),

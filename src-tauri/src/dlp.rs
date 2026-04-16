@@ -16,8 +16,6 @@ pub struct DlpDetection {
     pub pattern_type: String, // "keyword" or "regex"
     pub original_value: String,
     pub message_index: Option<i32>,
-    /// 1-based line number within the scanned text (before applying file_line_offset)
-    pub line_number: Option<usize>,
     /// 1-based column (character offset within the line)
     pub column: Option<usize>,
     /// Absolute 1-based line number in the original file (line_number + file_line_offset)
@@ -215,7 +213,6 @@ pub fn check_dlp_patterns_with_offset(text: &str, file_line_offset: usize) -> Ve
                 pattern_type: pattern.pattern_type.clone(),
                 original_value: matched,
                 message_index: None,
-                line_number: Some(line),
                 column: Some(col),
                 absolute_line: Some(absolute_line),
             });

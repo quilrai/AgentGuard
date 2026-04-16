@@ -50,16 +50,6 @@ impl From<&TokenSavingSettings> for AdvancedCompressionFlags {
 }
 
 impl AdvancedCompressionFlags {
-    /// All features enabled (legacy behaviour when no settings are available).
-    pub fn all_enabled() -> Self {
-        Self {
-            search_compressor: true,
-            diff_compressor: true,
-            tool_crusher: true,
-            compression_cache: true,
-        }
-    }
-
     fn any_compressor_enabled(&self) -> bool {
         self.search_compressor || self.diff_compressor || self.tool_crusher
     }

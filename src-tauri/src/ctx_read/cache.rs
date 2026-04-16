@@ -18,7 +18,6 @@ pub struct CacheEntry {
     pub line_count: usize,
     pub original_tokens: usize,
     pub read_count: u32,
-    pub path: String,
     pub last_access: Instant,
 }
 
@@ -43,6 +42,7 @@ pub struct CacheStats {
 }
 
 impl CacheStats {
+    #[allow(dead_code)]
     pub fn tokens_saved(&self) -> u64 {
         self.total_original_tokens
             .saturating_sub(self.total_sent_tokens)
@@ -143,7 +143,6 @@ impl SessionCache {
             line_count,
             original_tokens,
             read_count: 1,
-            path: path.to_string(),
             last_access: now,
         };
 
@@ -215,6 +214,7 @@ impl SessionCache {
         count
     }
 
+    #[allow(dead_code)]
     pub fn get_stats(&self) -> &CacheStats {
         &self.stats
     }
