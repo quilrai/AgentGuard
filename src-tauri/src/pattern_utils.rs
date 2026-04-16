@@ -141,9 +141,7 @@ fn count_url_encoded_triplets(token: &str) -> usize {
     let mut count = 0usize;
 
     while i + 2 < bytes.len() {
-        if bytes[i] == b'%'
-            && bytes[i + 1].is_ascii_hexdigit()
-            && bytes[i + 2].is_ascii_hexdigit()
+        if bytes[i] == b'%' && bytes[i + 1].is_ascii_hexdigit() && bytes[i + 2].is_ascii_hexdigit()
         {
             count += 1;
             i += 3;
@@ -205,7 +203,9 @@ pub fn is_match_excluded_by_encoding(text: &str, match_start: usize, match_end: 
         return false;
     }
 
-    looks_like_hex_blob(blob) || looks_like_url_encoded_blob(blob) || looks_like_base64ish_blob(blob)
+    looks_like_hex_blob(blob)
+        || looks_like_url_encoded_blob(blob)
+        || looks_like_base64ish_blob(blob)
 }
 
 /// Shared exclusion logic for individual matches.
@@ -383,8 +383,8 @@ mod tests {
     fn test_encoded_blob_suppresses_internal_match() {
         let text =
             "QmFzZTY0VVJMU2VnbWVudF9QcmVmaXhfc2stQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVowMTIzNDU2Nzg5";
-        let pos_regexes = compile_patterns(&vec![r"sk-[A-Za-z0-9]{20,}".to_string()], "regex")
-            .unwrap();
+        let pos_regexes =
+            compile_patterns(&vec![r"sk-[A-Za-z0-9]{20,}".to_string()], "regex").unwrap();
 
         let result = collect_matches_with_negative_context(text, &pos_regexes, &[], 0, None);
         assert!(
@@ -397,8 +397,8 @@ mod tests {
     #[test]
     fn test_encoded_blob_does_not_suppress_full_token_match() {
         let text = "sk-ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcd";
-        let pos_regexes = compile_patterns(&vec![r"sk-[A-Za-z0-9]{20,}".to_string()], "regex")
-            .unwrap();
+        let pos_regexes =
+            compile_patterns(&vec![r"sk-[A-Za-z0-9]{20,}".to_string()], "regex").unwrap();
 
         let result = collect_matches_with_negative_context(text, &pos_regexes, &[], 0, None);
         assert_eq!(result.matches, vec![text.to_string()]);
@@ -408,8 +408,7 @@ mod tests {
     fn test_url_encoded_blob_suppresses_internal_match() {
         let text = "%51%57%78%68%5A%47%52%70%62%6B%39%77%5A%57%35%54%52%56%4E%42%54%55%56%66%63%32%74%74%78%6F%78%62%2D%31%32%33%34%35%36%37%38%39%30%41%42%43%44%45%46%47%48%49%4A";
         let pos_regexes =
-            compile_patterns(&vec![r"xox[baprs]-[a-zA-Z0-9\-]{10,}".to_string()], "regex")
-                .unwrap();
+            compile_patterns(&vec![r"xox[baprs]-[a-zA-Z0-9\-]{10,}".to_string()], "regex").unwrap();
 
         let result = collect_matches_with_negative_context(text, &pos_regexes, &[], 0, None);
         assert!(

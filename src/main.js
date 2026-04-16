@@ -15,6 +15,7 @@ import { initBackends, loadPredefinedBackends, refreshGuardianHooks } from './ba
 import { initTokenSaving, refreshTokenSaver } from './token-saving.js';
 import { initHome, loadHome, suspendHome, resumeHome } from './home.js';
 import { initGarden, loadGarden } from './garden.js';
+import { initBehaviour, loadBehaviour } from './behaviour.js';
 import { initGuide, startGuide, resetAllSettings } from './guide.js';
 
 const { openUrl } = window.__TAURI__.opener;
@@ -53,6 +54,9 @@ window.addEventListener('DOMContentLoaded', () => {
 
   // Initialize Garden
   initGarden();
+
+  // Initialize Behaviour
+  initBehaviour();
 
   // Initialize guided setup (auto-shows for new users)
   initGuide();
@@ -98,6 +102,10 @@ window.addEventListener('DOMContentLoaded', () => {
 
     if (route === 'garden') {
       loadGarden();
+    }
+
+    if (route === 'behaviour') {
+      loadBehaviour();
     }
 
     if (route === 'analytics') {

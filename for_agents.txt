@@ -120,6 +120,31 @@ Garden (project-level file/module view)
   - Frontend: src/garden.js (self-contained SVG renderer + project picker).
     No session-based view remains; the Garden tab is only this file view.
 
+Agent Behaviour (session-level observability)
+  - Behaviour Monitor page is now trend-first and day-wise, not a
+    baseline/comparison view.
+  - Top layer shows four compact metric cards with daily mini-graphs:
+      Read-first discipline
+      Exploration balance
+      Bash reliance
+      Tool tempo
+    These cards show the selected-range aggregate plus daily sparkline
+    shape; there is no "vs earlier" logic anymore.
+  - Supporting cards stay high-level:
+      Current Operating Mix: explore/modify/bash/other share bars
+      Current Profile: investigation style, shell reliance, tempo, etc.
+      Coverage: active days, avg turns/session, files touched/session,
+      guardrail activity
+  - Session cards remain expandable for drilldown, but the collapsed view
+    is intentionally summary-only: files touched, read-first %,
+    explore/modify ratio, bash share, tools/turn, plus short flags like
+    read-first, bash-heavy, deep-scan, blocked.
+  - Expanded turn details still show tool tags, file chips, bash command
+    previews, and blocked-turn markers when users need to investigate.
+  - Backend: stats.rs `get_agent_behaviour` (queries requests table,
+    groups by session_id in extra_metadata, correlates prompt and tool rows)
+  - Frontend: src/behaviour.js + src/pages-behaviour.css. Topbar nav item.
+
 Symbol Extraction (tree-sitter)
   - Extracts imports and definitions from source files using tree-sitter
     AST parsing. Runs at PostToolUse time when the agent reads/writes/edits
@@ -196,6 +221,9 @@ KEY FILES
                                       dep protection (Vulnerability Guard,
                                       Update Advisor) toggles
   ../src/pages-backends.css           Agent card tile styles incl. dep protection
+  ../src/behaviour.js                 Behaviour Monitor view: daily metric
+                                      trends, mix/profile/coverage, session drilldown
+  ../src/pages-behaviour.css          Behaviour Monitor styles
 
 Hook scripts live at:
   Claude:  ~/.claude/settings.json (hooks section)

@@ -42,6 +42,8 @@ use crate::predefined_backend_settings::CustomBackendSettings;
 use axum::{extract::State, http::StatusCode, response::IntoResponse, routing::post, Json, Router};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::fs::File;
+use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::sync::{Arc, Mutex};
 
 // ============================================================================
@@ -313,27 +315,41 @@ fn json_i64(v: &Value, key: &str) -> Option<i64> {
 /// Read a slice of a file (honoring offset and limit, both line-based, matching
 /// Claude Code's Read tool semantics). Returns `None` if the file can't be read.
 fn read_file_slice(file_path: &str, offset: Option<i64>, limit: Option<i64>) -> Option<String> {
-    let content = std::fs::read_to_string(file_path).ok()?;
+    let file = File::open(file_path).ok()?;
+    let mut reader = BufReader::new(file);
+
     if offset.is_none() && limit.is_none() {
+        let mut content = String::new();
+        reader.read_to_string(&mut content).ok()?;
         return Some(content);
     }
+
     let start = offset.unwrap_or(0).max(0) as usize;
-    let take = limit.map(|l| l.max(0) as usize);
+    let mut remaining = limit.map(|l| l.max(0) as usize);
     let mut out = String::new();
-    let mut count = 0usize;
-    for (i, line) in content.lines().enumerate() {
-        if i < start {
-            continue;
+    let mut line = String::new();
+    let mut line_number = 0usize;
+
+    loop {
+        line.clear();
+        let read = reader.read_line(&mut line).ok()?;
+        if read == 0 {
+            break;
         }
-        if let Some(t) = take {
-            if count >= t {
-                break;
+
+        if line_number >= start {
+            if let Some(rem) = remaining.as_mut() {
+                if *rem == 0 {
+                    break;
+                }
+                *rem -= 1;
             }
+            out.push_str(&line);
         }
-        out.push_str(line);
-        out.push('\n');
-        count += 1;
+
+        line_number += 1;
     }
+
     Some(out)
 }
 
@@ -446,20 +462,13 @@ fn build_dependency_file_preview(
     }
 }
 
-/// Try to read the latest assistant turn's usage out of the transcript JSONL.
-/// Walks lines from the end backwards, summing usage across all assistant
-/// messages until we hit a `type: user` line (= start of the current turn).
-/// Returns `None` if the file can't be read or no assistant message is found.
-fn read_latest_turn_usage(transcript_path: &str) -> Option<RealUsage> {
-    let content = std::fs::read_to_string(transcript_path).ok()?;
-    let lines: Vec<&str> = content.lines().collect();
-
+fn parse_latest_turn_usage_from_text(content: &str) -> Option<RealUsage> {
     let mut usage = RealUsage::default();
     let mut found_any = false;
     let mut model: Option<String> = None;
     let mut stop_reason: Option<String> = None;
 
-    for line in lines.iter().rev() {
+    for line in content.lines().rev() {
         let line = line.trim();
         if line.is_empty() {
             continue;
@@ -503,6 +512,49 @@ fn read_latest_turn_usage(transcript_path: &str) -> Option<RealUsage> {
     usage.model = model;
     usage.stop_reason = stop_reason;
     Some(usage)
+}
+
+fn read_tail_text(path: &str, max_bytes: usize) -> Option<String> {
+    let mut file = File::open(path).ok()?;
+    let len = file.metadata().ok()?.len();
+    let start = len.saturating_sub(max_bytes as u64);
+
+    file.seek(SeekFrom::Start(start)).ok()?;
+
+    let mut buf = Vec::new();
+    file.read_to_end(&mut buf).ok()?;
+
+    if start > 0 {
+        if let Some(pos) = buf.iter().position(|b| *b == b'\n') {
+            buf.drain(..=pos);
+        } else {
+            return Some(String::new());
+        }
+    }
+
+    Some(String::from_utf8_lossy(&buf).into_owned())
+}
+
+/// Try to read the latest assistant turn's usage out of the transcript JSONL.
+/// Walks lines from the end backwards, summing usage across all assistant
+/// messages until we hit a `type: user` line (= start of the current turn).
+/// Returns `None` if the file can't be read or no assistant message is found.
+fn read_latest_turn_usage(transcript_path: &str) -> Option<RealUsage> {
+    const TAIL_WINDOWS: [usize; 4] = [256 * 1024, 1024 * 1024, 4 * 1024 * 1024, 16 * 1024 * 1024];
+
+    let file_len = std::fs::metadata(transcript_path).ok()?.len() as usize;
+
+    for max_bytes in TAIL_WINDOWS {
+        let content = read_tail_text(transcript_path, max_bytes)?;
+        if let Some(usage) = parse_latest_turn_usage_from_text(&content) {
+            return Some(usage);
+        }
+        if file_len <= max_bytes {
+            break;
+        }
+    }
+
+    None
 }
 
 // ============================================================================
@@ -837,7 +889,14 @@ async fn pre_read_handler(
 
     let scanned = read_file_slice(&file_path, offset, limit).unwrap_or_default();
     let file_line_offset = offset.unwrap_or(0).max(0) as usize;
-    let response = handle_pre_tool_with_offset(&state, &input, &scanned, Some(file_path), true, file_line_offset);
+    let response = handle_pre_tool_with_offset(
+        &state,
+        &input,
+        &scanned,
+        Some(file_path),
+        true,
+        file_line_offset,
+    );
     (StatusCode::OK, Json(response))
 }
 

@@ -337,7 +337,9 @@ pub fn get_builtin_patterns() -> &'static [BuiltinPattern] {
         BuiltinPattern {
             name: "Redis Credentials",
             pattern_type: "regex",
-            patterns: &[r#"\brediss?://(?:[^:/\s@]+:|:)[^@\s"'`\\\[\]\{\}<>,]{6,}@[^/\s"'`\\\[\]\{\}<>]+(?:/[^\s"'`\\]*)?"#],
+            patterns: &[
+                r#"\brediss?://(?:[^:/\s@]+:|:)[^@\s"'`\\\[\]\{\}<>,]{6,}@[^/\s"'`\\\[\]\{\}<>]+(?:/[^\s"'`\\]*)?"#,
+            ],
             negative_pattern_type: Some("regex"),
             negative_patterns: Some(&[
                 r"(?i)example\.com|localhost|127\.0\.0\.1|placeholder|dummy|fake|your.|sample|template|password123|changeme|xxxx|test_?db|mock|todo|\$\{|%s|\{\{",
@@ -665,9 +667,12 @@ mod tests {
             .unwrap_or_else(|| panic!("missing builtin pattern: {}", name));
 
         let patterns: Vec<String> = builtin.patterns.iter().map(|p| (*p).to_string()).collect();
-        let negative_patterns = builtin
-            .negative_patterns
-            .map(|patterns| patterns.iter().map(|p| (*p).to_string()).collect::<Vec<_>>());
+        let negative_patterns = builtin.negative_patterns.map(|patterns| {
+            patterns
+                .iter()
+                .map(|p| (*p).to_string())
+                .collect::<Vec<_>>()
+        });
 
         let compiled = compile_pattern_set(
             &patterns,
@@ -817,9 +822,15 @@ db_password = "Sup3rSecret!"
 
         let matches = matches_for_builtin("Database Credentials", text);
         assert_eq!(matches.len(), 3, "unexpected matches: {:?}", matches);
-        assert!(matches.iter().any(|m| m.contains("postgres://appuser:Sup3rSecret!@db.prod.internal:5432/app")));
-        assert!(matches.iter().any(|m| m.contains("Server=db.prod.internal,1433;Database=app;User Id=sa;Password=Sup3rSecret!")));
-        assert!(matches.iter().any(|m| m.contains(r#"db_password = "Sup3rSecret!""#)));
+        assert!(matches
+            .iter()
+            .any(|m| m.contains("postgres://appuser:Sup3rSecret!@db.prod.internal:5432/app")));
+        assert!(matches.iter().any(|m| m.contains(
+            "Server=db.prod.internal,1433;Database=app;User Id=sa;Password=Sup3rSecret!"
+        )));
+        assert!(matches
+            .iter()
+            .any(|m| m.contains(r#"db_password = "Sup3rSecret!""#)));
     }
 
     #[test]

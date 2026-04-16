@@ -148,7 +148,7 @@ impl SessionCache {
         };
 
         self.entries.insert(path.to_string(), entry.clone());
-        self.stats.files_tracked += 1;
+        self.stats.files_tracked = self.entries.len();
         (entry, false)
     }
 
@@ -185,12 +185,19 @@ impl SessionCache {
             if let Some(entry) = self.entries.remove(path) {
                 freed += entry.original_tokens;
                 self.file_refs.remove(path);
+                self.stats.files_tracked = self.entries.len();
             }
         }
     }
 
     pub fn invalidate(&mut self, path: &str) -> bool {
-        self.entries.remove(path).is_some()
+        if self.entries.remove(path).is_some() {
+            self.file_refs.remove(path);
+            self.stats.files_tracked = self.entries.len();
+            true
+        } else {
+            false
+        }
     }
 
     pub fn clear(&mut self) -> usize {
@@ -271,7 +278,10 @@ mod tests {
     fn cache_invalidate_removes_entry() {
         let mut cache = SessionCache::new();
         cache.store("/test.rs", "test".to_string());
+        let old_ref = cache.get_file_ref("/test.rs");
         assert!(cache.invalidate("/test.rs"));
+        assert!(cache.get("/test.rs").is_none());
+        assert_ne!(cache.get_file_ref("/test.rs"), old_ref);
         assert!(!cache.invalidate("/nonexistent.rs"));
     }
 

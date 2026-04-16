@@ -40,6 +40,33 @@ use tokio::sync::watch;
 
 type SharedCache = Arc<Mutex<SessionCache>>;
 
+#[derive(Clone)]
+struct CliCompressionState {
+    db: Database,
+}
+
+#[derive(Clone)]
+struct CtxReadState {
+    db: Database,
+    cache: SharedCache,
+}
+
+fn load_token_saving_settings(
+    db: &Database,
+    backend_name: &str,
+) -> crate::predefined_backend_settings::TokenSavingSettings {
+    if backend_name.is_empty() {
+        return Default::default();
+    }
+
+    let settings_json = db
+        .get_predefined_backend_settings(backend_name)
+        .ok()
+        .unwrap_or_else(|| "{}".to_string());
+    let settings: CustomBackendSettings = serde_json::from_str(&settings_json).unwrap_or_default();
+    settings.token_saving
+}
+
 async fn health_handler() -> impl IntoResponse {
     Response::builder()
         .status(StatusCode::OK)
@@ -52,7 +79,10 @@ async fn health_handler() -> impl IntoResponse {
 // Shell Output Compression Endpoint
 // ============================================================================
 
-async fn cli_compression_handler(body: Bytes) -> impl IntoResponse {
+async fn cli_compression_handler(
+    State(state): State<CliCompressionState>,
+    body: Bytes,
+) -> impl IntoResponse {
     // Parse request body
     let body_str = String::from_utf8_lossy(&body).to_string();
     let parsed: serde_json::Value = match serde_json::from_str(&body_str) {
@@ -88,20 +118,7 @@ async fn cli_compression_handler(body: Bytes) -> impl IntoResponse {
         .to_string();
 
     // Look up per-backend token saving settings (predefined backends only)
-    let token_saving = if !backend_name.is_empty() {
-        let settings_json = if let Ok(db) = Database::new(&get_db_path()) {
-            db.get_predefined_backend_settings(&backend_name)
-                .ok()
-                .unwrap_or_else(|| "{}".to_string())
-        } else {
-            "{}".to_string()
-        };
-        let settings: CustomBackendSettings =
-            serde_json::from_str(&settings_json).unwrap_or_default();
-        settings.token_saving
-    } else {
-        Default::default()
-    };
+    let token_saving = load_token_saving_settings(&state.db, &backend_name);
 
     let compression_enabled = token_saving.shell_compression;
     let flags = crate::compression::AdvancedCompressionFlags::from(&token_saving);
@@ -155,53 +172,51 @@ async fn cli_compression_handler(body: Bytes) -> impl IntoResponse {
     };
 
     // Log to database
-    if let Ok(db) = Database::new(&get_db_path()) {
-        let req_meta = crate::requestresponsemetadata::RequestMetadata {
-            model: None,
-            has_system_prompt: false,
-            has_tools: false,
-            user_message_count: 0,
-            assistant_message_count: 0,
-        };
-        let resp_meta = ResponseMetadata {
-            input_tokens: original_tokens as i32,
-            output_tokens: compressed_tokens as i32,
-            cache_read_tokens: 0,
-            cache_creation_tokens: 0,
-            stop_reason: Some(format!("exit:{}", result.exit_code)),
-            has_thinking: false,
-            tool_calls: vec![],
-        };
-        let meta_json = if tokens_saved > 0 {
-            Some(format!("{{\"shell_compression\":{}}}", tokens_saved))
-        } else {
-            None
-        };
-        let log_backend = if backend_name.is_empty() {
-            "shell_compression"
-        } else {
-            &backend_name
-        };
-        let _ = db.log_request(
-            log_backend,
-            "POST",
-            "/cli_compression",
-            "/cli_compression",
-            &body_str,
-            &output,
-            200,
-            false,
-            result.duration_ms,
-            &req_meta,
-            &resp_meta,
-            None,
-            None,
-            None,
-            0, // dlp_action = passed
-            tokens_saved,
-            meta_json.as_deref(),
-        );
-    }
+    let req_meta = crate::requestresponsemetadata::RequestMetadata {
+        model: None,
+        has_system_prompt: false,
+        has_tools: false,
+        user_message_count: 0,
+        assistant_message_count: 0,
+    };
+    let resp_meta = ResponseMetadata {
+        input_tokens: original_tokens as i32,
+        output_tokens: compressed_tokens as i32,
+        cache_read_tokens: 0,
+        cache_creation_tokens: 0,
+        stop_reason: Some(format!("exit:{}", result.exit_code)),
+        has_thinking: false,
+        tool_calls: vec![],
+    };
+    let meta_json = if tokens_saved > 0 {
+        Some(format!("{{\"shell_compression\":{}}}", tokens_saved))
+    } else {
+        None
+    };
+    let log_backend = if backend_name.is_empty() {
+        "shell_compression"
+    } else {
+        &backend_name
+    };
+    let _ = state.db.log_request(
+        log_backend,
+        "POST",
+        "/cli_compression",
+        "/cli_compression",
+        &body_str,
+        &output,
+        200,
+        false,
+        result.duration_ms,
+        &req_meta,
+        &resp_meta,
+        None,
+        None,
+        None,
+        0, // dlp_action = passed
+        tokens_saved,
+        meta_json.as_deref(),
+    );
 
     Response::builder()
         .status(StatusCode::OK)
@@ -218,7 +233,7 @@ async fn cli_compression_handler(body: Bytes) -> impl IntoResponse {
 // Context-aware file read endpoints (ctx_read / ctx_smart_read)
 // ============================================================================
 
-async fn ctx_read_handler(State(cache): State<SharedCache>, body: Bytes) -> impl IntoResponse {
+async fn ctx_read_handler(State(state): State<CtxReadState>, body: Bytes) -> impl IntoResponse {
     let body_str = String::from_utf8_lossy(&body).to_string();
     let parsed: serde_json::Value = match serde_json::from_str(&body_str) {
         Ok(v) => v,
@@ -265,7 +280,7 @@ async fn ctx_read_handler(State(cache): State<SharedCache>, body: Bytes) -> impl
         .unwrap_or("")
         .to_string();
 
-    let cache_clone = cache.clone();
+    let cache_clone = state.cache.clone();
     let result = tokio::task::spawn_blocking(move || {
         let mut cache = cache_clone.lock().unwrap();
         let start = std::time::Instant::now();
@@ -291,53 +306,51 @@ async fn ctx_read_handler(State(cache): State<SharedCache>, body: Bytes) -> impl
     let tokens_saved = original_tokens.saturating_sub(sent_tokens) as i32;
 
     // Log to database
-    if let Ok(db) = Database::new(&get_db_path()) {
-        let req_meta = crate::requestresponsemetadata::RequestMetadata {
-            model: None,
-            has_system_prompt: false,
-            has_tools: false,
-            user_message_count: 0,
-            assistant_message_count: 0,
-        };
-        let resp_meta = ResponseMetadata {
-            input_tokens: original_tokens as i32,
-            output_tokens: sent_tokens as i32,
-            cache_read_tokens: 0,
-            cache_creation_tokens: 0,
-            stop_reason: Some("ok".to_string()),
-            has_thinking: false,
-            tool_calls: vec![],
-        };
-        let meta_json = if tokens_saved > 0 {
-            Some(format!("{{\"ctx_read\":{tokens_saved}}}"))
-        } else {
-            None
-        };
-        let log_backend = if backend_name.is_empty() {
-            "ctx_read"
-        } else {
-            &backend_name
-        };
-        let _ = db.log_request(
-            log_backend,
-            "POST",
-            "/ctx/read",
-            "/ctx/read",
-            &body_str,
-            &read_result.output,
-            200,
-            false,
-            duration_ms,
-            &req_meta,
-            &resp_meta,
-            None,
-            None,
-            None,
-            0,
-            tokens_saved,
-            meta_json.as_deref(),
-        );
-    }
+    let req_meta = crate::requestresponsemetadata::RequestMetadata {
+        model: None,
+        has_system_prompt: false,
+        has_tools: false,
+        user_message_count: 0,
+        assistant_message_count: 0,
+    };
+    let resp_meta = ResponseMetadata {
+        input_tokens: original_tokens as i32,
+        output_tokens: sent_tokens as i32,
+        cache_read_tokens: 0,
+        cache_creation_tokens: 0,
+        stop_reason: Some("ok".to_string()),
+        has_thinking: false,
+        tool_calls: vec![],
+    };
+    let meta_json = if tokens_saved > 0 {
+        Some(format!("{{\"ctx_read\":{tokens_saved}}}"))
+    } else {
+        None
+    };
+    let log_backend = if backend_name.is_empty() {
+        "ctx_read"
+    } else {
+        &backend_name
+    };
+    let _ = state.db.log_request(
+        log_backend,
+        "POST",
+        "/ctx/read",
+        "/ctx/read",
+        &body_str,
+        &read_result.output,
+        200,
+        false,
+        duration_ms,
+        &req_meta,
+        &resp_meta,
+        None,
+        None,
+        None,
+        0,
+        tokens_saved,
+        meta_json.as_deref(),
+    );
 
     Response::builder()
         .status(StatusCode::OK)
@@ -348,7 +361,7 @@ async fn ctx_read_handler(State(cache): State<SharedCache>, body: Bytes) -> impl
 }
 
 async fn ctx_smart_read_handler(
-    State(cache): State<SharedCache>,
+    State(state): State<CtxReadState>,
     body: Bytes,
 ) -> impl IntoResponse {
     let body_str = String::from_utf8_lossy(&body).to_string();
@@ -380,7 +393,7 @@ async fn ctx_smart_read_handler(
         .unwrap_or("")
         .to_string();
 
-    let cache_clone = cache.clone();
+    let cache_clone = state.cache.clone();
     let result = tokio::task::spawn_blocking(move || {
         let mut cache = cache_clone.lock().unwrap();
         let start = std::time::Instant::now();
@@ -406,53 +419,51 @@ async fn ctx_smart_read_handler(
     let tokens_saved = original_tokens.saturating_sub(sent_tokens) as i32;
 
     // Log to database
-    if let Ok(db) = Database::new(&get_db_path()) {
-        let req_meta = crate::requestresponsemetadata::RequestMetadata {
-            model: None,
-            has_system_prompt: false,
-            has_tools: false,
-            user_message_count: 0,
-            assistant_message_count: 0,
-        };
-        let resp_meta = ResponseMetadata {
-            input_tokens: original_tokens as i32,
-            output_tokens: sent_tokens as i32,
-            cache_read_tokens: 0,
-            cache_creation_tokens: 0,
-            stop_reason: Some("ok".to_string()),
-            has_thinking: false,
-            tool_calls: vec![],
-        };
-        let meta_json = if tokens_saved > 0 {
-            Some(format!("{{\"ctx_smart_read\":{tokens_saved}}}"))
-        } else {
-            None
-        };
-        let log_backend = if backend_name.is_empty() {
-            "ctx_smart_read"
-        } else {
-            &backend_name
-        };
-        let _ = db.log_request(
-            log_backend,
-            "POST",
-            "/ctx/smart_read",
-            "/ctx/smart_read",
-            &body_str,
-            &read_result.output,
-            200,
-            false,
-            duration_ms,
-            &req_meta,
-            &resp_meta,
-            None,
-            None,
-            None,
-            0,
-            tokens_saved,
-            meta_json.as_deref(),
-        );
-    }
+    let req_meta = crate::requestresponsemetadata::RequestMetadata {
+        model: None,
+        has_system_prompt: false,
+        has_tools: false,
+        user_message_count: 0,
+        assistant_message_count: 0,
+    };
+    let resp_meta = ResponseMetadata {
+        input_tokens: original_tokens as i32,
+        output_tokens: sent_tokens as i32,
+        cache_read_tokens: 0,
+        cache_creation_tokens: 0,
+        stop_reason: Some("ok".to_string()),
+        has_thinking: false,
+        tool_calls: vec![],
+    };
+    let meta_json = if tokens_saved > 0 {
+        Some(format!("{{\"ctx_smart_read\":{tokens_saved}}}"))
+    } else {
+        None
+    };
+    let log_backend = if backend_name.is_empty() {
+        "ctx_smart_read"
+    } else {
+        &backend_name
+    };
+    let _ = state.db.log_request(
+        log_backend,
+        "POST",
+        "/ctx/smart_read",
+        "/ctx/smart_read",
+        &body_str,
+        &read_result.output,
+        200,
+        false,
+        duration_ms,
+        &req_meta,
+        &resp_meta,
+        None,
+        None,
+        None,
+        0,
+        tokens_saved,
+        meta_json.as_deref(),
+    );
 
     Response::builder()
         .status(StatusCode::OK)
@@ -467,7 +478,7 @@ async fn ctx_smart_read_handler(
 /// Returns:
 ///   200 + stub body  — file cached and unchanged, hook should redirect Read
 ///   204 No Content   — allow the native Read through (first read or changed)
-async fn ctx_pre_read_handler(State(cache): State<SharedCache>, body: Bytes) -> impl IntoResponse {
+async fn ctx_pre_read_handler(State(state): State<CtxReadState>, body: Bytes) -> impl IntoResponse {
     let parsed: serde_json::Value = match serde_json::from_str(&String::from_utf8_lossy(&body)) {
         Ok(v) => v,
         Err(_) => {
@@ -499,7 +510,7 @@ async fn ctx_pre_read_handler(State(cache): State<SharedCache>, body: Bytes) -> 
         }
     };
 
-    let mut cache = cache.lock().unwrap();
+    let mut cache = state.cache.lock().unwrap();
 
     // Check if file is cached
     if let Some(cached) = cache.get(&path) {
@@ -523,53 +534,51 @@ async fn ctx_pre_read_handler(State(cache): State<SharedCache>, body: Bytes) -> 
             // Log savings
             let tokens_saved = original_tokens.saturating_sub(sent) as i32;
             let backend_name = parsed.get("backend").and_then(|v| v.as_str()).unwrap_or("");
-            if let Ok(db) = Database::new(&get_db_path()) {
-                let req_meta = crate::requestresponsemetadata::RequestMetadata {
-                    model: None,
-                    has_system_prompt: false,
-                    has_tools: false,
-                    user_message_count: 0,
-                    assistant_message_count: 0,
-                };
-                let resp_meta = ResponseMetadata {
-                    input_tokens: original_tokens as i32,
-                    output_tokens: sent as i32,
-                    cache_read_tokens: 0,
-                    cache_creation_tokens: 0,
-                    stop_reason: Some("cache_hit".to_string()),
-                    has_thinking: false,
-                    tool_calls: vec![],
-                };
-                let meta_json = if tokens_saved > 0 {
-                    Some(format!("{{\"ctx_read\":{tokens_saved}}}"))
-                } else {
-                    None
-                };
-                let log_backend = if backend_name.is_empty() {
-                    "ctx_read"
-                } else {
-                    backend_name
-                };
-                let _ = db.log_request(
-                    log_backend,
-                    "POST",
-                    "/ctx/pre_read",
-                    "/ctx/pre_read",
-                    &String::from_utf8_lossy(&body),
-                    &stub,
-                    200,
-                    false,
-                    0,
-                    &req_meta,
-                    &resp_meta,
-                    None,
-                    None,
-                    None,
-                    0,
-                    tokens_saved,
-                    meta_json.as_deref(),
-                );
-            }
+            let req_meta = crate::requestresponsemetadata::RequestMetadata {
+                model: None,
+                has_system_prompt: false,
+                has_tools: false,
+                user_message_count: 0,
+                assistant_message_count: 0,
+            };
+            let resp_meta = ResponseMetadata {
+                input_tokens: original_tokens as i32,
+                output_tokens: sent as i32,
+                cache_read_tokens: 0,
+                cache_creation_tokens: 0,
+                stop_reason: Some("cache_hit".to_string()),
+                has_thinking: false,
+                tool_calls: vec![],
+            };
+            let meta_json = if tokens_saved > 0 {
+                Some(format!("{{\"ctx_read\":{tokens_saved}}}"))
+            } else {
+                None
+            };
+            let log_backend = if backend_name.is_empty() {
+                "ctx_read"
+            } else {
+                backend_name
+            };
+            let _ = state.db.log_request(
+                log_backend,
+                "POST",
+                "/ctx/pre_read",
+                "/ctx/pre_read",
+                &String::from_utf8_lossy(&body),
+                &stub,
+                200,
+                false,
+                0,
+                &req_meta,
+                &resp_meta,
+                None,
+                None,
+                None,
+                0,
+                tokens_saved,
+                meta_json.as_deref(),
+            );
 
             return Response::builder()
                 .status(StatusCode::OK)
@@ -590,7 +599,7 @@ async fn ctx_pre_read_handler(State(cache): State<SharedCache>, body: Bytes) -> 
 }
 
 async fn ctx_cache_invalidate_handler(
-    State(cache): State<SharedCache>,
+    State(state): State<CtxReadState>,
     body: Bytes,
 ) -> impl IntoResponse {
     let parsed: serde_json::Value = match serde_json::from_str(&String::from_utf8_lossy(&body)) {
@@ -604,7 +613,7 @@ async fn ctx_cache_invalidate_handler(
     };
 
     let path = parsed.get("path").and_then(|v| v.as_str()).unwrap_or("");
-    let mut cache = cache.lock().unwrap();
+    let mut cache = state.cache.lock().unwrap();
 
     if path.is_empty() {
         let count = cache.clear();
@@ -702,13 +711,18 @@ pub async fn start_server(app_handle: AppHandle) {
             create_codex_hooks_router(db.clone(), codex_hooks_settings, dep_http_client.clone());
 
         // Build shell compression router
-        let cli_compression_router = Router::new().route("/", post(cli_compression_handler));
+        let cli_compression_router = Router::new()
+            .route("/", post(cli_compression_handler))
+            .with_state(CliCompressionState { db: db.clone() });
         let ctx_read_router = Router::new()
             .route("/read", post(ctx_read_handler))
             .route("/smart_read", post(ctx_smart_read_handler))
             .route("/pre_read", post(ctx_pre_read_handler))
             .route("/invalidate", post(ctx_cache_invalidate_handler))
-            .with_state(session_cache);
+            .with_state(CtxReadState {
+                db: db.clone(),
+                cache: session_cache,
+            });
 
         // Build app
         let app = Router::new()

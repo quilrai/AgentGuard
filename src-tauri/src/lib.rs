@@ -209,6 +209,7 @@ pub fn run() {
             commands::get_backends,
             commands::get_models,
             commands::get_message_logs,
+            commands::get_message_log_detail,
             commands::export_message_logs,
             commands::get_port_setting,
             commands::get_server_status,
@@ -261,6 +262,8 @@ pub fn run() {
             commands::get_import_graph,
             // Garden disk browsing
             commands::browse_directory,
+            // Agent behaviour
+            commands::get_agent_behaviour,
         ]);
 
     if let Err(err) = app.run(tauri::generate_context!()) {

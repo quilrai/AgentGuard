@@ -4,12 +4,68 @@ use crate::builtin_patterns::get_builtin_patterns;
 use crate::dlp::DlpDetection;
 use crate::dlp_pattern_config::{get_db_path, DEFAULT_PORT};
 use crate::requestresponsemetadata::{RequestMetadata, ResponseMetadata};
+use base64::Engine;
 use rusqlite::Connection;
 use std::sync::{Arc, Mutex, Once};
 
 const DB_VERSION: &str = "2026-april-12";
+const COMPRESSED_TEXT_PREFIX: &str = "zstd64:";
+const COMPRESSED_TEXT_MIN_BYTES: usize = 512;
+const COMPRESSED_TEXT_LEVEL: i32 = 3;
 
 static VERSION_CHECK: Once = Once::new();
+
+fn should_compress_log_bodies(endpoint_name: &str) -> bool {
+    matches!(
+        endpoint_name,
+        "/cli_compression" | "/ctx/read" | "/ctx/smart_read" | "/ctx/pre_read"
+    )
+}
+
+fn maybe_compress_text(value: &str) -> String {
+    if value.len() < COMPRESSED_TEXT_MIN_BYTES || value.starts_with(COMPRESSED_TEXT_PREFIX) {
+        return value.to_string();
+    }
+
+    let compressed = match zstd::stream::encode_all(value.as_bytes(), COMPRESSED_TEXT_LEVEL) {
+        Ok(bytes) => bytes,
+        Err(_) => return value.to_string(),
+    };
+
+    let encoded = base64::engine::general_purpose::STANDARD.encode(compressed);
+    let candidate = format!("{COMPRESSED_TEXT_PREFIX}{encoded}");
+
+    if candidate.len() < value.len() {
+        candidate
+    } else {
+        value.to_string()
+    }
+}
+
+fn maybe_compress_optional_text(value: Option<&str>) -> Option<String> {
+    value.map(maybe_compress_text)
+}
+
+pub fn decode_stored_text(value: Option<String>) -> Option<String> {
+    value.map(|value| decode_stored_text_value(value))
+}
+
+fn decode_stored_text_value(value: String) -> String {
+    let Some(encoded) = value.strip_prefix(COMPRESSED_TEXT_PREFIX) else {
+        return value;
+    };
+
+    let compressed = match base64::engine::general_purpose::STANDARD.decode(encoded) {
+        Ok(bytes) => bytes,
+        Err(_) => return value,
+    };
+    let decoded = match zstd::stream::decode_all(compressed.as_slice()) {
+        Ok(bytes) => bytes,
+        Err(_) => return value,
+    };
+
+    String::from_utf8(decoded).unwrap_or(value)
+}
 
 /// Ensure the DB version matches. If missing or mismatched, delete all DB files
 /// so we start clean.
@@ -341,6 +397,18 @@ impl Database {
     ) -> Result<i64, rusqlite::Error> {
         let conn = self.conn.lock().unwrap();
         let timestamp = chrono::Utc::now().to_rfc3339();
+        let request_body = if should_compress_log_bodies(endpoint_name) {
+            maybe_compress_text(request_body)
+        } else {
+            request_body.to_string()
+        };
+        let response_body = if should_compress_log_bodies(endpoint_name) {
+            maybe_compress_text(response_body)
+        } else {
+            response_body.to_string()
+        };
+        let request_headers = maybe_compress_optional_text(request_headers);
+        let response_headers = maybe_compress_optional_text(response_headers);
 
         conn.execute(
             "INSERT INTO requests (
@@ -486,6 +554,8 @@ impl Database {
     ) -> Result<i64, rusqlite::Error> {
         let conn = self.conn.lock().unwrap();
         let timestamp = chrono::Utc::now().to_rfc3339();
+        let request_headers = maybe_compress_optional_text(request_headers);
+        let response_headers = maybe_compress_optional_text(response_headers);
 
         println!(
             "[DB] log_agent_hook_request - backend: {}, correlation_id: {}, endpoint: {}",
@@ -1029,4 +1099,39 @@ pub fn save_port_to_db(port: u16) -> Result<(), String> {
     .map_err(|e| e.to_string())?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        decode_stored_text, maybe_compress_text, should_compress_log_bodies, COMPRESSED_TEXT_PREFIX,
+    };
+
+    #[test]
+    fn large_text_round_trips_through_storage_codec() {
+        let original = "x-demo-header: abcdefghijklmnopqrstuvwxyz0123456789\n".repeat(64);
+        let encoded = maybe_compress_text(&original);
+
+        assert!(encoded.starts_with(COMPRESSED_TEXT_PREFIX));
+        assert_eq!(decode_stored_text(Some(encoded)), Some(original));
+    }
+
+    #[test]
+    fn small_text_stays_plain() {
+        let original = "content-type: application/json";
+        assert_eq!(maybe_compress_text(original), original);
+        assert_eq!(
+            decode_stored_text(Some(original.to_string())),
+            Some(original.to_string())
+        );
+    }
+
+    #[test]
+    fn only_token_saving_endpoints_compress_bodies() {
+        assert!(should_compress_log_bodies("/cli_compression"));
+        assert!(should_compress_log_bodies("/ctx/read"));
+        assert!(should_compress_log_bodies("/ctx/smart_read"));
+        assert!(should_compress_log_bodies("/ctx/pre_read"));
+        assert!(!should_compress_log_bodies("/v1/messages"));
+    }
 }

@@ -1,8 +1,8 @@
 // Stats and Monitoring Tauri Commands
 
 use crate::database::{
-    get_port_from_db, open_connection, save_port_to_db, DLP_ACTION_BLOCKED, DLP_ACTION_PASSED,
-    DLP_ACTION_REDACTED,
+    decode_stored_text, get_port_from_db, open_connection, save_port_to_db, DLP_ACTION_BLOCKED,
+    DLP_ACTION_PASSED, DLP_ACTION_REDACTED,
 };
 use crate::{ServerStatus, RESTART_SENDER, SERVER_PORT, SERVER_STATUS};
 use serde::Serialize;
@@ -172,7 +172,7 @@ pub struct RecentRequest {
 }
 
 #[derive(Serialize)]
-pub struct MessageLog {
+pub struct MessageLogSummary {
     id: i64,
     timestamp: String,
     backend: String,
@@ -180,18 +180,25 @@ pub struct MessageLog {
     input_tokens: i64,
     output_tokens: i64,
     latency_ms: i64,
+    dlp_action: i64, // DLP_ACTION_PASSED=0, DLP_ACTION_REDACTED=1, DLP_ACTION_BLOCKED=2
+    tokens_saved: i64,
+    token_saving_meta: Option<String>,
+    tool_name: Option<String>,
+    guardian_reason: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct MessageLogDetail {
+    id: i64,
     request_body: Option<String>,
     response_body: Option<String>,
     request_headers: Option<String>,
     response_headers: Option<String>,
-    dlp_action: i64, // DLP_ACTION_PASSED=0, DLP_ACTION_REDACTED=1, DLP_ACTION_BLOCKED=2
-    tokens_saved: i64,
-    token_saving_meta: Option<String>,
 }
 
 #[derive(Serialize)]
 pub struct PaginatedLogs {
-    logs: Vec<MessageLog>,
+    logs: Vec<MessageLogSummary>,
     total: i64,
 }
 
@@ -533,9 +540,30 @@ pub fn get_message_logs(
     let mut stmt = conn
         .prepare(&format!(
             "SELECT id, timestamp, backend, COALESCE(model, 'unknown'),
-                    input_tokens, output_tokens, latency_ms, request_body, response_body,
-                    request_headers, response_headers, COALESCE(dlp_action, 0),
-                    COALESCE(tokens_saved, 0), token_saving_meta
+                    input_tokens, output_tokens, latency_ms,
+                    COALESCE(dlp_action, 0), COALESCE(tokens_saved, 0), token_saving_meta,
+                    COALESCE(
+                        CASE
+                            WHEN json_valid(extra_metadata) THEN json_extract(extra_metadata, '$.tool_name')
+                        END,
+                        CASE
+                            WHEN json_valid(request_body) THEN json_extract(request_body, '$.tool_name')
+                        END,
+                        CASE
+                            WHEN json_valid(request_body) THEN json_extract(request_body, '$.toolName')
+                        END
+                    ) AS tool_name,
+                    CASE
+                        WHEN json_valid(response_body) THEN COALESCE(
+                            json_extract(response_body, '$.hookSpecificOutput.permissionDecisionReason'),
+                            json_extract(response_body, '$.hook_specific_output.permission_decision_reason'),
+                            json_extract(response_body, '$.reason'),
+                            CASE
+                                WHEN json_extract(response_body, '$.decision') IS NOT NULL
+                                THEN 'Decision: ' || json_extract(response_body, '$.decision')
+                            END
+                        )
+                    END AS guardian_reason
              FROM requests
              WHERE timestamp >= ?1{}
              ORDER BY id DESC
@@ -544,9 +572,9 @@ pub fn get_message_logs(
         ))
         .map_err(|e| e.to_string())?;
 
-    let logs: Vec<MessageLog> = stmt
+    let logs: Vec<MessageLogSummary> = stmt
         .query_map(rusqlite::params![&cutoff_ts, per_page, offset], |row| {
-            Ok(MessageLog {
+            Ok(MessageLogSummary {
                 id: row.get(0)?,
                 timestamp: row.get(1)?,
                 backend: row.get(2)?,
@@ -554,13 +582,11 @@ pub fn get_message_logs(
                 input_tokens: row.get(4)?,
                 output_tokens: row.get(5)?,
                 latency_ms: row.get(6)?,
-                request_body: row.get(7)?,
-                response_body: row.get(8)?,
-                request_headers: row.get(9)?,
-                response_headers: row.get(10)?,
-                dlp_action: row.get(11)?,
-                tokens_saved: row.get(12)?,
-                token_saving_meta: row.get(13)?,
+                dlp_action: row.get(7)?,
+                tokens_saved: row.get(8)?,
+                token_saving_meta: row.get(9)?,
+                tool_name: row.get(10)?,
+                guardian_reason: row.get(11)?,
             })
         })
         .map_err(|e| e.to_string())?
@@ -568,6 +594,28 @@ pub fn get_message_logs(
         .collect();
 
     Ok(PaginatedLogs { logs, total })
+}
+
+#[tauri::command]
+pub fn get_message_log_detail(request_id: i64) -> Result<MessageLogDetail, String> {
+    let conn = open_connection().map_err(|e| e.to_string())?;
+
+    conn.query_row(
+        "SELECT id, request_body, response_body, request_headers, response_headers
+         FROM requests
+         WHERE id = ?1",
+        [request_id],
+        |row| {
+            Ok(MessageLogDetail {
+                id: row.get(0)?,
+                request_body: decode_stored_text(row.get(1)?),
+                response_body: decode_stored_text(row.get(2)?),
+                request_headers: decode_stored_text(row.get(3)?),
+                response_headers: decode_stored_text(row.get(4)?),
+            })
+        },
+    )
+    .map_err(|e| e.to_string())
 }
 
 #[derive(Serialize)]
@@ -661,8 +709,8 @@ pub fn export_message_logs(
                 input_tokens: row.get(4)?,
                 output_tokens: row.get(5)?,
                 latency_ms: row.get(6)?,
-                request_body: row.get(7)?,
-                response_body: row.get(8)?,
+                request_body: decode_stored_text(row.get(7)?),
+                response_body: decode_stored_text(row.get(8)?),
                 dlp_action: row.get(9)?,
                 tokens_saved: row.get(10)?,
                 token_saving_meta: row.get(11)?,
@@ -1014,7 +1062,10 @@ pub struct TokenSavingsStats {
 }
 
 #[tauri::command]
-pub fn get_token_savings_stats(time_range: String, backend: String) -> Result<TokenSavingsStats, String> {
+pub fn get_token_savings_stats(
+    time_range: String,
+    backend: String,
+) -> Result<TokenSavingsStats, String> {
     use std::collections::HashMap;
 
     let conn = open_connection().map_err(|e| e.to_string())?;
@@ -1064,7 +1115,10 @@ pub fn get_token_savings_stats(time_range: String, backend: String) -> Result<To
 
     let mut by_method: Vec<TokenSavingsByMethod> = method_totals
         .into_iter()
-        .map(|(method, tokens_saved)| TokenSavingsByMethod { method, tokens_saved })
+        .map(|(method, tokens_saved)| TokenSavingsByMethod {
+            method,
+            tokens_saved,
+        })
         .collect();
     by_method.sort_by(|a, b| b.tokens_saved.cmp(&a.tokens_saved));
 
@@ -2053,4 +2107,536 @@ pub fn browse_directory(cwd: String, dir: String) -> Result<BrowseDirResponse, S
     files.sort_by(|a, b| b.lines.cmp(&a.lines));
 
     Ok(BrowseDirResponse { dir, files })
+}
+
+// ========================================================================
+// Agent Behaviour — session-level behavioural analysis
+// ========================================================================
+
+/// A single turn (prompt + its tool calls) within a session.
+#[derive(Serialize, Clone)]
+pub struct BehaviourTurn {
+    pub request_id: i64,
+    pub timestamp: String,
+    pub prompt: String,
+    pub model: String,
+    pub input_tokens: i64,
+    pub output_tokens: i64,
+    pub cache_read_tokens: i64,
+    pub latency_ms: i64,
+    pub dlp_action: i64,
+    /// Tools used in this turn, grouped by name with counts.
+    pub tool_counts: Vec<ToolCount>,
+    /// Files read in this turn (from Read tool calls).
+    pub files_read: Vec<String>,
+    /// Files written/edited in this turn (Write/Edit tool calls).
+    pub files_written: Vec<String>,
+    /// Bash commands run in this turn.
+    pub bash_commands: Vec<String>,
+}
+
+#[derive(Serialize, Clone)]
+pub struct ToolCount {
+    pub tool_name: String,
+    pub count: i64,
+}
+
+/// A single session's behavioural summary.
+#[derive(Serialize, Clone)]
+pub struct BehaviourSession {
+    pub session_id: String,
+    pub backend: String,
+    pub cwd: String,
+    pub display_name: String,
+    pub first_seen: String,
+    pub last_seen: String,
+    pub duration_ms: i64,
+    pub turn_count: i64,
+    pub total_input_tokens: i64,
+    pub total_output_tokens: i64,
+    pub total_cache_read: i64,
+    pub total_files_read: i64,
+    pub total_files_written: i64,
+    pub total_tool_calls: i64,
+    pub unique_files_read: i64,
+    pub unique_files_written: i64,
+    pub read_before_write_pct: f64,
+    pub exploration_ratio: f64,
+    pub dlp_blocks: i64,
+    pub turns: Vec<BehaviourTurn>,
+}
+
+/// Overview data point for the line chart (per-turn ratios).
+#[derive(Serialize, Clone)]
+pub struct BehaviourOverviewPoint {
+    pub timestamp: String,
+    pub files_read: i64,
+    pub files_written: i64,
+    pub input_tokens: i64,
+    pub output_tokens: i64,
+}
+
+#[derive(Serialize)]
+pub struct BehaviourData {
+    pub sessions: Vec<BehaviourSession>,
+    pub overview: Vec<BehaviourOverviewPoint>,
+    pub total_sessions: i64,
+    pub avg_turns_per_session: f64,
+    pub avg_read_before_write: f64,
+    pub avg_exploration_ratio: f64,
+    pub tool_distribution: Vec<ToolCount>,
+}
+
+#[tauri::command]
+pub fn get_agent_behaviour(time_range: String, backend: String) -> Result<BehaviourData, String> {
+    use std::collections::{HashMap, HashSet};
+
+    let conn = open_connection().map_err(|e| e.to_string())?;
+    let hours = time_range_to_hours(&time_range);
+    let cutoff_ts = get_cutoff_timestamp(hours);
+
+    let backend_filter = if backend == "all" {
+        String::new()
+    } else {
+        format!(" AND backend = '{}'", backend.replace('\'', "''"))
+    };
+
+    // ---- Step 1: Fetch all prompt rows (endpoint_name contains 'Prompt') ----
+    let mut prompt_stmt = conn
+        .prepare(&format!(
+            "SELECT id, timestamp, backend, COALESCE(model, 'unknown'),
+                    input_tokens, output_tokens, cache_read_tokens,
+                    latency_ms, COALESCE(dlp_action, 0),
+                    COALESCE(request_body, ''), extra_metadata
+             FROM requests
+             WHERE timestamp >= ?1
+               AND extra_metadata IS NOT NULL
+               AND (endpoint_name LIKE '%Prompt%' OR endpoint_name LIKE '%prompt%')
+               {}
+             ORDER BY timestamp ASC",
+            backend_filter
+        ))
+        .map_err(|e| e.to_string())?;
+
+    struct PromptRow {
+        id: i64,
+        timestamp: String,
+        backend: String,
+        model: String,
+        input_tokens: i64,
+        output_tokens: i64,
+        cache_read_tokens: i64,
+        latency_ms: i64,
+        dlp_action: i64,
+        request_body: String,
+        session_id: String,
+        cwd: String,
+    }
+
+    let prompt_rows: Vec<PromptRow> = prompt_stmt
+        .query_map([&cutoff_ts], |row| {
+            let extra: String = row.get::<_, Option<String>>(10)?.unwrap_or_default();
+            let meta: serde_json::Value =
+                serde_json::from_str(&extra).unwrap_or(serde_json::Value::Null);
+            let session_id = meta
+                .get("session_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let cwd = meta
+                .get("cwd")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            Ok(PromptRow {
+                id: row.get(0)?,
+                timestamp: row.get(1)?,
+                backend: row.get(2)?,
+                model: row.get(3)?,
+                input_tokens: row.get(4)?,
+                output_tokens: row.get(5)?,
+                cache_read_tokens: row.get(6)?,
+                latency_ms: row.get(7)?,
+                dlp_action: row.get(8)?,
+                request_body: row.get(9)?,
+                session_id,
+                cwd,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .filter_map(|r| r.ok())
+        .filter(|r| !r.session_id.is_empty())
+        .collect();
+
+    // ---- Step 2: Fetch all tool rows (endpoint_name contains 'Tool') ----
+    let mut tool_stmt = conn
+        .prepare(&format!(
+            "SELECT id, timestamp, extra_metadata, COALESCE(request_body, '')
+             FROM requests
+             WHERE timestamp >= ?1
+               AND extra_metadata IS NOT NULL
+               AND (endpoint_name LIKE '%Tool%' OR endpoint_name LIKE '%tool%')
+               {}
+             ORDER BY timestamp ASC",
+            backend_filter
+        ))
+        .map_err(|e| e.to_string())?;
+
+    struct ToolRow {
+        timestamp: String,
+        session_id: String,
+        tool_name: String,
+        file_path: String,
+        request_body: String,
+    }
+
+    let tool_rows: Vec<ToolRow> = tool_stmt
+        .query_map([&cutoff_ts], |row| {
+            let extra: String = row.get::<_, Option<String>>(2)?.unwrap_or_default();
+            let meta: serde_json::Value =
+                serde_json::from_str(&extra).unwrap_or(serde_json::Value::Null);
+            let session_id = meta
+                .get("session_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let tool_name = meta
+                .get("tool_name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let file_path = meta
+                .get("file_path")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            Ok(ToolRow {
+                timestamp: row.get(1)?,
+                session_id,
+                tool_name,
+                file_path,
+                request_body: row.get(3)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .filter_map(|r| r.ok())
+        .filter(|r| !r.session_id.is_empty())
+        .collect();
+
+    // ---- Step 3: Group tool rows by session_id ----
+    let mut tools_by_session: HashMap<String, Vec<&ToolRow>> = HashMap::new();
+    for tr in &tool_rows {
+        tools_by_session
+            .entry(tr.session_id.clone())
+            .or_default()
+            .push(tr);
+    }
+
+    // ---- Step 4: Group prompts by session_id ----
+    let mut prompts_by_session: HashMap<String, Vec<&PromptRow>> = HashMap::new();
+    for pr in &prompt_rows {
+        prompts_by_session
+            .entry(pr.session_id.clone())
+            .or_default()
+            .push(pr);
+    }
+
+    // ---- Step 5: Build sessions ----
+    let mut all_overview: Vec<BehaviourOverviewPoint> = Vec::new();
+    let mut global_tool_dist: HashMap<String, i64> = HashMap::new();
+    let mut sessions: Vec<BehaviourSession> = Vec::new();
+
+    let mut session_ids: Vec<String> = prompts_by_session.keys().cloned().collect();
+    session_ids.sort();
+
+    for sid in &session_ids {
+        let prompts = match prompts_by_session.get(sid) {
+            Some(p) => p,
+            None => continue,
+        };
+        let session_tools = tools_by_session.get(sid);
+
+        let backend = prompts[0].backend.clone();
+        let cwd = prompts
+            .iter()
+            .find(|p| !p.cwd.is_empty())
+            .map(|p| p.cwd.clone())
+            .unwrap_or_default();
+        let display_name = cwd.rsplit('/').next().unwrap_or(&cwd).to_string();
+
+        let first_seen = prompts[0].timestamp.clone();
+        let last_seen = prompts.last().unwrap().timestamp.clone();
+        let duration_ms = chrono::DateTime::parse_from_rfc3339(&last_seen)
+            .ok()
+            .zip(chrono::DateTime::parse_from_rfc3339(&first_seen).ok())
+            .map(|(end, start)| (end - start).num_milliseconds().max(0))
+            .unwrap_or(0);
+
+        let mut total_input = 0i64;
+        let mut total_output = 0i64;
+        let mut total_cache_read = 0i64;
+        let mut total_files_read = 0i64;
+        let mut total_files_written = 0i64;
+        let mut total_tool_calls = 0i64;
+        let mut dlp_blocks = 0i64;
+        let mut all_files_read: HashSet<String> = HashSet::new();
+        let mut all_files_written: HashSet<String> = HashSet::new();
+        let mut session_tool_dist: HashMap<String, i64> = HashMap::new();
+
+        // For read-before-write: track which files have been read before being written
+        let mut files_read_so_far: HashSet<String> = HashSet::new();
+        let mut writes_with_prior_read = 0i64;
+        let mut total_writes = 0i64;
+
+        let mut turns: Vec<BehaviourTurn> = Vec::new();
+
+        // For each prompt, find tool rows that occurred between this prompt and the next
+        for (i, prompt) in prompts.iter().enumerate() {
+            let prompt_ts = &prompt.timestamp;
+            let next_ts = if i + 1 < prompts.len() {
+                Some(&prompts[i + 1].timestamp)
+            } else {
+                None
+            };
+
+            // Extract prompt text from request_body
+            let prompt_text = extract_prompt_text(&prompt.request_body);
+
+            // Find tool calls for this turn (between this prompt timestamp and next)
+            let mut turn_tool_counts: HashMap<String, i64> = HashMap::new();
+            let mut turn_files_read: Vec<String> = Vec::new();
+            let mut turn_files_written: Vec<String> = Vec::new();
+            let mut turn_bash_cmds: Vec<String> = Vec::new();
+
+            if let Some(tools) = session_tools {
+                for tool in tools.iter() {
+                    let tool_after = tool.timestamp >= *prompt_ts;
+                    let tool_before = next_ts.map(|nt| tool.timestamp < *nt).unwrap_or(true);
+
+                    if tool_after && tool_before && !tool.tool_name.is_empty() {
+                        *turn_tool_counts.entry(tool.tool_name.clone()).or_insert(0) += 1;
+                        *session_tool_dist.entry(tool.tool_name.clone()).or_insert(0) += 1;
+                        *global_tool_dist.entry(tool.tool_name.clone()).or_insert(0) += 1;
+                        total_tool_calls += 1;
+
+                        // Categorize by tool type
+                        let tn = tool.tool_name.to_lowercase();
+                        if !tool.file_path.is_empty() {
+                            if tn == "read" || tn == "glob" || tn == "grep" {
+                                turn_files_read.push(tool.file_path.clone());
+                                all_files_read.insert(tool.file_path.clone());
+                                files_read_so_far.insert(tool.file_path.clone());
+                            } else if tn == "write" || tn == "edit" || tn == "notebookedit" {
+                                turn_files_written.push(tool.file_path.clone());
+                                all_files_written.insert(tool.file_path.clone());
+                                total_writes += 1;
+                                if files_read_so_far.contains(&tool.file_path) {
+                                    writes_with_prior_read += 1;
+                                }
+                            }
+                        }
+                        if tn == "bash" {
+                            // Extract command from request_body
+                            let cmd = extract_bash_command(&tool.request_body);
+                            if !cmd.is_empty() {
+                                turn_bash_cmds.push(cmd);
+                            }
+                        }
+                    }
+                }
+            }
+
+            let n_read = turn_files_read.len() as i64;
+            let n_written = turn_files_written.len() as i64;
+            total_files_read += n_read;
+            total_files_written += n_written;
+            total_input += prompt.input_tokens;
+            total_output += prompt.output_tokens;
+            total_cache_read += prompt.cache_read_tokens;
+            if prompt.dlp_action >= 2 {
+                dlp_blocks += 1;
+            }
+
+            let tool_counts: Vec<ToolCount> = {
+                let mut v: Vec<ToolCount> = turn_tool_counts
+                    .into_iter()
+                    .map(|(tool_name, count)| ToolCount { tool_name, count })
+                    .collect();
+                v.sort_by(|a, b| b.count.cmp(&a.count));
+                v
+            };
+
+            let turn_total_tools: i64 = tool_counts.iter().map(|t| t.count).sum();
+
+            // Overview point for line chart
+            all_overview.push(BehaviourOverviewPoint {
+                timestamp: prompt.timestamp.clone(),
+                files_read: n_read,
+                files_written: n_written,
+                input_tokens: prompt.input_tokens,
+                output_tokens: prompt.output_tokens,
+            });
+
+            // Deduplicate file lists
+            turn_files_read.sort();
+            turn_files_read.dedup();
+            turn_files_written.sort();
+            turn_files_written.dedup();
+
+            turns.push(BehaviourTurn {
+                request_id: prompt.id,
+                timestamp: prompt.timestamp.clone(),
+                prompt: prompt_text,
+                model: prompt.model.clone(),
+                input_tokens: prompt.input_tokens,
+                output_tokens: prompt.output_tokens,
+                cache_read_tokens: prompt.cache_read_tokens,
+                latency_ms: prompt.latency_ms,
+                dlp_action: prompt.dlp_action,
+                tool_counts,
+                files_read: turn_files_read,
+                files_written: turn_files_written,
+                bash_commands: turn_bash_cmds,
+            });
+        }
+
+        let read_before_write_pct = if total_writes > 0 {
+            (writes_with_prior_read as f64 / total_writes as f64) * 100.0
+        } else {
+            100.0
+        };
+
+        // Exploration ratio: (Read+Grep+Glob) / (Write+Edit+Bash)
+        let exploration_count: i64 = session_tool_dist
+            .iter()
+            .filter(|(k, _)| {
+                let l = k.to_lowercase();
+                l == "read" || l == "grep" || l == "glob"
+            })
+            .map(|(_, v)| *v)
+            .sum();
+        let modification_count: i64 = session_tool_dist
+            .iter()
+            .filter(|(k, _)| {
+                let l = k.to_lowercase();
+                l == "write" || l == "edit" || l == "bash" || l == "notebookedit"
+            })
+            .map(|(_, v)| *v)
+            .sum();
+        let exploration_ratio = if modification_count > 0 {
+            exploration_count as f64 / modification_count as f64
+        } else if exploration_count > 0 {
+            exploration_count as f64
+        } else {
+            0.0
+        };
+
+        sessions.push(BehaviourSession {
+            session_id: sid.clone(),
+            backend,
+            cwd,
+            display_name,
+            first_seen,
+            last_seen,
+            duration_ms,
+            turn_count: turns.len() as i64,
+            total_input_tokens: total_input,
+            total_output_tokens: total_output,
+            total_cache_read: total_cache_read,
+            total_files_read,
+            total_files_written,
+            total_tool_calls,
+            unique_files_read: all_files_read.len() as i64,
+            unique_files_written: all_files_written.len() as i64,
+            read_before_write_pct,
+            exploration_ratio,
+            dlp_blocks,
+            turns,
+        });
+    }
+
+    // Sort sessions by most recent first
+    sessions.sort_by(|a, b| b.last_seen.cmp(&a.last_seen));
+
+    // Sort overview by timestamp
+    all_overview.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
+
+    // Compute averages
+    let total_sessions = sessions.len() as i64;
+    let avg_turns = if total_sessions > 0 {
+        sessions.iter().map(|s| s.turn_count).sum::<i64>() as f64 / total_sessions as f64
+    } else {
+        0.0
+    };
+    let avg_rbw = if total_sessions > 0 {
+        sessions
+            .iter()
+            .map(|s| s.read_before_write_pct)
+            .sum::<f64>()
+            / total_sessions as f64
+    } else {
+        0.0
+    };
+    let avg_exp = if total_sessions > 0 {
+        sessions.iter().map(|s| s.exploration_ratio).sum::<f64>() / total_sessions as f64
+    } else {
+        0.0
+    };
+
+    let mut tool_distribution: Vec<ToolCount> = global_tool_dist
+        .into_iter()
+        .map(|(tool_name, count)| ToolCount { tool_name, count })
+        .collect();
+    tool_distribution.sort_by(|a, b| b.count.cmp(&a.count));
+
+    Ok(BehaviourData {
+        sessions,
+        overview: all_overview,
+        total_sessions,
+        avg_turns_per_session: avg_turns,
+        avg_read_before_write: avg_rbw,
+        avg_exploration_ratio: avg_exp,
+        tool_distribution,
+    })
+}
+
+/// Extract prompt text from request_body JSON.
+fn extract_prompt_text(body: &str) -> String {
+    if body.is_empty() {
+        return String::new();
+    }
+    let v: serde_json::Value = match serde_json::from_str(body) {
+        Ok(v) => v,
+        Err(_) => return body.chars().take(200).collect(),
+    };
+    // Claude Code sends { "prompt": "..." }
+    if let Some(p) = v.get("prompt").and_then(|p| p.as_str()) {
+        return p.chars().take(500).collect();
+    }
+    // Fallback: try "content" field
+    if let Some(c) = v.get("content").and_then(|c| c.as_str()) {
+        return c.chars().take(500).collect();
+    }
+    body.chars().take(200).collect()
+}
+
+/// Extract bash command from tool request_body.
+fn extract_bash_command(body: &str) -> String {
+    if body.is_empty() {
+        return String::new();
+    }
+    let v: serde_json::Value = match serde_json::from_str(body) {
+        Ok(v) => v,
+        Err(_) => return String::new(),
+    };
+    // tool_input.command or direct command field
+    if let Some(ti) = v.get("tool_input") {
+        if let Some(cmd) = ti.get("command").and_then(|c| c.as_str()) {
+            return cmd.chars().take(200).collect();
+        }
+    }
+    if let Some(cmd) = v.get("command").and_then(|c| c.as_str()) {
+        return cmd.chars().take(200).collect();
+    }
+    String::new()
 }

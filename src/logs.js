@@ -77,25 +77,7 @@ function renderTokenSavingRow(log, index, cardNum, total) {
     </tr>
     <tr class="ts-detail-row" id="ts-detail-${index}" style="display: none;">
       <td colspan="${colSpan}" class="ts-detail-cell">
-        <div class="ts-detail-panels">
-          <div class="ts-detail-panel">
-            <div class="ts-detail-label">
-              <i data-lucide="file-input"></i>
-              Original <span class="ts-detail-tokens">${formatNumber(inputTokens)} tokens</span>
-            </div>
-            <pre class="ts-detail-pre">${escapeHtml(truncateContent(log.request_body, 3000))}</pre>
-          </div>
-          <div class="ts-detail-arrow">
-            <i data-lucide="arrow-right"></i>
-          </div>
-          <div class="ts-detail-panel">
-            <div class="ts-detail-label">
-              <i data-lucide="file-output"></i>
-              Compressed <span class="ts-detail-tokens ts-detail-tokens-saved">${formatNumber(outputTokens)} tokens</span>
-            </div>
-            <pre class="ts-detail-pre">${escapeHtml(truncateContent(log.response_body, 3000))}</pre>
-          </div>
-        </div>
+        <div class="ts-detail-content" id="ts-detail-content-${index}"></div>
       </td>
     </tr>
   `;
@@ -149,33 +131,10 @@ function getGuardianAction(dlpAction) {
   }
 }
 
-function extractGuardianReason(log) {
-  // Try to extract the reason from request/response bodies
-  try {
-    const resp = JSON.parse(log.response_body || '{}');
-    // Claude hook responses
-    if (resp.hook_specific_output?.permission_decision_reason) {
-      return resp.hook_specific_output.permission_decision_reason;
-    }
-    // Prompt submit responses
-    if (resp.reason) return resp.reason;
-    if (resp.decision) return `Decision: ${resp.decision}`;
-  } catch {}
-  return null;
-}
-
-function extractToolName(log) {
-  try {
-    const req = JSON.parse(log.request_body || '{}');
-    return req.tool_name || null;
-  } catch {}
-  return null;
-}
-
 function renderGuardianCard(log, index, cardNum, total) {
   const action = getGuardianAction(log.dlp_action);
-  const reason = extractGuardianReason(log);
-  const toolName = extractToolName(log);
+  const reason = log.guardian_reason;
+  const toolName = log.tool_name;
 
   return `
     <div class="guardian-card" data-index="${index}">
@@ -255,9 +214,68 @@ async function loadGuardianDetections(index) {
 // Shared rendering & event handlers
 // ============================================================================
 
+function renderTokenSavingDetailContent(inputTokens, outputTokens, requestBody, responseBody) {
+  return `
+    <div class="ts-detail-panels">
+      <div class="ts-detail-panel">
+        <div class="ts-detail-label">
+          <i data-lucide="file-input"></i>
+          Original <span class="ts-detail-tokens">${formatNumber(inputTokens)} tokens</span>
+        </div>
+        <pre class="ts-detail-pre">${escapeHtml(truncateContent(requestBody, 3000))}</pre>
+      </div>
+      <div class="ts-detail-arrow">
+        <i data-lucide="arrow-right"></i>
+      </div>
+      <div class="ts-detail-panel">
+        <div class="ts-detail-label">
+          <i data-lucide="file-output"></i>
+          Compressed <span class="ts-detail-tokens ts-detail-tokens-saved">${formatNumber(outputTokens)} tokens</span>
+        </div>
+        <pre class="ts-detail-pre">${escapeHtml(truncateContent(responseBody, 3000))}</pre>
+      </div>
+    </div>
+  `;
+}
+
+async function loadTokenSavingDetail(index) {
+  const log = currentLogs[index];
+  const container = document.getElementById(`ts-detail-content-${index}`);
+  if (!log || !container) return;
+
+  if (log.detailLoaded) {
+    container.innerHTML = renderTokenSavingDetailContent(
+      log.input_tokens || 0,
+      log.output_tokens || 0,
+      log.detail?.request_body || '',
+      log.detail?.response_body || ''
+    );
+    if (window.lucide) window.lucide.createIcons();
+    return;
+  }
+
+  container.innerHTML = '<div class="ts-detail-loading">Loading full request and response…</div>';
+
+  try {
+    const detail = await invoke('get_message_log_detail', { requestId: log.id });
+    log.detail = detail;
+    log.detailLoaded = true;
+    container.innerHTML = renderTokenSavingDetailContent(
+      log.input_tokens || 0,
+      log.output_tokens || 0,
+      detail.request_body || '',
+      detail.response_body || ''
+    );
+  } catch (err) {
+    container.innerHTML = `<div class="ts-detail-error">Error loading log detail: ${escapeHtml(String(err))}</div>`;
+  }
+
+  if (window.lucide) window.lucide.createIcons();
+}
+
 function attachTokenSavingHandlers(container) {
   container.querySelectorAll('.ts-row').forEach(row => {
-    row.addEventListener('click', () => {
+    row.addEventListener('click', async () => {
       const index = row.dataset.tsIndex;
       const detail = document.getElementById(`ts-detail-${index}`);
       if (!detail) return;
@@ -272,8 +290,7 @@ function attachTokenSavingHandlers(container) {
       if (!isVisible) {
         detail.style.display = 'table-row';
         row.classList.add('ts-row-expanded');
-        // Re-render lucide icons inside the newly shown detail
-        if (window.lucide) window.lucide.createIcons();
+        await loadTokenSavingDetail(index);
       }
     });
   });

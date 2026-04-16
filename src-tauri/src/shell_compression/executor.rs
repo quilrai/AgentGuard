@@ -47,9 +47,24 @@ pub fn run_command(command: &str, cwd: Option<&str>) -> CommandResult {
         }
     };
 
+    let stdout = match String::from_utf8(output.stdout) {
+        Ok(s) => s,
+        Err(e) => {
+            let bytes = e.into_bytes();
+            String::from_utf8_lossy(&bytes).into_owned()
+        }
+    };
+    let stderr = match String::from_utf8(output.stderr) {
+        Ok(s) => s,
+        Err(e) => {
+            let bytes = e.into_bytes();
+            String::from_utf8_lossy(&bytes).into_owned()
+        }
+    };
+
     CommandResult {
-        stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-        stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+        stdout,
+        stderr,
         exit_code: output.status.code().unwrap_or(1),
         duration_ms: start.elapsed().as_millis() as u64,
     }

@@ -41,6 +41,8 @@ use crate::predefined_backend_settings::CustomBackendSettings;
 use axum::{extract::State, http::StatusCode, response::IntoResponse, routing::post, Json, Router};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::fs::File;
+use std::io::{Read, Seek, SeekFrom};
 use std::sync::Arc;
 
 // ============================================================================
@@ -299,21 +301,13 @@ fn json_i64(v: &Value, key: &str) -> Option<i64> {
     v.get(key).and_then(|x| x.as_i64())
 }
 
-/// Try to read the latest assistant turn's usage out of a Codex transcript file.
-/// Codex's transcript format is not yet stable; we make a best-effort attempt at
-/// the same JSONL-style layout Claude Code uses (assistant lines with a `usage`
-/// block) and fall back to `None` if nothing parses, in which case the prompt
-/// row keeps the estimated tokens minted at UserPromptSubmit time.
-fn read_latest_turn_usage(transcript_path: &str) -> Option<RealUsage> {
-    let content = std::fs::read_to_string(transcript_path).ok()?;
-    let lines: Vec<&str> = content.lines().collect();
-
+fn parse_latest_turn_usage_from_text(content: &str) -> Option<RealUsage> {
     let mut usage = RealUsage::default();
     let mut found_any = false;
     let mut model: Option<String> = None;
     let mut stop_reason: Option<String> = None;
 
-    for line in lines.iter().rev() {
+    for line in content.lines().rev() {
         let line = line.trim();
         if line.is_empty() {
             continue;
@@ -365,6 +359,50 @@ fn read_latest_turn_usage(transcript_path: &str) -> Option<RealUsage> {
     usage.model = model;
     usage.stop_reason = stop_reason;
     Some(usage)
+}
+
+fn read_tail_text(path: &str, max_bytes: usize) -> Option<String> {
+    let mut file = File::open(path).ok()?;
+    let len = file.metadata().ok()?.len();
+    let start = len.saturating_sub(max_bytes as u64);
+
+    file.seek(SeekFrom::Start(start)).ok()?;
+
+    let mut buf = Vec::new();
+    file.read_to_end(&mut buf).ok()?;
+
+    if start > 0 {
+        if let Some(pos) = buf.iter().position(|b| *b == b'\n') {
+            buf.drain(..=pos);
+        } else {
+            return Some(String::new());
+        }
+    }
+
+    Some(String::from_utf8_lossy(&buf).into_owned())
+}
+
+/// Try to read the latest assistant turn's usage out of a Codex transcript file.
+/// Codex's transcript format is not yet stable; we make a best-effort attempt at
+/// the same JSONL-style layout Claude Code uses (assistant lines with a `usage`
+/// block) and fall back to `None` if nothing parses, in which case the prompt
+/// row keeps the estimated tokens minted at UserPromptSubmit time.
+fn read_latest_turn_usage(transcript_path: &str) -> Option<RealUsage> {
+    const TAIL_WINDOWS: [usize; 4] = [256 * 1024, 1024 * 1024, 4 * 1024 * 1024, 16 * 1024 * 1024];
+
+    let file_len = std::fs::metadata(transcript_path).ok()?.len() as usize;
+
+    for max_bytes in TAIL_WINDOWS {
+        let content = read_tail_text(transcript_path, max_bytes)?;
+        if let Some(usage) = parse_latest_turn_usage_from_text(&content) {
+            return Some(usage);
+        }
+        if file_len <= max_bytes {
+            break;
+        }
+    }
+
+    None
 }
 
 // ============================================================================

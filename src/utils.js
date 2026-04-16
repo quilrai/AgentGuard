@@ -169,8 +169,8 @@ export function formatRelativeTime(ts) {
 // Top-bar nav items expose `home`, `analytics`, `logs`. The drill-down pages
 // `guardian` and `token-saver` are reached from home cards (no top-bar entry).
 
-const ROUTES = ['home', 'guardian', 'token-saver', 'analytics', 'logs', 'garden'];
-const TOPBAR_ROUTES = new Set(['home', 'analytics', 'logs', 'garden']);
+const ROUTES = ['home', 'guardian', 'token-saver', 'analytics', 'logs', 'garden', 'behaviour'];
+const TOPBAR_ROUTES = new Set(['home', 'analytics', 'logs', 'garden', 'behaviour']);
 
 let currentRoute = 'home';
 const routeListeners = new Set();

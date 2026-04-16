@@ -65,6 +65,8 @@
           <button class="topbar-nav-item" data-route="analytics"><i data-lucide="bar-chart-3"></i><span>Analytics</span></button>
           <span class="topbar-nav-sep"></span>
           <button class="topbar-nav-item" data-route="logs"><i data-lucide="scroll-text"></i><span>Logs</span></button>
+          <span class="topbar-nav-sep"></span>
+          <button class="topbar-nav-item" data-route="behaviour"><i data-lucide="brain"></i><span>Behaviour</span></button>
         </nav>
         <div class="topbar-right">
           <label class="topbar-autostart" id="menu-autostart" title="Launch AgentGuard when you log in">
@@ -545,6 +547,31 @@
             </div>
           </div>
           <div id="logs-content">
+            <p class="loading">Loading...</p>
+          </div>
+        </div>
+
+        <!-- ============ BEHAVIOUR ============ -->
+        <div id="behaviour-tab" class="tab-content">
+          <div class="page-header">
+            <h1 class="page-title">Agent Behaviour</h1>
+            <div class="header-filters">
+              <select id="beh-backend-select" class="filter-select">
+                <option value="all">All Backends</option>
+              </select>
+              <select id="beh-time-select" class="filter-select">
+                <option value="7d" selected>7 Days</option>
+                <option value="1h">1 Hour</option>
+                <option value="6h">6 Hours</option>
+                <option value="1d">1 Day</option>
+                <option value="all">All Time</option>
+              </select>
+            </div>
+            <button id="beh-refresh-btn" class="icon-btn" title="Refresh">
+              <i data-lucide="refresh-cw"></i>
+            </button>
+          </div>
+          <div id="behaviour-content">
             <p class="loading">Loading...</p>
           </div>
         </div>
