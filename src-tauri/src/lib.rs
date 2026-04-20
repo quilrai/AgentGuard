@@ -30,7 +30,7 @@ use std::sync::{Arc, Mutex};
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Manager, Runtime, WindowEvent,
+    AppHandle, Emitter, Manager, Runtime, WindowEvent,
 };
 use tauri_plugin_autostart::MacosLauncher;
 use tauri_plugin_opener::OpenerExt;
@@ -61,7 +61,26 @@ fn hide_window(app: &AppHandle) {
 const TRAY_OPEN_APP_ID: &str = "tray_open_app";
 const TRAY_STAR_GITHUB_ID: &str = "tray_star_github";
 const TRAY_REPORT_ISSUE_ID: &str = "tray_report_issue";
+const TRAY_UPDATE_ID: &str = "tray_update";
 const TRAY_QUIT_ID: &str = "tray_quit";
+
+pub struct UpdateTrayItem(pub std::sync::Mutex<Option<MenuItem<tauri::Wry>>>);
+
+#[tauri::command]
+fn set_update_tray_label(
+    state: tauri::State<'_, UpdateTrayItem>,
+    version: Option<String>,
+) -> Result<(), String> {
+    let guard = state.0.lock().map_err(|e| e.to_string())?;
+    if let Some(item) = guard.as_ref() {
+        let text = match version {
+            Some(v) => format!("Install Update — v{}", v),
+            None => "Check for Updates...".to_string(),
+        };
+        item.set_text(text).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
 
 fn format_compact_number(value: i64) -> String {
     if value >= 1_000_000 {
@@ -198,6 +217,8 @@ pub fn run() {
             MacosLauncher::LaunchAgent,
             Some(vec![]),
         ))
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .setup(|app| {
             // Spawn HTTP server with app handle for events
             let app_handle = app.handle().clone();
@@ -235,6 +256,7 @@ pub fn run() {
 
             let separator_1 = PredefinedMenuItem::separator(app)?;
             let separator_2 = PredefinedMenuItem::separator(app)?;
+            let separator_3 = PredefinedMenuItem::separator(app)?;
             let open_app_item =
                 MenuItem::with_id(app, TRAY_OPEN_APP_ID, "Open App", true, None::<&str>)?;
             let star_github_item = MenuItem::with_id(
@@ -251,6 +273,14 @@ pub fn run() {
                 true,
                 None::<&str>,
             )?;
+            let update_item = MenuItem::with_id(
+                app,
+                TRAY_UPDATE_ID,
+                "Check for Updates...",
+                true,
+                None::<&str>,
+            )?;
+            app.manage(UpdateTrayItem(std::sync::Mutex::new(Some(update_item.clone()))));
             let quit_item = MenuItem::with_id(app, TRAY_QUIT_ID, "Quit", true, None::<&str>)?;
 
             let tray_menu = Menu::with_items(
@@ -266,6 +296,8 @@ pub fn run() {
                     &star_github_item,
                     &report_issue_item,
                     &separator_2,
+                    &update_item,
+                    &separator_3,
                     &quit_item,
                 ],
             )?;
@@ -295,6 +327,10 @@ pub fn run() {
                             eprintln!("[TRAY] Failed to open issue tracker: {err}");
                         }
                     }
+                    TRAY_UPDATE_ID => {
+                        show_window(app);
+                        let _ = app.emit("tray-update-clicked", ());
+                    }
                     TRAY_QUIT_ID => app.exit(0),
                     _ => {}
                 })
@@ -323,6 +359,7 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            set_update_tray_label,
             // Main app commands
             commands::greet,
             commands::get_dashboard_stats,

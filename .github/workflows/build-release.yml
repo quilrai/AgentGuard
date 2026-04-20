@@ -18,6 +18,9 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.RELEASE_TOKEN }}
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -41,6 +44,32 @@ jobs:
           VERSION=$(node -p "require('./package.json').version")
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
 
+      - name: Sync Tauri bundle version
+        run: |
+          VERSION="${{ steps.get_version.outputs.VERSION }}"
+          node -e "
+            const fs = require('fs');
+            const p = 'src-tauri/tauri.conf.json';
+            const c = JSON.parse(fs.readFileSync(p, 'utf8'));
+            c.version = '$VERSION';
+            fs.writeFileSync(p, JSON.stringify(c, null, 2) + '\n');
+          "
+
+      - name: Extract release notes from commit
+        id: notes
+        run: |
+          # Commit body only (subject excluded) — subject is the Release title,
+          # the body is the bullet list shown in the in-app banner.
+          BODY=$(git log -1 --pretty=format:"%b")
+          if [ -z "$(echo "$BODY" | tr -d '[:space:]')" ]; then
+            BODY="- See https://github.com/${GITHUB_REPOSITORY}/releases/tag/v${{ steps.get_version.outputs.VERSION }}"
+          fi
+          {
+            echo "NOTES<<RELNOTES_EOF"
+            echo "$BODY"
+            echo "RELNOTES_EOF"
+          } >> $GITHUB_OUTPUT
+
       - name: Write Apple API Key to file
         run: |
           echo "${{ secrets.APPLE_API_KEY_PATH }}" > $RUNNER_TEMP/AuthKey.p8
@@ -53,21 +82,16 @@ jobs:
           KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
           KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
 
-          # Decode certificate
           echo "$APPLE_CERTIFICATE" | base64 --decode > $CERTIFICATE_PATH
 
-          # Create temporary keychain
           security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
           security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
 
-          # Import certificate (empty password)
           security import $CERTIFICATE_PATH -P "" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
 
-          # Add keychain to search list
           security list-keychain -d user -s $KEYCHAIN_PATH
 
-          # Allow codesign to access keychain
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
 
       - name: Build and sign Tauri app
@@ -76,22 +100,94 @@ jobs:
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
           APPLE_API_KEY_PATH: ${{ runner.temp }}/AuthKey.p8
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: npm run tauri build
 
-      - name: Rename DMG for Apple Silicon
+      - name: Collect artifacts
+        id: artifacts
         run: |
-          cd src-tauri/target/release/bundle/dmg
-          for f in *.dmg; do
-            mv "$f" "AgentGuard-Apple-Silicon.dmg"
-          done
+          VERSION="${{ steps.get_version.outputs.VERSION }}"
+          DMG_DIR=src-tauri/target/release/bundle/dmg
+          MAC_DIR=src-tauri/target/release/bundle/macos
+
+          # Rename DMG
+          cd "$DMG_DIR"
+          SRC_DMG=$(ls *.dmg | head -n1)
+          mv "$SRC_DMG" "AgentGuard-Apple-Silicon.dmg"
+          cd - > /dev/null
+
+          # Find the signed updater tarball and its .sig.
+          TARBALL=$(ls "$MAC_DIR"/*.app.tar.gz | head -n1)
+          SIG="${TARBALL}.sig"
+
+          if [ ! -f "$TARBALL" ] || [ ! -f "$SIG" ]; then
+            echo "ERROR: updater artifacts missing" >&2
+            ls -la "$MAC_DIR" >&2
+            exit 1
+          fi
+
+          # Copy with versioned/arch'd names for the release asset.
+          RELEASE_TARBALL="AgentGuard_${VERSION}_aarch64.app.tar.gz"
+          cp "$TARBALL" "$DMG_DIR/$RELEASE_TARBALL"
+          cp "$SIG"     "$DMG_DIR/${RELEASE_TARBALL}.sig"
+
+          SIG_CONTENT=$(cat "$SIG")
+          {
+            echo "SIGNATURE<<SIG_EOF"
+            echo "$SIG_CONTENT"
+            echo "SIG_EOF"
+          } >> $GITHUB_OUTPUT
+          echo "TARBALL_NAME=$RELEASE_TARBALL" >> $GITHUB_OUTPUT
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.get_version.outputs.VERSION }}
           name: Release v${{ steps.get_version.outputs.VERSION }}
+          body: ${{ steps.notes.outputs.NOTES }}
           draft: false
           prerelease: false
-          files: src-tauri/target/release/bundle/dmg/*.dmg
+          files: |
+            src-tauri/target/release/bundle/dmg/AgentGuard-Apple-Silicon.dmg
+            src-tauri/target/release/bundle/dmg/AgentGuard_${{ steps.get_version.outputs.VERSION }}_aarch64.app.tar.gz
+            src-tauri/target/release/bundle/dmg/AgentGuard_${{ steps.get_version.outputs.VERSION }}_aarch64.app.tar.gz.sig
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+
+      - name: Update docs/latest-version.json
+        env:
+          VERSION: ${{ steps.get_version.outputs.VERSION }}
+          SIGNATURE: ${{ steps.artifacts.outputs.SIGNATURE }}
+          TARBALL_NAME: ${{ steps.artifacts.outputs.TARBALL_NAME }}
+          NOTES: ${{ steps.notes.outputs.NOTES }}
+        run: |
+          node -e "
+            const fs = require('fs');
+            const version = process.env.VERSION;
+            const signature = process.env.SIGNATURE;
+            const tarball = process.env.TARBALL_NAME;
+            const notes = process.env.NOTES;
+            const url = \`https://github.com/\${process.env.GITHUB_REPOSITORY}/releases/download/v\${version}/\${tarball}\`;
+            const manifest = {
+              version,
+              notes,
+              pub_date: new Date().toISOString(),
+              platforms: {
+                'darwin-aarch64': { signature, url }
+              }
+            };
+            fs.writeFileSync('docs/latest-version.json', JSON.stringify(manifest, null, 2) + '\n');
+          "
+
+      - name: Commit manifest back to main
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/latest-version.json
+          if git diff --cached --quiet; then
+            echo "No manifest changes to commit."
+          else
+            git commit -m "chore(release): publish updater manifest for v${{ steps.get_version.outputs.VERSION }} [skip ci]"
+            git push origin HEAD:main
+          fi

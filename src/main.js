@@ -17,6 +17,7 @@ import { initHome, loadHome, suspendHome, resumeHome } from './home.js';
 import { initGarden, loadGarden } from './garden.js';
 import { initBehaviour, loadBehaviour } from './behaviour.js';
 import { initGuide, startGuide, resetAllSettings } from './guide.js';
+import { initUpdater } from './updater.js';
 
 const { openUrl } = window.__TAURI__.opener;
 
@@ -60,6 +61,9 @@ window.addEventListener('DOMContentLoaded', () => {
 
   // Initialize guided setup (auto-shows for new users)
   initGuide();
+
+  // Start update checks (startup + every 6h)
+  initUpdater();
 
   // Refresh buttons
   const refreshBtn = document.getElementById('refresh-btn');

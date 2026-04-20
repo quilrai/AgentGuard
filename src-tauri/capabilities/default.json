@@ -11,6 +11,8 @@
     "fs:default",
     "fs:allow-write-text-file",
     "notification:default",
-    "autostart:default"
+    "autostart:default",
+    "updater:default",
+    "process:default"
   ]
 }
