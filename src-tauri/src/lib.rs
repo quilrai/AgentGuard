@@ -28,10 +28,12 @@ use database::get_port_from_db;
 use dlp_pattern_config::DEFAULT_PORT;
 use std::sync::{Arc, Mutex};
 use tauri::{
-    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Manager, PhysicalPosition, WindowEvent,
+    menu::{Menu, MenuItem, PredefinedMenuItem},
+    tray::{MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    AppHandle, Manager, Runtime, WindowEvent,
 };
 use tauri_plugin_autostart::MacosLauncher;
+use tauri_plugin_opener::OpenerExt;
 use tokio::sync::watch;
 
 #[cfg(target_os = "macos")]
@@ -56,16 +58,99 @@ fn hide_window(app: &AppHandle) {
     }
 }
 
-// Command to show main window (called from tray popup)
-#[tauri::command]
-fn show_main_window(app: AppHandle) {
-    show_window(&app);
+const TRAY_OPEN_APP_ID: &str = "tray_open_app";
+const TRAY_STAR_GITHUB_ID: &str = "tray_star_github";
+const TRAY_REPORT_ISSUE_ID: &str = "tray_report_issue";
+const TRAY_QUIT_ID: &str = "tray_quit";
+
+fn format_compact_number(value: i64) -> String {
+    if value >= 1_000_000 {
+        format!("{:.1}M", value as f64 / 1_000_000.0)
+    } else if value >= 1_000 {
+        format!("{:.1}K", value as f64 / 1_000.0)
+    } else {
+        value.to_string()
+    }
 }
 
-// Command to quit app (called from tray popup)
-#[tauri::command]
-fn quit_app(app: AppHandle) {
-    app.exit(0);
+fn truncate_label(text: &str, max_len: usize) -> String {
+    let char_count = text.chars().count();
+    if char_count > max_len && max_len > 3 {
+        let mut truncated: String = text.chars().take(max_len - 3).collect();
+        truncated.push_str("...");
+        truncated
+    } else {
+        text.to_string()
+    }
+}
+
+fn format_tray_totals(backends: &[commands::BackendStats]) -> String {
+    let total_requests: i64 = backends.iter().map(|backend| backend.request_count).sum();
+    let total_input: i64 = backends.iter().map(|backend| backend.input_tokens).sum();
+    let total_output: i64 = backends.iter().map(|backend| backend.output_tokens).sum();
+    let total_cache: i64 = backends.iter().map(|backend| backend.cache_tokens).sum();
+
+    let mut summary = format!(
+        "{} req | {} in | {} out",
+        format_compact_number(total_requests),
+        format_compact_number(total_input),
+        format_compact_number(total_output)
+    );
+
+    if total_cache > 0 {
+        summary.push_str(&format!(" | {} cache", format_compact_number(total_cache)));
+    }
+
+    summary
+}
+
+fn format_backend_summary(backend: &commands::BackendStats) -> String {
+    let mut summary = format!(
+        "{} | {} req | {} in",
+        truncate_label(&backend.backend, 18),
+        format_compact_number(backend.request_count),
+        format_compact_number(backend.input_tokens)
+    );
+
+    if backend.output_tokens > 0 {
+        summary.push_str(&format!(" | {} out", format_compact_number(backend.output_tokens)));
+    }
+
+    summary
+}
+
+fn refresh_tray_stats<R: Runtime>(summary_item: &MenuItem<R>, backend_items: &[MenuItem<R>]) {
+    match commands::get_tray_stats() {
+        Ok(stats) if stats.backends.is_empty() => {
+            let _ = summary_item.set_text("No activity in last 24h");
+            for item in backend_items {
+                let _ = item.set_text(" ");
+            }
+        }
+        Ok(stats) => {
+            let _ = summary_item.set_text(format_tray_totals(&stats.backends));
+
+            for (item, backend) in backend_items.iter().zip(stats.backends.iter()) {
+                let _ = item.set_text(format_backend_summary(backend));
+            }
+
+            for item in backend_items.iter().skip(stats.backends.len()) {
+                let _ = item.set_text(" ");
+            }
+        }
+        Err(err) => {
+            eprintln!("[TRAY] Failed to load tray stats: {err}");
+            let _ = summary_item.set_text("Stats unavailable");
+
+            if let Some(first_item) = backend_items.first() {
+                let _ = first_item.set_text("Check app logs for details");
+            }
+
+            for item in backend_items.iter().skip(1) {
+                let _ = item.set_text(" ");
+            }
+        }
+    }
 }
 
 // Server status enum
@@ -133,44 +218,93 @@ pub fn run() {
                 return Ok(());
             };
 
+            let stats_header_item =
+                MenuItem::new(app, "Last 24 Hours", false, None::<&str>)?;
+            let stats_summary_item =
+                MenuItem::new(app, "Loading usage...", false, None::<&str>)?;
+            let backend_item_1 = MenuItem::new(app, " ", false, None::<&str>)?;
+            let backend_item_2 = MenuItem::new(app, " ", false, None::<&str>)?;
+            let backend_item_3 = MenuItem::new(app, " ", false, None::<&str>)?;
+            let backend_items = [
+                backend_item_1.clone(),
+                backend_item_2.clone(),
+                backend_item_3.clone(),
+            ];
+
+            refresh_tray_stats(&stats_summary_item, &backend_items);
+
+            let separator_1 = PredefinedMenuItem::separator(app)?;
+            let separator_2 = PredefinedMenuItem::separator(app)?;
+            let open_app_item =
+                MenuItem::with_id(app, TRAY_OPEN_APP_ID, "Open App", true, None::<&str>)?;
+            let star_github_item = MenuItem::with_id(
+                app,
+                TRAY_STAR_GITHUB_ID,
+                "Star on GitHub",
+                true,
+                None::<&str>,
+            )?;
+            let report_issue_item = MenuItem::with_id(
+                app,
+                TRAY_REPORT_ISSUE_ID,
+                "Report Issue",
+                true,
+                None::<&str>,
+            )?;
+            let quit_item = MenuItem::with_id(app, TRAY_QUIT_ID, "Quit", true, None::<&str>)?;
+
+            let tray_menu = Menu::with_items(
+                app,
+                &[
+                    &stats_header_item,
+                    &stats_summary_item,
+                    &backend_item_1,
+                    &backend_item_2,
+                    &backend_item_3,
+                    &separator_1,
+                    &open_app_item,
+                    &star_github_item,
+                    &report_issue_item,
+                    &separator_2,
+                    &quit_item,
+                ],
+            )?;
+
+            let stats_summary_item_for_click = stats_summary_item.clone();
+            let backend_items_for_click = backend_items.clone();
+
             if let Err(err) = TrayIconBuilder::new()
                 .icon(icon)
-                .on_tray_icon_event(|tray, event| {
+                .menu(&tray_menu)
+                .show_menu_on_left_click(true)
+                .on_menu_event(|app, event| match event.id().as_ref() {
+                    TRAY_OPEN_APP_ID => show_window(app),
+                    TRAY_STAR_GITHUB_ID => {
+                        if let Err(err) = app
+                            .opener()
+                            .open_url("https://github.com/quilrai/AgentGuard", None::<&str>)
+                        {
+                            eprintln!("[TRAY] Failed to open GitHub page: {err}");
+                        }
+                    }
+                    TRAY_REPORT_ISSUE_ID => {
+                        if let Err(err) = app
+                            .opener()
+                            .open_url("https://github.com/quilrai/AgentGuard/issues", None::<&str>)
+                        {
+                            eprintln!("[TRAY] Failed to open issue tracker: {err}");
+                        }
+                    }
+                    TRAY_QUIT_ID => app.exit(0),
+                    _ => {}
+                })
+                .on_tray_icon_event(move |_tray, event| {
                     if let TrayIconEvent::Click {
-                        button: MouseButton::Left,
                         button_state: MouseButtonState::Up,
                         ..
                     } = event
                     {
-                        let app = tray.app_handle();
-                        if let Some(popup) = app.get_webview_window("tray_popup") {
-                            // Toggle: if visible, hide; otherwise show
-                            if popup.is_visible().unwrap_or(false) {
-                                let _ = popup.hide();
-                                return;
-                            }
-
-                            // Get tray icon position and compute popup position
-                            if let Ok(Some(tray_rect)) = tray.rect() {
-                                let popup_width = 320.0;
-
-                                // Convert position and size to physical values (scale factor 1.0)
-                                let pos = tray_rect.position.to_physical::<f64>(1.0);
-                                let size = tray_rect.size.to_physical::<f64>(1.0);
-
-                                // Position popup below tray icon, centered
-                                let x = pos.x - (popup_width / 2.0) + (size.width / 2.0);
-                                let y = pos.y + size.height + 4.0;
-
-                                let _ =
-                                    popup.set_position(PhysicalPosition::new(x as i32, y as i32));
-                            }
-
-                            // Reload the page to fetch fresh stats
-                            let _ = popup.eval("loadStats()");
-                            let _ = popup.show();
-                            let _ = popup.set_focus();
-                        }
+                        refresh_tray_stats(&stats_summary_item_for_click, &backend_items_for_click);
                     }
                 })
                 .build(app)
@@ -181,28 +315,14 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            match event {
-                WindowEvent::CloseRequested { api, .. } => {
-                    // Prevent the window from closing, hide it instead
-                    api.prevent_close();
-                    let app = window.app_handle();
-                    hide_window(&app);
-                }
-                WindowEvent::Focused(false) => {
-                    // Hide tray popup when it loses focus (click outside)
-                    if window.label() == "tray_popup" {
-                        let _ = window.hide();
-                    }
-                }
-                _ => {}
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                // Prevent the window from closing, hide it instead
+                api.prevent_close();
+                let app = window.app_handle();
+                hide_window(&app);
             }
         })
         .invoke_handler(tauri::generate_handler![
-            // Tray popup commands
-            show_main_window,
-            quit_app,
-            commands::get_tray_stats,
-            commands::get_tray_token_timeline,
             // Main app commands
             commands::greet,
             commands::get_dashboard_stats,

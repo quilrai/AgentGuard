@@ -16,20 +16,6 @@
         "width": 800,
         "height": 600,
         "visible": true
-      },
-      {
-        "label": "tray_popup",
-        "title": "AgentGuard",
-        "url": "tray.html",
-        "width": 320,
-        "height": 420,
-        "visible": false,
-        "decorations": false,
-        "skipTaskbar": true,
-        "alwaysOnTop": true,
-        "resizable": false,
-        "focus": true,
-        "transparent": false
       }
     ],
     "security": {

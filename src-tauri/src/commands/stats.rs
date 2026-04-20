@@ -25,25 +25,6 @@ pub struct TrayStats {
     pub backends: Vec<BackendStats>,
 }
 
-// Timeline point for input tokens chart in tray popup
-#[derive(Serialize, Clone)]
-pub struct TokenTimelinePoint {
-    pub timestamp: String,
-    pub input_tokens: i64,
-}
-
-#[derive(Serialize, Clone)]
-pub struct BackendTimeline {
-    pub backend: String,
-    pub points: Vec<TokenTimelinePoint>,
-}
-
-#[derive(Serialize)]
-pub struct TrayTokenTimeline {
-    pub backends: Vec<BackendTimeline>,
-}
-
-#[tauri::command]
 pub fn get_tray_stats() -> Result<TrayStats, String> {
     let conn = open_connection().map_err(|e| e.to_string())?;
 
@@ -79,60 +60,6 @@ pub fn get_tray_stats() -> Result<TrayStats, String> {
         .collect();
 
     Ok(TrayStats { backends })
-}
-
-#[tauri::command]
-pub fn get_tray_token_timeline() -> Result<TrayTokenTimeline, String> {
-    use std::collections::HashMap;
-
-    let conn = open_connection().map_err(|e| e.to_string())?;
-
-    // Last 24 hours
-    let cutoff_ts = get_cutoff_timestamp(24);
-
-    let mut stmt = conn
-        .prepare(
-            "SELECT backend, timestamp, input_tokens
-             FROM requests
-             WHERE timestamp >= ?1 AND input_tokens > 0
-             ORDER BY timestamp ASC",
-        )
-        .map_err(|e| e.to_string())?;
-
-    // Group points by backend
-    let mut backend_points: HashMap<String, Vec<TokenTimelinePoint>> = HashMap::new();
-
-    let rows = stmt
-        .query_map([&cutoff_ts], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, i64>(2)?,
-            ))
-        })
-        .map_err(|e| e.to_string())?;
-
-    for row in rows.filter_map(|r| r.ok()) {
-        let (backend, timestamp, input_tokens) = row;
-        backend_points
-            .entry(backend)
-            .or_default()
-            .push(TokenTimelinePoint {
-                timestamp,
-                input_tokens,
-            });
-    }
-
-    // Convert to sorted vec
-    let mut backends: Vec<BackendTimeline> = backend_points
-        .into_iter()
-        .map(|(backend, points)| BackendTimeline { backend, points })
-        .collect();
-
-    // Sort by backend name for consistent ordering
-    backends.sort_by(|a, b| a.backend.cmp(&b.backend));
-
-    Ok(TrayTokenTimeline { backends })
 }
 
 #[derive(Serialize)]
