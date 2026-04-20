@@ -124,3 +124,20 @@ fn find_real_shell() -> String {
     }
     "cmd.exe".to_string()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn run_command_honors_shell_override() {
+        let result = run_command("printf '%s' \"$0\"", None, Some("/bin/sh"));
+        assert_eq!(result.exit_code, 0);
+        assert!(
+            result.stdout.contains("sh"),
+            "expected shell override to be reflected in $0, got {:?}",
+            result.stdout
+        );
+    }
+}

@@ -287,14 +287,20 @@ fi
 # Check if command matches our rewrite list
 case "$CMD" in
   {case_line})
-    # Escape command, cwd, and shell for JSON string values (\ -> \\, " -> \")
-    ESCAPED_CMD=$(printf '%s' "$CMD" | sed 's/\\/\\\\/g; s/"/\\"/g')
-    ESCAPED_CWD=$(printf '%s' "$EFFECTIVE_CWD" | sed 's/\\/\\\\/g; s/"/\\"/g')
-    ESCAPED_SHELL=$(printf '%s' "$EFFECTIVE_SHELL" | sed 's/\\/\\\\/g; s/"/\\"/g')
-
-    # Write JSON payload to a temp file to avoid quoting hell.
+    # Write JSON payload to a temp file using a real JSON encoder. This keeps
+    # embedded newlines intact as \n instead of collapsing `\` line-continuations
+    # into `\ `, which breaks multiline curl commands under fish.
     _LMWH_PF=$(mktemp)
-    printf '{{"command":"%s","cwd":"%s","backend":"{backend_name}","shell":"%s"}}' "$ESCAPED_CMD" "$ESCAPED_CWD" "$ESCAPED_SHELL" > "$_LMWH_PF"
+    perl -MJSON::PP -e '
+      use strict;
+      use warnings;
+      print JSON::PP::encode_json({{
+        command => $ARGV[0],
+        cwd => $ARGV[1],
+        backend => $ARGV[2],
+        shell => $ARGV[3],
+      }});
+    ' "$CMD" "$EFFECTIVE_CWD" "{backend_name}" "$EFFECTIVE_SHELL" > "$_LMWH_PF"
 
     # Also stash the raw command in a temp file so the rewrite can fall back
     # to executing it directly if the proxy is unreachable, using the same
@@ -314,7 +320,7 @@ case "$CMD" in
     #   - HTTP 200 + X-Exit-Code header -> propagate the proxy's exit code.
     #   - Any other proxy response -> surface body + non-zero exit (do NOT
     #     re-run; the proxy already executed the command).
-    REWRITE="set +e; _LMWH_T=\$(mktemp); _LMWH_HC=\$(curl -sS -o \"\$_LMWH_T\" -D \"\${{_LMWH_T}}.h\" -w '%{{http_code}}' -X POST -H 'Content-Type: application/json' -d @$_LMWH_PF http://localhost:{port}/cli_compression 2>/dev/null); _LMWH_CURL=\$?; if [ \$_LMWH_CURL -ne 0 ] || [ -z \"\$_LMWH_HC\" ] || [ \"\$_LMWH_HC\" = '000' ]; then echo '[llmwatcher: compression proxy unreachable, running raw command]' >&2; _LMWH_SH=\$(cat \"$_LMWH_SF\" 2>/dev/null); if [ -z \"\$_LMWH_SH\" ]; then _LMWH_SH=/bin/bash; fi; rm -f \"\$_LMWH_T\" \"\${{_LMWH_T}}.h\" \"$_LMWH_PF\" \"$_LMWH_SF\"; \"\$_LMWH_SH\" \"$_LMWH_CF\"; _LMWH_RAW=\$?; rm -f \"$_LMWH_CF\"; exit \$_LMWH_RAW; fi; _LMWH_EC=\$(grep -i x-exit-code \"\${{_LMWH_T}}.h\" 2>/dev/null | tr -d '\\r' | cut -d' ' -f2); cat \"\$_LMWH_T\"; rm -f \"\$_LMWH_T\" \"\${{_LMWH_T}}.h\" \"$_LMWH_PF\" \"$_LMWH_CF\" \"$_LMWH_SF\"; if [ \"\$_LMWH_HC\" = '200' ] && [ -n \"\$_LMWH_EC\" ]; then exit \$_LMWH_EC; fi; echo \"[llmwatcher: proxy returned HTTP \$_LMWH_HC]\" >&2; exit 1"
+    REWRITE="set +e; _LMWH_T=\$(mktemp); _LMWH_HC=\$(curl -sS -o \"\$_LMWH_T\" -D \"\${{_LMWH_T}}.h\" -w '%{{http_code}}' -X POST -H 'Content-Type: application/json' --data-binary @$_LMWH_PF http://localhost:{port}/cli_compression 2>/dev/null); _LMWH_CURL=\$?; if [ \$_LMWH_CURL -ne 0 ] || [ -z \"\$_LMWH_HC\" ] || [ \"\$_LMWH_HC\" = '000' ]; then echo '[llmwatcher: compression proxy unreachable, running raw command]' >&2; _LMWH_SH=\$(cat \"$_LMWH_SF\" 2>/dev/null); if [ -z \"\$_LMWH_SH\" ]; then _LMWH_SH=/bin/bash; fi; rm -f \"\$_LMWH_T\" \"\${{_LMWH_T}}.h\" \"$_LMWH_PF\" \"$_LMWH_SF\"; \"\$_LMWH_SH\" \"$_LMWH_CF\"; _LMWH_RAW=\$?; rm -f \"$_LMWH_CF\"; exit \$_LMWH_RAW; fi; _LMWH_EC=\$(grep -i x-exit-code \"\${{_LMWH_T}}.h\" 2>/dev/null | tr -d '\\r' | cut -d' ' -f2); cat \"\$_LMWH_T\"; rm -f \"\$_LMWH_T\" \"\${{_LMWH_T}}.h\" \"$_LMWH_PF\" \"$_LMWH_CF\" \"$_LMWH_SF\"; if [ \"\$_LMWH_HC\" = '200' ] && [ -n \"\$_LMWH_EC\" ]; then exit \$_LMWH_EC; fi; echo \"[llmwatcher: proxy returned HTTP \$_LMWH_HC]\" >&2; exit 1"
 
     # Escape the rewrite for JSON output (\ -> \\, " -> \")
     REWRITE_ESC=$(printf '%s' "$REWRITE" | sed 's/\\/\\\\/g; s/"/\\"/g')
@@ -706,4 +712,318 @@ pub fn check_compression_hook_cursor() -> Result<bool, String> {
     });
 
     Ok(installed)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::{json, Value};
+    use std::fs;
+    use std::io::Write;
+    use std::path::{Path, PathBuf};
+    use std::process::{Command, Output, Stdio};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
+
+    fn temp_dir(name: &str) -> PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("{}_{}", name, nonce));
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn write_script(dir: &Path, content: &str) -> PathBuf {
+        let path = dir.join("llmwatcher-compress.sh");
+        fs::write(&path, content).unwrap();
+
+        #[cfg(unix)]
+        {
+            let mut perms = fs::metadata(&path).unwrap().permissions();
+            perms.set_mode(0o755);
+            fs::set_permissions(&path, perms).unwrap();
+        }
+
+        path
+    }
+
+    fn run_script(script: &Path, input: &Value, tmpdir: &Path, shell: &str) -> Output {
+        let input_bytes = serde_json::to_vec(input).unwrap();
+        let mut child = Command::new("bash")
+            .arg(script)
+            .env("TMPDIR", tmpdir)
+            .env("LLMWATCHER_SHELL", shell)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+
+        child.stdin.take().unwrap().write_all(&input_bytes).unwrap();
+        child.wait_with_output().unwrap()
+    }
+
+    fn rewrite_from_output(output: &Output) -> String {
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let response: Value = serde_json::from_slice(&output.stdout).unwrap();
+        response["hookSpecificOutput"]["updatedInput"]["command"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    }
+
+    fn extract_payload_path(rewrite: &str) -> String {
+        let marker = "--data-binary @";
+        let start = rewrite.find(marker).unwrap() + marker.len();
+        let end = rewrite[start..].find(' ').unwrap() + start;
+        rewrite[start..end].to_string()
+    }
+
+    #[test]
+    fn multiline_command_payload_round_trips_exactly() {
+        let dir = temp_dir("compression_hook_multiline");
+        let script = write_script(
+            &dir,
+            &generate_compression_hook_script(8123, CLAUDE_REWRITE_COMMANDS, "claude"),
+        );
+
+        let command = r#"curl -sS -X POST "https://example.com/openai_compatible/v1/chat/completions" \
+  -H "Authorization: Bearer TEST" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gpt-5.4-nano",
+    "messages": [
+      {"role": "user", "content": "hello"}
+    ]
+  }' -w "\n---HTTP %{http_code}---\n" | head -c 10000"#;
+
+        let input = json!({
+            "tool_name": "Bash",
+            "cwd": "/tmp/project",
+            "tool_input": { "command": command }
+        });
+
+        let output = run_script(&script, &input, &dir, "/bin/sh");
+        let rewrite = rewrite_from_output(&output);
+        assert!(rewrite.contains("--data-binary @"));
+
+        let payload_path = extract_payload_path(&rewrite);
+        let payload_raw = fs::read_to_string(&payload_path).unwrap();
+        let payload: Value = serde_json::from_str(&payload_raw).unwrap();
+
+        assert_eq!(payload["command"].as_str(), Some(command));
+        assert_eq!(payload["cwd"].as_str(), Some("/tmp/project"));
+        assert_eq!(payload["backend"].as_str(), Some("claude"));
+        assert_eq!(payload["shell"].as_str(), Some("/bin/sh"));
+        assert!(
+            payload_raw.contains("\\n  -H"),
+            "payload should JSON-escape command newlines: {payload_raw}"
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn proxy_commands_are_not_rewritten() {
+        let dir = temp_dir("compression_hook_proxy_guard");
+        let script = write_script(
+            &dir,
+            &generate_compression_hook_script(8123, CLAUDE_REWRITE_COMMANDS, "claude"),
+        );
+
+        let input = json!({
+            "tool_name": "Bash",
+            "cwd": "/tmp/project",
+            "tool_input": { "command": "curl -sS http://localhost:8123/cli_compression" }
+        });
+
+        let output = run_script(&script, &input, &dir, "/bin/sh");
+        assert_eq!(output.status.code(), Some(0));
+        assert!(output.stdout.is_empty());
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn non_matching_commands_are_not_rewritten() {
+        let dir = temp_dir("compression_hook_non_match");
+        let script = write_script(
+            &dir,
+            &generate_compression_hook_script(8123, CLAUDE_REWRITE_COMMANDS, "claude"),
+        );
+
+        let input = json!({
+            "tool_name": "Bash",
+            "cwd": "/tmp/project",
+            "tool_input": { "command": "echo hello" }
+        });
+
+        let output = run_script(&script, &input, &dir, "/bin/sh");
+        assert_eq!(output.status.code(), Some(0));
+        assert!(output.stdout.is_empty());
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn bare_rewrite_commands_still_match_without_arguments() {
+        let dir = temp_dir("compression_hook_bare");
+        let script = write_script(
+            &dir,
+            &generate_compression_hook_script(8123, CLAUDE_REWRITE_COMMANDS, "claude"),
+        );
+
+        let input = json!({
+            "tool_name": "Bash",
+            "cwd": "/tmp/project",
+            "tool_input": { "command": "ls" }
+        });
+
+        let output = run_script(&script, &input, &dir, "/bin/sh");
+        let rewrite = rewrite_from_output(&output);
+
+        assert!(rewrite.contains("http://localhost:8123/cli_compression"));
+        assert!(rewrite.contains("compression proxy unreachable, running raw command"));
+        assert!(rewrite.contains("x-exit-code"));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    // ------------------------------------------------------------------
+    // Real-world multi-line / tricky command payload round-trip tests.
+    // These guarantee that whatever the agent sends us actually arrives
+    // at /cli_compression byte-for-byte, regardless of quoting, newlines,
+    // or shell variant.
+    // ------------------------------------------------------------------
+
+    fn payload_round_trips(command: &str, shell: &str, backend_commands: &[&str], backend_name: &str) {
+        let dir = temp_dir(&format!("compression_hook_rt_{backend_name}"));
+        let script = write_script(
+            &dir,
+            &generate_compression_hook_script(8123, backend_commands, backend_name),
+        );
+
+        let input = json!({
+            "tool_name": "Bash",
+            "cwd": "/tmp/project",
+            "tool_input": { "command": command }
+        });
+
+        let output = run_script(&script, &input, &dir, shell);
+        let rewrite = rewrite_from_output(&output);
+        assert!(
+            rewrite.contains("--data-binary @"),
+            "rewrite missing --data-binary: {rewrite}"
+        );
+
+        let payload_path = extract_payload_path(&rewrite);
+        let payload_raw = fs::read_to_string(&payload_path).unwrap();
+        let payload: Value = serde_json::from_str(&payload_raw)
+            .unwrap_or_else(|e| panic!("payload is not valid JSON: {e}\n{payload_raw}"));
+
+        assert_eq!(
+            payload["command"].as_str(),
+            Some(command),
+            "command mismatch\npayload: {payload_raw}"
+        );
+        assert_eq!(payload["backend"].as_str(), Some(backend_name));
+        assert_eq!(payload["shell"].as_str(), Some(shell));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn multiline_rg_with_many_flags_round_trips() {
+        let command = r#"rg --type rust \
+  --glob '!target/*' \
+  --glob '!node_modules/*' \
+  -n --column \
+  -C 2 \
+  'fn\s+compress_output' \
+  src/ tests/"#;
+        payload_round_trips(command, "/bin/sh", CLAUDE_REWRITE_COMMANDS, "claude");
+    }
+
+    #[test]
+    fn multiline_heredoc_psql_round_trips() {
+        let command = "psql -U postgres -d app <<'SQL'\nSELECT id, email, created_at\nFROM users\nWHERE email LIKE '%@example.com'\n  AND created_at > now() - interval '7 days'\nORDER BY created_at DESC\nLIMIT 50;\nSQL";
+        payload_round_trips(command, "/bin/sh", CLAUDE_REWRITE_COMMANDS, "claude");
+    }
+
+    #[test]
+    fn curl_with_jq_pipeline_round_trips() {
+        let command = r#"curl -sS "https://api.github.com/repos/anthropics/claude-code/issues?state=open" \
+  -H "Accept: application/vnd.github+json" \
+  -H "X-GitHub-Api-Version: 2022-11-28" \
+  | jq '[.[] | {n: .number, t: .title, u: .user.login}]' \
+  | head -n 40"#;
+        payload_round_trips(command, "/bin/sh", CLAUDE_REWRITE_COMMANDS, "claude");
+    }
+
+    #[test]
+    fn command_with_shell_metachars_round_trips() {
+        // $, backticks, \n inside single quotes, globs, process substitution.
+        let command = "grep -rn \"$PATTERN\" . | awk 'NR==1 {print $0; next} {printf \"%s\\n\", $0}' | tee /tmp/out.txt";
+        payload_round_trips(command, "/bin/sh", CLAUDE_REWRITE_COMMANDS, "claude");
+    }
+
+    #[test]
+    fn command_with_embedded_double_quotes_and_backslashes_round_trips() {
+        // Backslashes + nested quotes in -d body — the original bug was sed
+        // escape lossiness exactly here.
+        let command = r#"curl -X POST http://localhost:3000/api \
+  -H "Content-Type: application/json" \
+  -d "{\"path\":\"C:\\\\Users\\\\me\",\"msg\":\"hello \\\"world\\\"\"}""#;
+        payload_round_trips(command, "/bin/sh", CLAUDE_REWRITE_COMMANDS, "claude");
+    }
+
+    #[test]
+    fn fish_shell_multiline_curl_round_trips() {
+        // The perl-JSON fix was motivated by fish — keep a guard.
+        let command = r#"curl -sS -X POST "https://example.com/v1/completions" \
+  -H "Authorization: Bearer TEST" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"x","messages":[{"role":"user","content":"hi"}]}'"#;
+        payload_round_trips(command, "/usr/bin/fish", CLAUDE_REWRITE_COMMANDS, "claude");
+    }
+
+    #[test]
+    fn cursor_backend_round_trips_multiline_command() {
+        let command = r#"docker run --rm \
+  -v "$PWD":/work \
+  -w /work \
+  python:3.12-slim \
+  python -c 'import json,sys; print(json.dumps({"ok": True}))'"#;
+        payload_round_trips(command, "/bin/sh", CURSOR_REWRITE_COMMANDS, "cursor-hooks");
+    }
+
+    #[test]
+    fn large_multiline_command_round_trips() {
+        // 2+ KB command to catch any size-related bugs in the pipeline.
+        let body: String = (0..40)
+            .map(|i| format!("    \"key_{i:03}\": \"value with some text number {i}\""))
+            .collect::<Vec<_>>()
+            .join(",\n");
+        let command = format!(
+            "curl -sS -X POST https://api.example.com/bulk \\\n  -H 'Content-Type: application/json' \\\n  -d '{{\n{body}\n  }}'"
+        );
+        payload_round_trips(&command, "/bin/sh", CLAUDE_REWRITE_COMMANDS, "claude");
+    }
+
+    #[test]
+    fn command_with_literal_tabs_round_trips() {
+        // Real tabs in args (e.g. awk -F'\t') must survive JSON encoding.
+        // Use `grep` as the first token so the command matches the rewrite set.
+        let command = "grep -P '\tERROR\t' /var/log/app.log | cut -f 1,3 | sort -u";
+        payload_round_trips(command, "/bin/sh", CLAUDE_REWRITE_COMMANDS, "claude");
+    }
 }
