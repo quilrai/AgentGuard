@@ -467,7 +467,7 @@ fn classify_definition(lk: &str, parent: Option<tree_sitter::Node>) -> String {
 /// exist on disk. Used by Codex hooks (which only have a Bash tool).
 pub fn paths_from_bash_for_symbols(cmd: &str, cwd: &std::path::Path) -> Vec<String> {
     let mut out = Vec::new();
-    for token in cmd.split_whitespace() {
+    for token in tokenize_shell_words(cmd) {
         let t = token.trim_matches(|c| c == '"' || c == '\'' || c == '`');
         if t.is_empty() || t.starts_with('-') {
             continue;
@@ -485,6 +485,39 @@ pub fn paths_from_bash_for_symbols(cmd: &str, cwd: &std::path::Path) -> Vec<Stri
             out.push(abs.to_string_lossy().to_string());
         }
     }
+    out
+}
+
+fn tokenize_shell_words(cmd: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut cur = String::new();
+    let mut in_single = false;
+    let mut in_double = false;
+
+    for c in cmd.chars() {
+        if c == '\'' && !in_double {
+            in_single = !in_single;
+            cur.push(c);
+            continue;
+        }
+        if c == '"' && !in_single {
+            in_double = !in_double;
+            cur.push(c);
+            continue;
+        }
+        if c.is_whitespace() && !in_single && !in_double {
+            if !cur.is_empty() {
+                out.push(std::mem::take(&mut cur));
+            }
+            continue;
+        }
+        cur.push(c);
+    }
+
+    if !cur.is_empty() {
+        out.push(cur);
+    }
+
     out
 }
 
@@ -594,5 +627,28 @@ trait Handler {
     fn test_unsupported_extension() {
         let symbols = extract_symbols("data.json", "{}");
         assert!(symbols.is_empty());
+    }
+
+    #[test]
+    fn test_bash_path_extraction_keeps_quoted_paths_together() {
+        let dir = std::env::temp_dir().join(format!(
+            "symbols_paths_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(dir.join("quoted dir")).unwrap();
+        let file = dir.join("quoted dir").join("demo.py");
+        std::fs::write(&file, "print('hi')\n").unwrap();
+
+        let found = paths_from_bash_for_symbols(r#"cat "quoted dir/demo.py""#, &dir);
+
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0], file.to_string_lossy());
+
+        let _ = std::fs::remove_file(&file);
+        let _ = std::fs::remove_dir(dir.join("quoted dir"));
+        let _ = std::fs::remove_dir(&dir);
     }
 }

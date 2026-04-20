@@ -33,8 +33,23 @@ fn generate_shell_script(port: u16) -> String {
 # Read JSON input from stdin
 INPUT=$(cat)
 
-# Extract hook_event_name from JSON
-HOOK_NAME=$(echo "$INPUT" | grep -o '"hook_event_name"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*: *"\([^"]*\)"/\1/')
+# Extract hook_event_name from JSON. Using grep/sed here is brittle if the
+# payload formatting changes, so parse the JSON properly.
+if ! command -v perl >/dev/null 2>&1; then
+    echo '{{"status": "ok"}}'
+    exit 0
+fi
+
+HOOK_NAME=$(printf '%s' "$INPUT" | perl -MJSON::PP -e '
+    use strict;
+    use warnings;
+    local $/;
+    my $raw = <STDIN>;
+    my $data = eval {{ JSON::PP::decode_json($raw) }};
+    exit 0 unless $data && ref($data) eq "HASH";
+    my $name = $data->{{hook_event_name}};
+    print $name if defined $name && !ref($name);
+')
 
 # Map hook names to API endpoints
 case "$HOOK_NAME" in

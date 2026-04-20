@@ -111,6 +111,10 @@ async fn cli_compression_handler(
         .get("cwd")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
+    let shell = parsed
+        .get("shell")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
     let backend_name = parsed
         .get("backend")
         .and_then(|v| v.as_str())
@@ -126,9 +130,9 @@ async fn cli_compression_handler(
     // Run in blocking task since shell execution is synchronous
     let result = tokio::task::spawn_blocking(move || {
         if compression_enabled {
-            shell_compression::compress_command(&command, cwd.as_deref(), &flags)
+            shell_compression::compress_command(&command, cwd.as_deref(), shell.as_deref(), &flags)
         } else {
-            shell_compression::run_command_raw(&command, cwd.as_deref())
+            shell_compression::run_command_raw(&command, cwd.as_deref(), shell.as_deref())
         }
     })
     .await;

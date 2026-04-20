@@ -233,21 +233,51 @@ set -euo pipefail
 
 INPUT=$(cat)
 
-# Extract tool_name from the JSON input
-TOOL=$(echo "$INPUT" | grep -o '"tool_name":"[^"]*"' | head -1 | cut -d'"' -f4)
-
-# Only process Bash tool calls
-if [ "$TOOL" != "Bash" ] && [ "$TOOL" != "bash" ]; then
+# PreToolUse is already matched to Bash|bash in Claude settings, so we only
+# need to parse the command payload robustly here. Using grep/cut breaks as
+# soon as the command itself contains quoted strings (for example curl -H "...").
+if ! command -v perl >/dev/null 2>&1; then
   exit 0
 fi
 
-# Extract the command string
-CMD=$(echo "$INPUT" | grep -o '"command":"[^"]*"' | head -1 | cut -d'"' -f4)
+json_get() {{
+  local path="$1"
+  printf '%s' "$INPUT" | perl -MJSON::PP -e '
+    use strict;
+    use warnings;
+
+    my $path = shift @ARGV;
+    local $/;
+    my $raw = <STDIN>;
+    my $data = eval {{ JSON::PP::decode_json($raw) }};
+    exit 0 unless $data;
+
+    my $cur = $data;
+    for my $part (split /\./, $path) {{
+      if (ref($cur) eq "HASH" && exists $cur->{{$part}}) {{
+        $cur = $cur->{{$part}};
+      }} else {{
+        $cur = undef;
+        last;
+      }}
+    }}
+
+    if (defined $cur && !ref($cur)) {{
+      print $cur;
+    }}
+  ' "$path"
+}}
+
+CMD=$(json_get "tool_input.command")
+if [ -z "$CMD" ]; then
+  exit 0
+fi
 
 # Extract the top-level cwd from the hook payload (Claude Code includes it).
 # Fall back to $(pwd) only if the payload didn't carry one.
-PAYLOAD_CWD=$(echo "$INPUT" | grep -o '"cwd":"[^"]*"' | head -1 | cut -d'"' -f4)
+PAYLOAD_CWD=$(json_get "cwd")
 EFFECTIVE_CWD="${{PAYLOAD_CWD:-$(pwd)}}"
+EFFECTIVE_SHELL="${{LLMWATCHER_SHELL:-${{SHELL:-/bin/bash}}}}"
 
 # Don't rewrite if already going through compression
 if echo "$CMD" | grep -qE "cli_compression|LLMWATCHER_ACTIVE"; then
@@ -257,18 +287,22 @@ fi
 # Check if command matches our rewrite list
 case "$CMD" in
   {case_line})
-    # Escape command and cwd for JSON string values (\ -> \\, " -> \")
+    # Escape command, cwd, and shell for JSON string values (\ -> \\, " -> \")
     ESCAPED_CMD=$(printf '%s' "$CMD" | sed 's/\\/\\\\/g; s/"/\\"/g')
     ESCAPED_CWD=$(printf '%s' "$EFFECTIVE_CWD" | sed 's/\\/\\\\/g; s/"/\\"/g')
+    ESCAPED_SHELL=$(printf '%s' "$EFFECTIVE_SHELL" | sed 's/\\/\\\\/g; s/"/\\"/g')
 
     # Write JSON payload to a temp file to avoid quoting hell.
     _LMWH_PF=$(mktemp)
-    printf '{{"command":"%s","cwd":"%s","backend":"{backend_name}"}}' "$ESCAPED_CMD" "$ESCAPED_CWD" > "$_LMWH_PF"
+    printf '{{"command":"%s","cwd":"%s","backend":"{backend_name}","shell":"%s"}}' "$ESCAPED_CMD" "$ESCAPED_CWD" "$ESCAPED_SHELL" > "$_LMWH_PF"
 
     # Also stash the raw command in a temp file so the rewrite can fall back
-    # to executing it directly if the proxy is unreachable.
+    # to executing it directly if the proxy is unreachable, using the same
+    # shell the proxy would have used.
     _LMWH_CF=$(mktemp)
     printf '%s' "$CMD" > "$_LMWH_CF"
+    _LMWH_SF=$(mktemp)
+    printf '%s' "$EFFECTIVE_SHELL" > "$_LMWH_SF"
 
     # Build rewrite command that reads payload from the temp file.
     # $_LMWH_PF / $_LMWH_CF are expanded NOW (literal paths baked into REWRITE).
@@ -276,11 +310,11 @@ case "$CMD" in
     #
     # Failure handling:
     #   - curl failed (connect refused, DNS, stale port) -> run the original
-    #     command via `bash $_LMWH_CF` so the agent never sees a phantom success.
+    #     command via the same shell so the agent never sees a phantom success.
     #   - HTTP 200 + X-Exit-Code header -> propagate the proxy's exit code.
     #   - Any other proxy response -> surface body + non-zero exit (do NOT
     #     re-run; the proxy already executed the command).
-    REWRITE="set +e; _LMWH_T=\$(mktemp); _LMWH_HC=\$(curl -sS -o \"\$_LMWH_T\" -D \"\${{_LMWH_T}}.h\" -w '%{{http_code}}' -X POST -H 'Content-Type: application/json' -d @$_LMWH_PF http://localhost:{port}/cli_compression 2>/dev/null); _LMWH_CURL=\$?; if [ \$_LMWH_CURL -ne 0 ] || [ -z \"\$_LMWH_HC\" ] || [ \"\$_LMWH_HC\" = '000' ]; then echo '[llmwatcher: compression proxy unreachable, running raw command]' >&2; rm -f \"\$_LMWH_T\" \"\${{_LMWH_T}}.h\" $_LMWH_PF; bash $_LMWH_CF; _LMWH_RAW=\$?; rm -f $_LMWH_CF; exit \$_LMWH_RAW; fi; _LMWH_EC=\$(grep -i x-exit-code \"\${{_LMWH_T}}.h\" 2>/dev/null | tr -d '\\r' | cut -d' ' -f2); cat \"\$_LMWH_T\"; rm -f \"\$_LMWH_T\" \"\${{_LMWH_T}}.h\" $_LMWH_PF $_LMWH_CF; if [ \"\$_LMWH_HC\" = '200' ] && [ -n \"\$_LMWH_EC\" ]; then exit \$_LMWH_EC; fi; echo \"[llmwatcher: proxy returned HTTP \$_LMWH_HC]\" >&2; exit 1"
+    REWRITE="set +e; _LMWH_T=\$(mktemp); _LMWH_HC=\$(curl -sS -o \"\$_LMWH_T\" -D \"\${{_LMWH_T}}.h\" -w '%{{http_code}}' -X POST -H 'Content-Type: application/json' -d @$_LMWH_PF http://localhost:{port}/cli_compression 2>/dev/null); _LMWH_CURL=\$?; if [ \$_LMWH_CURL -ne 0 ] || [ -z \"\$_LMWH_HC\" ] || [ \"\$_LMWH_HC\" = '000' ]; then echo '[llmwatcher: compression proxy unreachable, running raw command]' >&2; _LMWH_SH=\$(cat \"$_LMWH_SF\" 2>/dev/null); if [ -z \"\$_LMWH_SH\" ]; then _LMWH_SH=/bin/bash; fi; rm -f \"\$_LMWH_T\" \"\${{_LMWH_T}}.h\" \"$_LMWH_PF\" \"$_LMWH_SF\"; \"\$_LMWH_SH\" \"$_LMWH_CF\"; _LMWH_RAW=\$?; rm -f \"$_LMWH_CF\"; exit \$_LMWH_RAW; fi; _LMWH_EC=\$(grep -i x-exit-code \"\${{_LMWH_T}}.h\" 2>/dev/null | tr -d '\\r' | cut -d' ' -f2); cat \"\$_LMWH_T\"; rm -f \"\$_LMWH_T\" \"\${{_LMWH_T}}.h\" \"$_LMWH_PF\" \"$_LMWH_CF\" \"$_LMWH_SF\"; if [ \"\$_LMWH_HC\" = '200' ] && [ -n \"\$_LMWH_EC\" ]; then exit \$_LMWH_EC; fi; echo \"[llmwatcher: proxy returned HTTP \$_LMWH_HC]\" >&2; exit 1"
 
     # Escape the rewrite for JSON output (\ -> \\, " -> \")
     REWRITE_ESC=$(printf '%s' "$REWRITE" | sed 's/\\/\\\\/g; s/"/\\"/g')

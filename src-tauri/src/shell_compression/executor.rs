@@ -8,8 +8,8 @@ pub struct CommandResult {
     pub duration_ms: u64,
 }
 
-pub fn run_command(command: &str, cwd: Option<&str>) -> CommandResult {
-    let (shell, shell_flag) = shell_and_flag();
+pub fn run_command(command: &str, cwd: Option<&str>, shell_override: Option<&str>) -> CommandResult {
+    let (shell, shell_flag) = shell_and_flag(shell_override);
     let start = Instant::now();
 
     let mut cmd = Command::new(&shell);
@@ -70,8 +70,8 @@ pub fn run_command(command: &str, cwd: Option<&str>) -> CommandResult {
     }
 }
 
-fn shell_and_flag() -> (String, String) {
-    let shell = detect_shell();
+fn shell_and_flag(shell_override: Option<&str>) -> (String, String) {
+    let shell = detect_shell(shell_override);
     let flag = if cfg!(windows) {
         let name = std::path::Path::new(&shell)
             .file_name()
@@ -91,7 +91,11 @@ fn shell_and_flag() -> (String, String) {
     (shell, flag.to_string())
 }
 
-fn detect_shell() -> String {
+fn detect_shell(shell_override: Option<&str>) -> String {
+    if let Some(shell) = shell_override.filter(|s| !s.trim().is_empty()) {
+        return shell.to_string();
+    }
+
     if let Ok(shell) = std::env::var("LLMWATCHER_SHELL") {
         return shell;
     }

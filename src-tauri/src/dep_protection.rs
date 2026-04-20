@@ -99,7 +99,8 @@ pub fn extract_packages_from_command(command: &str) -> Vec<ExtractedPackage> {
 
     // Split compound commands
     for segment in split_compound_command(command) {
-        let tokens: Vec<&str> = segment.split_whitespace().collect();
+        let token_storage = tokenize_shell_words(&segment);
+        let tokens: Vec<&str> = token_storage.iter().map(String::as_str).collect();
         if tokens.is_empty() {
             continue;
         }
@@ -118,7 +119,8 @@ pub fn extract_packages_from_command_with_context(
     let mut results = extract_packages_from_command(command);
 
     for segment in split_compound_command(command) {
-        let tokens: Vec<&str> = segment.split_whitespace().collect();
+        let token_storage = tokenize_shell_words(&segment);
+        let tokens: Vec<&str> = token_storage.iter().map(String::as_str).collect();
         if tokens.is_empty() {
             continue;
         }
@@ -139,9 +141,25 @@ fn split_compound_command(cmd: &str) -> Vec<String> {
     let chars: Vec<char> = cmd.chars().collect();
     let len = chars.len();
     let mut i = 0;
+    let mut in_single = false;
+    let mut in_double = false;
     while i < len {
         let c = chars[i];
-        if c == ';' || c == '|' || c == '&' {
+
+        if c == '\'' && !in_double {
+            in_single = !in_single;
+            current.push(c);
+            i += 1;
+            continue;
+        }
+        if c == '"' && !in_single {
+            in_double = !in_double;
+            current.push(c);
+            i += 1;
+            continue;
+        }
+
+        if !in_single && !in_double && (c == ';' || c == '|' || c == '&') {
             // Check for && or ||
             if i + 1 < len
                 && ((c == '&' && chars[i + 1] == '&') || (c == '|' && chars[i + 1] == '|'))
@@ -170,6 +188,39 @@ fn split_compound_command(cmd: &str) -> Vec<String> {
         parts.push(current.trim().to_string());
     }
     parts
+}
+
+fn tokenize_shell_words(cmd: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut cur = String::new();
+    let mut in_single = false;
+    let mut in_double = false;
+
+    for c in cmd.chars() {
+        if c == '\'' && !in_double {
+            in_single = !in_single;
+            cur.push(c);
+            continue;
+        }
+        if c == '"' && !in_single {
+            in_double = !in_double;
+            cur.push(c);
+            continue;
+        }
+        if c.is_whitespace() && !in_single && !in_double {
+            if !cur.is_empty() {
+                out.push(std::mem::take(&mut cur));
+            }
+            continue;
+        }
+        cur.push(c);
+    }
+
+    if !cur.is_empty() {
+        out.push(cur);
+    }
+
+    out
 }
 
 fn extract_from_install_context(
@@ -257,6 +308,7 @@ fn extend_from_dependency_file(
 }
 
 fn resolve_dependency_path(cwd: Option<&str>, file_name: &str) -> Option<PathBuf> {
+    let file_name = file_name.trim_matches(|c| c == '"' || c == '\'');
     let path = Path::new(file_name);
     if path.is_absolute() {
         return Some(path.to_path_buf());
@@ -383,6 +435,7 @@ fn extract_pip_packages(tokens: &[&str], out: &mut Vec<ExtractedPackage>) {
 
 fn parse_pip_spec(spec: &str) -> (String, Option<String>, bool) {
     let spec = spec.trim_matches(|c| c == '"' || c == '\'');
+    let spec = spec.split(';').next().unwrap_or(spec).trim();
     // Handle extras: package[extra]==version
     let spec = if let Some(bracket) = spec.find('[') {
         if let Some(close) = spec.find(']') {
@@ -1613,6 +1666,40 @@ toml = { version = "=0.8.19" }
         assert!(pkgs[0].version_is_exact);
         assert_eq!(pkgs[1].name, "requests");
         assert!(!pkgs[1].version_is_exact);
+    }
+
+    #[test]
+    fn pip_requirement_install_handles_quoted_paths_with_spaces() {
+        let dir = temp_dir("dep_protection_pip_requirements_spaces");
+        let req_dir = dir.join("nested dir");
+        fs::create_dir_all(&req_dir).unwrap();
+        fs::write(req_dir.join("requirements.txt"), "httpx==0.27.0\n").unwrap();
+
+        let pkgs = extract_packages_from_command_with_context(
+            r#"pip install -r "nested dir/requirements.txt""#,
+            dir.to_str(),
+        );
+
+        let _ = fs::remove_file(req_dir.join("requirements.txt"));
+        let _ = fs::remove_dir(&req_dir);
+        let _ = fs::remove_dir(&dir);
+
+        assert_eq!(pkgs.len(), 1);
+        assert_eq!(pkgs[0].name, "httpx");
+        assert_eq!(pkgs[0].version.as_deref(), Some("0.27.0"));
+        assert!(pkgs[0].version_is_exact);
+    }
+
+    #[test]
+    fn pip_specs_with_environment_markers_keep_the_base_version() {
+        let pkgs = extract_packages_from_command(
+            r#"pip install "requests==2.31.0; python_version<'3.12'""#,
+        );
+
+        assert_eq!(pkgs.len(), 1);
+        assert_eq!(pkgs[0].name, "requests");
+        assert_eq!(pkgs[0].version.as_deref(), Some("2.31.0"));
+        assert!(pkgs[0].version_is_exact);
     }
 
     async fn spawn_router(router: axum::Router) -> (String, tokio::task::JoinHandle<()>) {

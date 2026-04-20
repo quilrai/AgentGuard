@@ -30,14 +30,42 @@ set -euo pipefail
 
 INPUT=$(cat)
 
-# Only process Read tool calls
-TOOL=$(echo "$INPUT" | grep -o '"tool_name":"[^"]*"' | head -1 | cut -d'"' -f4)
-if [ "$TOOL" != "Read" ] && [ "$TOOL" != "read" ]; then
+# PreToolUse is already matched to Read in Claude settings, so we only need
+# the file path. Parse the JSON payload properly so escaped characters in the
+# request body do not truncate the extracted value.
+if ! command -v perl >/dev/null 2>&1; then
   exit 0
 fi
 
-# Extract file_path from tool_input
-FILE_PATH=$(echo "$INPUT" | grep -o '"file_path":"[^"]*"' | head -1 | cut -d'"' -f4)
+json_get() {{
+  local path="$1"
+  printf '%s' "$INPUT" | perl -MJSON::PP -e '
+    use strict;
+    use warnings;
+
+    my $path = shift @ARGV;
+    local $/;
+    my $raw = <STDIN>;
+    my $data = eval {{ JSON::PP::decode_json($raw) }};
+    exit 0 unless $data;
+
+    my $cur = $data;
+    for my $part (split /\./, $path) {{
+      if (ref($cur) eq "HASH" && exists $cur->{{$part}}) {{
+        $cur = $cur->{{$part}};
+      }} else {{
+        $cur = undef;
+        last;
+      }}
+    }}
+
+    if (defined $cur && !ref($cur)) {{
+      print $cur;
+    }}
+  ' "$path"
+}}
+
+FILE_PATH=$(json_get "tool_input.file_path")
 if [ -z "$FILE_PATH" ]; then
   exit 0
 fi

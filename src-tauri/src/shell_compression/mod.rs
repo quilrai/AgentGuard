@@ -19,9 +19,10 @@ pub struct ShellCompressionResult {
 pub fn compress_command(
     command: &str,
     cwd: Option<&str>,
+    shell: Option<&str>,
     flags: &crate::compression::AdvancedCompressionFlags,
 ) -> ShellCompressionResult {
-    let cmd_result = executor::run_command(command, cwd);
+    let cmd_result = executor::run_command(command, cwd, shell);
 
     let comp =
         compress::compress_and_measure(command, &cmd_result.stdout, &cmd_result.stderr, flags);
@@ -36,8 +37,8 @@ pub fn compress_command(
 }
 
 /// Execute a shell command without compression, return raw output.
-pub fn run_command_raw(command: &str, cwd: Option<&str>) -> ShellCompressionResult {
-    let cmd_result = executor::run_command(command, cwd);
+pub fn run_command_raw(command: &str, cwd: Option<&str>, shell: Option<&str>) -> ShellCompressionResult {
+    let cmd_result = executor::run_command(command, cwd, shell);
 
     let mut output = cmd_result.stdout;
     if !cmd_result.stderr.is_empty() {
