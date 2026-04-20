@@ -46,8 +46,12 @@ while true; do
   printf "  • "
   IFS= read -r LINE || break
   [ -z "$LINE" ] && break
-  LINE="${LINE#- }"
-  LINE="${LINE#* }"
+  # Strip a leading bullet marker if the user typed one, so we don't double up.
+  case "$LINE" in
+    "- "*) LINE="${LINE#- }" ;;
+    "* "*) LINE="${LINE#\* }" ;;
+    "• "*) LINE="${LINE#• }" ;;
+  esac
   BULLETS+=("- $LINE")
 done
 

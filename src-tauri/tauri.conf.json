@@ -39,7 +39,7 @@
       "endpoints": [
         "https://agentguard.quilrai.dev/latest-version.json"
       ],
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDBCOEM3OTc2MjY5NjM0NTIKUldSU05KWW1kbm1NQ3dMcG41d2lyNHhLTHg4NnNaK2pTNm9xZDhkalFoVW9LV0JJWDNYSklPTUkK"
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEY0OEMwMDJGNjI4OUFDRUYKUldUdnJJbGlMd0NNOUZ1NFhyR2Q4S2VxMWIvZVIzZXdObEtHUmo1OFVaZGhYU0xvaDZKeEFvM0cK"
     }
   }
 }

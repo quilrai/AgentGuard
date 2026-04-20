@@ -191,3 +191,146 @@ jobs:
             git commit -m "chore(release): publish updater manifest for v${{ steps.get_version.outputs.VERSION }} [skip ci]"
             git push origin HEAD:main
           fi
+
+  build-linux:
+    needs: build-macos-apple-silicon
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.RELEASE_TOKEN }}
+          fetch-depth: 0
+          ref: main
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Install Tauri Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Get version from package.json
+        id: get_version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Sync Tauri bundle version
+        run: |
+          VERSION="${{ steps.get_version.outputs.VERSION }}"
+          node -e "
+            const fs = require('fs');
+            const p = 'src-tauri/tauri.conf.json';
+            const c = JSON.parse(fs.readFileSync(p, 'utf8'));
+            c.version = '$VERSION';
+            fs.writeFileSync(p, JSON.stringify(c, null, 2) + '\n');
+          "
+
+      - name: Build Tauri app
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: npm run tauri build
+
+      - name: Collect artifacts
+        id: artifacts
+        run: |
+          VERSION="${{ steps.get_version.outputs.VERSION }}"
+          DEB_DIR=src-tauri/target/release/bundle/deb
+          APPIMAGE_DIR=src-tauri/target/release/bundle/appimage
+
+          # Rename .deb for release
+          cd "$DEB_DIR"
+          SRC_DEB=$(ls *.deb | head -n1)
+          mv "$SRC_DEB" "AgentGuard-Linux-x86_64.deb"
+          cd - > /dev/null
+
+          # Find the signed AppImage and its .sig
+          APPIMAGE=$(ls "$APPIMAGE_DIR"/*.AppImage | head -n1)
+          SIG="${APPIMAGE}.sig"
+
+          if [ ! -f "$APPIMAGE" ] || [ ! -f "$SIG" ]; then
+            echo "ERROR: AppImage updater artifacts missing" >&2
+            ls -la "$APPIMAGE_DIR" >&2
+            exit 1
+          fi
+
+          RELEASE_APPIMAGE="AgentGuard_${VERSION}_x86_64.AppImage"
+          cp "$APPIMAGE" "$APPIMAGE_DIR/$RELEASE_APPIMAGE"
+          cp "$SIG"      "$APPIMAGE_DIR/${RELEASE_APPIMAGE}.sig"
+
+          SIG_CONTENT=$(cat "$SIG")
+          {
+            echo "SIGNATURE<<SIG_EOF"
+            echo "$SIG_CONTENT"
+            echo "SIG_EOF"
+          } >> $GITHUB_OUTPUT
+          echo "APPIMAGE_NAME=$RELEASE_APPIMAGE" >> $GITHUB_OUTPUT
+
+      - name: Upload Linux artifacts to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.get_version.outputs.VERSION }}
+          files: |
+            src-tauri/target/release/bundle/deb/AgentGuard-Linux-x86_64.deb
+            src-tauri/target/release/bundle/appimage/AgentGuard_${{ steps.get_version.outputs.VERSION }}_x86_64.AppImage
+            src-tauri/target/release/bundle/appimage/AgentGuard_${{ steps.get_version.outputs.VERSION }}_x86_64.AppImage.sig
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+
+      - name: Append linux-x86_64 to updater manifest
+        env:
+          VERSION: ${{ steps.get_version.outputs.VERSION }}
+          SIGNATURE: ${{ steps.artifacts.outputs.SIGNATURE }}
+          APPIMAGE_NAME: ${{ steps.artifacts.outputs.APPIMAGE_NAME }}
+        run: |
+          git pull --rebase origin main
+          node -e "
+            const fs = require('fs');
+            const version = process.env.VERSION;
+            const signature = process.env.SIGNATURE;
+            const appimage = process.env.APPIMAGE_NAME;
+            const url = \`https://github.com/\${process.env.GITHUB_REPOSITORY}/releases/download/v\${version}/\${appimage}\`;
+            const path = 'docs/latest-version.json';
+            const manifest = JSON.parse(fs.readFileSync(path, 'utf8'));
+            manifest.platforms['linux-x86_64'] = { signature, url };
+            fs.writeFileSync(path, JSON.stringify(manifest, null, 2) + '\n');
+          "
+
+      - name: Commit manifest back to main
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/latest-version.json
+          if git diff --cached --quiet; then
+            echo "No manifest changes to commit."
+          else
+            git commit -m "chore(release): add linux-x86_64 to updater manifest for v${{ steps.get_version.outputs.VERSION }} [skip ci]"
+            git push origin HEAD:main
+          fi
