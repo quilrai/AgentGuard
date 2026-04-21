@@ -310,7 +310,10 @@ jobs:
           SIGNATURE: ${{ steps.artifacts.outputs.SIGNATURE }}
           APPIMAGE_NAME: ${{ steps.artifacts.outputs.APPIMAGE_NAME }}
         run: |
-          git pull --rebase origin main
+          # Discard build-dirtied files (tauri.conf.json, Cargo.lock, etc.) and
+          # fast-forward to whatever the macOS job pushed to main.
+          git fetch origin main
+          git reset --hard origin/main
           node -e "
             const fs = require('fs');
             const version = process.env.VERSION;
