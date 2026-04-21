@@ -1,0 +1,11 @@
+{
+  "version": "1.0.5",
+  "notes": "- memory leak fix\n- ubuntu build\n- agent behaviour tab",
+  "pub_date": "2026-04-20T16:44:01.589Z",
+  "platforms": {
+    "darwin-aarch64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUdnJJbGlMd0NNOUFEUGNzZE1Sb1BEQThQYklTUFFMQS9DcGVZNnBpMW1yRlloTUQ4SUF4blBIN1E1U1JEcU91QlBkUUFUMkJpS2VwYzhXS0h1WW8wOUMyWjgwNTZuMFFzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc2NzAzNDM1CWZpbGU6QWdlbnRHdWFyZC5hcHAudGFyLmd6CmdNVnJZZld0cW4xSkZSdnZUYVZpaWt6KzZGdWwzQzZFOE9DLy9IV3pHYVlqeTdTL3hrNk1XeElkSm50QllGdFpyYnNVTlhuRVQ2Ym03TVR3ODkzNUFBPT0K",
+      "url": "https://github.com/quilrai/AgentGuard/releases/download/v1.0.5/AgentGuard_1.0.5_aarch64.app.tar.gz"
+    }
+  }
+}
