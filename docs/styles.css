@@ -353,6 +353,32 @@ img {
   margin-top: 30px;
 }
 
+.hero-note {
+  margin-top: 18px;
+  font-size: 0.92rem;
+  color: var(--muted);
+  max-width: 560px;
+}
+
+.hero-note a {
+  color: var(--text);
+  text-decoration: underline;
+  text-decoration-color: rgba(255, 255, 255, 0.25);
+  text-underline-offset: 3px;
+}
+
+.hero-note a:hover {
+  text-decoration-color: rgba(130, 220, 148, 0.8);
+}
+
+.hero-note code {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 1px 6px;
+  font-size: 0.86rem;
+}
+
 .hero-stage {
   position: relative;
   min-height: 540px;
