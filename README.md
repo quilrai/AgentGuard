@@ -1,73 +1,98 @@
 # AgentGuard
 
-**[Download for Mac (Apple silicon) - 12MB](https://github.com/quilrai/AgentGuard/releases/latest/download/AgentGuard-Apple-Silicon.dmg)**
+Local guardrails and token saving for coding agents.
 
-**Download Windows (Coming Soon)**
+**[Download for Mac, Apple silicon - 12MB](https://github.com/quilrai/AgentGuard/releases/latest/download/AgentGuard-Apple-Silicon.dmg)**
 
-Local DLP + observability layer for AI coding agents.
+Windows build: coming soon.
 
 ![AgentGuard screenshot](screenshots/home.png)
 
-**Fully local (on-device), desktop app for**
-- Block requests containing sensitive information (credentials, secrets, PII) with regex + keyword patterns
-- Protect against malicious or outdated dependencies before they're installed
-- Save tokens via shell output compression and smart file-read caching
-- Full searchable history of LLM requests, tool calls, and DLP detections
-- Visualize your codebase as a living garden — file hotspots, module structure, import graphs
-- Analyze agent behaviour trends: read discipline, exploration balance, bash reliance, tool tempo
-- Supports Claude Code, Codex CLI, and Cursor IDE out of the box
+## What It Is
 
-## How it works
+AgentGuard is a Tauri desktop app. It runs locally, listens on `localhost:8008`, and connects to agent CLIs/IDEs through hooks.
 
-AgentGuard runs a local HTTP server on `localhost:8008`. When you install hooks for an agent, small scripts are registered that POST hook events to this server — no proxy, no traffic interception.
+No proxy. No cloud relay. Hook events come in, policy decisions go out.
 
-- **Claude Code**: hooks registered in `~/.claude/settings.json` (UserPromptSubmit, PreToolUse, PostToolUse, Stop, SessionStart, SessionEnd)
-- **Codex CLI**: hook scripts installed to `~/.codex/hooks/` with `~/.codex/hooks.json`
-- **Cursor IDE**: hooks registered in `~/.cursor/hooks/`
+Supports:
 
-## Features
+- Claude Code
+- Codex CLI
+- Cursor IDE
 
-### DLP (Data Loss Prevention)
-- Regex + keyword pattern matching against prompts, tool inputs, and file reads
-- Pre-built patterns for API keys, credentials, secrets, PII, and more
-- Add your own patterns — configurable per agent
-- Detections can block the request or log with full context for review
+## Save Costs With Claude Code
 
-### Dependency Protection
-- **Vulnerability Guard**: checks packages against the [OSV database](https://osv.dev) before install — blocks if vulnerabilities are found
-- **Update Advisor**: detects outdated exact-pinned packages and advises the agent of newer versions
-- Covers install commands (`pip install`, `npm install`, `cargo add`, `go get`, and more) and dependency file writes (`requirements.txt`, `package.json`, `Cargo.toml`, etc.)
-- Supports PyPI, npm, crates.io, Maven, Go, RubyGems, NuGet, Packagist
+AgentGuard cuts token waste before it reaches Claude Code.
 
-### Token Limit
-- Set a per-agent max tokens per request — requests exceeding the limit are blocked
+- Smart file-read cache: unchanged files come back as compact references instead of being resent.
+- Context-aware reads: full, diff, or line-range responses are chosen based on what changed.
+- Shell output compression: noisy output from builds, tests, package managers, logs, `git`, `grep`, `rg`, `find`, `ls`, `curl`, and more gets summarized.
+- Search compression: large `grep`/`rg` results are grouped by file and trimmed to the useful matches.
+- Cheaper shell habits: `rg`-style search, targeted reads, and summarized file discovery instead of giant recursive dumps.
+- Diff compression: keeps the actual changes, drops excess context.
+- JSON crusher: trims huge arrays, long strings, and deep nesting while preserving structure.
 
-### Token Savings
+Use the Token Saver tab and apply recommended settings for Claude Code.
 
-**Shell Compression**
-- Intercepts shell command output and compresses it before the agent sees it
-- Reduces token usage on verbose build/test/log output
-- Configurable per agent (Claude Code and Cursor)
+## Guardian Agent
 
-**Context-Aware File Read Caching**
-- Session-scoped file cache with stable references (F1, F2, …)
-- Automatically picks the best read mode: full, diff, or line range
-- Avoids re-sending unchanged file content across turns
+AgentGuard puts a local policy layer in front of coding agents.
 
-### Garden (Codebase Visualizer)
-- Each project is rendered as a living garden: modules are groves, sub-folders are clearings
-- Tree height = file size; canopy tiers = number of times touched; canopy color = which agent touched it most
-- Hero trees (hottest files) are shown in the foreground; lightly-touched files appear as background bushes
-- Sun brightness = cache hit ratio; gold/copper coins = full-price vs cached input tokens
-- Click any tree to see its imports and definitions (functions, classes, structs, etc.) extracted via tree-sitter
-- Dashed curves connect trees that import from each other (import graph)
+- Sensitive data guard: blocks prompts, tool inputs, file reads, shell commands, and MCP calls that match secrets, credentials, API keys, PII, or custom patterns.
+- Dependency guard: blocks known compromised or vulnerable packages before the agent installs them.
+- Update advisor: nudges the agent toward newer exact-pinned package versions instead of relying on stale model memory.
+- Token limit: blocks oversized requests per agent.
+- Local logs: records prompts, tool calls, blocks, detections, and token savings in SQLite.
 
-### Agent Behaviour Monitor
-- Day-wise trend graphs for key metrics: read-first discipline, exploration balance, bash reliance, tool tempo
-- Operating mix breakdown: explore / modify / bash / other
-- Session drilldown: files touched, tool tags, bash previews, blocked-turn markers
-- Covers active days, avg turns/session, files touched/session, guardrail activity
+Dependency protection checks install commands and dependency files such as `package.json`, `requirements.txt`, `pyproject.toml`, `Cargo.toml`, `go.mod`, `Gemfile`, `pom.xml`, `build.gradle`, `.csproj`, and `composer.json`.
 
-### Logging & Observability
-- All hook events logged locally to SQLite: prompts, tool calls, DLP detections, token usage
-- Full-text searchable request history per agent
+Vulnerability data comes from OSV. Latest-version checks cover PyPI, npm, crates.io, RubyGems, NuGet, and Go.
+
+## What The App Has
+
+- Agent hook installer for Claude Code, Codex CLI, and Cursor IDE.
+- Per-agent DLP settings and custom pattern management.
+- Per-agent dependency protection toggles: Vulnerability Guard and Update Advisor.
+- Claude Code token-saving toggles.
+- Dashboard for requests, tools, token usage, latency, and savings.
+- Logs page for searchable local event history.
+- Behaviour monitor for read-first discipline, exploration balance, bash reliance, and tool tempo.
+- Garden view for project/module/file activity, import graphs, and tree-sitter symbols.
+
+## How It Works
+
+AgentGuard writes hook scripts into the agent's config area:
+
+- Claude Code: `~/.claude/settings.json` and `~/.claude/hooks/`
+- Codex CLI: `~/.codex/hooks.json` and `~/.codex/hooks/`
+- Cursor IDE: `~/.cursor/hooks/`
+
+The hooks POST events to the local Tauri server. If the app is not running, hooks fail open so the agent is not stuck.
+
+Local database:
+
+```txt
+~/.quilrdlpapp/proxy_requests.db
+```
+
+## Build The App Yourself
+
+Requirements:
+
+- Node.js
+- npm
+- Rust
+- Tauri system dependencies for your OS
+
+Run:
+
+```sh
+npm install
+npm run tauri dev
+```
+
+Build:
+
+```sh
+npm run tauri build
+```
