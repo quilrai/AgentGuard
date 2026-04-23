@@ -2,7 +2,12 @@
 
 Local guardrails and token saving for coding agents.
 
-**[Download for Mac, Apple silicon - 12MB](https://github.com/quilrai/AgentGuard/releases/latest/download/AgentGuard-Apple-Silicon.dmg)**
+Website: https://agentguard.quilrai.dev
+
+Downloads:
+
+- [Mac, Apple silicon - 12MB](https://github.com/quilrai/AgentGuard/releases/latest/download/AgentGuard-Apple-Silicon.dmg)
+- [Ubuntu, x86_64 .deb](https://github.com/quilrai/AgentGuard/releases/latest/download/AgentGuard-Linux-x86_64.deb)
 
 Windows build: coming soon.
 
