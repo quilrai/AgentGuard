@@ -220,6 +220,10 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
+            if let Err(err) = commands::migrate_installed_compression_hooks() {
+                eprintln!("[SHELL_COMPRESSION] Hook migration skipped/failed: {err}");
+            }
+
             // Spawn HTTP server with app handle for events
             let app_handle = app.handle().clone();
             std::thread::spawn(move || {

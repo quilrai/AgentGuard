@@ -14,6 +14,9 @@ use std::os::unix::fs::PermissionsExt;
 /// Claude Code gets the full list; Cursor and Codex get subsets.
 /// Full rewrite list covering all engine-supported command families.
 /// Claude Code gets the broadest list including cat/head/tail/pytest/mypy.
+/// Bump this when `generate_compression_hook_script` changes materially.
+const COMPRESSION_HOOK_VERSION_MARKER: &str = "LLMWATCHER_COMPRESS_HOOK_VERSION=2";
+
 const CLAUDE_REWRITE_COMMANDS: &[&str] = &[
     // VCS & collaboration
     "git",
@@ -228,6 +231,7 @@ fn generate_compression_hook_script(port: u16, commands: &[&str], backend_name: 
     format!(
         r#"#!/usr/bin/env bash
 # LLMwatcher Shell Compression Hook
+# {version_marker}
 # Rewrites shell commands to route through the compression endpoint.
 set -euo pipefail
 umask 077
@@ -367,8 +371,17 @@ case "$CMD" in
     exit 0
     ;;
 esac
-"#
+"#,
+        version_marker = COMPRESSION_HOOK_VERSION_MARKER,
     )
+}
+
+fn compression_script_is_current(path: &PathBuf, port: u16) -> bool {
+    let Ok(content) = fs::read_to_string(path) else {
+        return false;
+    };
+    content.contains(COMPRESSION_HOOK_VERSION_MARKER)
+        && content.contains(&format!("http://localhost:{port}/cli_compression"))
 }
 
 // ============================================================================
@@ -558,6 +571,18 @@ pub fn uninstall_compression_hook_claude() -> Result<String, String> {
 
 #[tauri::command]
 pub fn check_compression_hook_claude() -> Result<bool, String> {
+    let installed = claude_compression_hook_installed()?;
+    if installed {
+        let port = *SERVER_PORT.lock().unwrap();
+        let script_path = get_claude_compression_script_path()?;
+        if !compression_script_is_current(&script_path, port) {
+            install_compression_hook_claude()?;
+        }
+    }
+    Ok(installed)
+}
+
+fn claude_compression_hook_installed() -> Result<bool, String> {
     let script_path = get_claude_compression_script_path()?;
     if !script_path.exists() {
         return Ok(false);
@@ -727,6 +752,18 @@ pub fn uninstall_compression_hook_cursor() -> Result<String, String> {
 
 #[tauri::command]
 pub fn check_compression_hook_cursor() -> Result<bool, String> {
+    let installed = cursor_compression_hook_installed()?;
+    if installed {
+        let port = *SERVER_PORT.lock().unwrap();
+        let script_path = get_cursor_compression_script_path()?;
+        if !compression_script_is_current(&script_path, port) {
+            install_compression_hook_cursor()?;
+        }
+    }
+    Ok(installed)
+}
+
+fn cursor_compression_hook_installed() -> Result<bool, String> {
     let script_path = get_cursor_compression_script_path()?;
     if !script_path.exists() {
         return Ok(false);
@@ -749,6 +786,45 @@ pub fn check_compression_hook_cursor() -> Result<bool, String> {
     });
 
     Ok(installed)
+}
+
+pub fn migrate_installed_compression_hooks() -> Result<(), String> {
+    let port = *SERVER_PORT.lock().unwrap();
+    let mut errors = Vec::new();
+
+    match claude_compression_hook_installed() {
+        Ok(true) => match get_claude_compression_script_path() {
+            Ok(path) if !compression_script_is_current(&path, port) => {
+                if let Err(err) = install_compression_hook_claude() {
+                    errors.push(format!("Claude: {err}"));
+                }
+            }
+            Ok(_) => {}
+            Err(err) => errors.push(format!("Claude: {err}")),
+        },
+        Ok(false) => {}
+        Err(err) => errors.push(format!("Claude: {err}")),
+    }
+
+    match cursor_compression_hook_installed() {
+        Ok(true) => match get_cursor_compression_script_path() {
+            Ok(path) if !compression_script_is_current(&path, port) => {
+                if let Err(err) = install_compression_hook_cursor() {
+                    errors.push(format!("Cursor: {err}"));
+                }
+            }
+            Ok(_) => {}
+            Err(err) => errors.push(format!("Cursor: {err}")),
+        },
+        Ok(false) => {}
+        Err(err) => errors.push(format!("Cursor: {err}")),
+    }
+
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors.join("; "))
+    }
 }
 
 #[cfg(test)]
@@ -849,6 +925,22 @@ mod tests {
             .as_str()
             .unwrap()
             .to_string()
+    }
+
+    #[test]
+    fn generated_script_has_migration_marker() {
+        let dir = temp_dir("compression_hook_marker");
+        let script = write_script(
+            &dir,
+            &generate_compression_hook_script(8123, CLAUDE_REWRITE_COMMANDS, "claude"),
+        );
+
+        let content = fs::read_to_string(&script).unwrap();
+        assert!(content.contains(COMPRESSION_HOOK_VERSION_MARKER));
+        assert!(compression_script_is_current(&script, 8123));
+        assert!(!compression_script_is_current(&script, 8124));
+
+        let _ = fs::remove_dir_all(&dir);
     }
 
     fn extract_payload_path(rewrite: &str) -> String {
