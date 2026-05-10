@@ -230,6 +230,7 @@ fn generate_compression_hook_script(port: u16, commands: &[&str], backend_name: 
 # LLMwatcher Shell Compression Hook
 # Rewrites shell commands to route through the compression endpoint.
 set -euo pipefail
+umask 077
 
 INPUT=$(cat)
 
@@ -277,7 +278,26 @@ fi
 # Fall back to $(pwd) only if the payload didn't carry one.
 PAYLOAD_CWD=$(json_get "cwd")
 EFFECTIVE_CWD="${{PAYLOAD_CWD:-$(pwd)}}"
-EFFECTIVE_SHELL="${{LLMWATCHER_SHELL:-${{SHELL:-/bin/bash}}}}"
+
+# Agent shell tools are Bash-compatible even when the user's login shell is fish
+# or zsh. Use a POSIX shell for the proxied command by default, while allowing
+# an explicit override for debugging or agent-specific needs.
+default_exec_shell() {{
+  if [ -x /bin/bash ]; then
+    printf '%s' /bin/bash
+    return
+  fi
+  if command -v bash >/dev/null 2>&1; then
+    command -v bash
+    return
+  fi
+  if [ -x /bin/sh ]; then
+    printf '%s' /bin/sh
+    return
+  fi
+  printf '%s' "${{SHELL:-/bin/sh}}"
+}}
+EFFECTIVE_SHELL="${{LLMWATCHER_SHELL:-$(default_exec_shell)}}"
 
 # Don't rewrite if already going through compression
 if echo "$CMD" | grep -qE "cli_compression|LLMWATCHER_ACTIVE"; then
@@ -294,12 +314,29 @@ case "$CMD" in
     perl -MJSON::PP -e '
       use strict;
       use warnings;
-      print JSON::PP::encode_json({{
+
+      my %env;
+      for my $key (keys %ENV) {{
+        my $value = $ENV{{$key}};
+        next unless defined $value;
+        my $ok = eval {{ JSON::PP::encode_json({{ $key => $value }}); 1 }};
+        next unless $ok;
+        $env{{$key}} = $value;
+      }}
+
+      my $payload = {{
         command => $ARGV[0],
         cwd => $ARGV[1],
         backend => $ARGV[2],
         shell => $ARGV[3],
-      }});
+        env => \%env,
+      }};
+      my $json = eval {{ JSON::PP::encode_json($payload) }};
+      if (!$json) {{
+        delete $payload->{{env}};
+        $json = JSON::PP::encode_json($payload);
+      }}
+      print $json;
     ' "$CMD" "$EFFECTIVE_CWD" "{backend_name}" "$EFFECTIVE_SHELL" > "$_LMWH_PF"
 
     # Also stash the raw command in a temp file so the rewrite can fall back
@@ -751,20 +788,53 @@ mod tests {
         path
     }
 
-    fn run_script(script: &Path, input: &Value, tmpdir: &Path, shell: &str) -> Output {
+    fn run_script_with_env(
+        script: &Path,
+        input: &Value,
+        tmpdir: &Path,
+        envs: &[(&str, &str)],
+    ) -> Output {
         let input_bytes = serde_json::to_vec(input).unwrap();
-        let mut child = Command::new("bash")
+        let mut command = Command::new("bash");
+        command
             .arg(script)
             .env("TMPDIR", tmpdir)
-            .env("LLMWATCHER_SHELL", shell)
+            .env_remove("LLMWATCHER_SHELL")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .unwrap();
+            .stderr(Stdio::piped());
+        for (key, value) in envs {
+            command.env(key, value);
+        }
+
+        let mut child = command.spawn().unwrap();
 
         child.stdin.take().unwrap().write_all(&input_bytes).unwrap();
         child.wait_with_output().unwrap()
+    }
+
+    fn run_script(script: &Path, input: &Value, tmpdir: &Path, shell: &str) -> Output {
+        run_script_with_env(script, input, tmpdir, &[("LLMWATCHER_SHELL", shell)])
+    }
+
+    fn expected_default_exec_shell() -> String {
+        if Path::new("/bin/bash").exists() {
+            return "/bin/bash".to_string();
+        }
+        let output = Command::new("bash")
+            .arg("-lc")
+            .arg("command -v bash")
+            .output();
+        if let Ok(output) = output {
+            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !path.is_empty() {
+                return path;
+            }
+        }
+        if Path::new("/bin/sh").exists() {
+            return "/bin/sh".to_string();
+        }
+        std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string())
     }
 
     fn rewrite_from_output(output: &Output) -> String {
@@ -824,10 +894,72 @@ mod tests {
         assert_eq!(payload["cwd"].as_str(), Some("/tmp/project"));
         assert_eq!(payload["backend"].as_str(), Some("claude"));
         assert_eq!(payload["shell"].as_str(), Some("/bin/sh"));
+        assert!(payload["env"]["PATH"].as_str().is_some());
         assert!(
             payload_raw.contains("\\n  -H"),
             "payload should JSON-escape command newlines: {payload_raw}"
         );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn user_login_shell_does_not_become_command_shell_by_default() {
+        let dir = temp_dir("compression_hook_default_shell");
+        let script = write_script(
+            &dir,
+            &generate_compression_hook_script(8123, CLAUDE_REWRITE_COMMANDS, "claude"),
+        );
+
+        let input = json!({
+            "tool_name": "Bash",
+            "cwd": "/tmp/project",
+            "tool_input": { "command": "npm run build" }
+        });
+
+        let output = run_script_with_env(&script, &input, &dir, &[("SHELL", "/usr/bin/fish")]);
+        let rewrite = rewrite_from_output(&output);
+        let payload_path = extract_payload_path(&rewrite);
+        let payload_raw = fs::read_to_string(&payload_path).unwrap();
+        let payload: Value = serde_json::from_str(&payload_raw).unwrap();
+
+        assert_eq!(
+            payload["shell"].as_str(),
+            Some(expected_default_exec_shell().as_str())
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn payload_forwards_agent_environment() {
+        let dir = temp_dir("compression_hook_env");
+        let script = write_script(
+            &dir,
+            &generate_compression_hook_script(8123, CLAUDE_REWRITE_COMMANDS, "claude"),
+        );
+
+        let input = json!({
+            "tool_name": "Bash",
+            "cwd": "/tmp/project",
+            "tool_input": { "command": "npm run build" }
+        });
+        let inherited_path = std::env::var("PATH").unwrap_or_default();
+        let agent_path = format!("/tmp/agent-node-bin:{inherited_path}");
+
+        let output = run_script_with_env(
+            &script,
+            &input,
+            &dir,
+            &[("PATH", agent_path.as_str()), ("AGENT_ONLY_VAR", "present")],
+        );
+        let rewrite = rewrite_from_output(&output);
+        let payload_path = extract_payload_path(&rewrite);
+        let payload_raw = fs::read_to_string(&payload_path).unwrap();
+        let payload: Value = serde_json::from_str(&payload_raw).unwrap();
+
+        assert_eq!(payload["env"]["PATH"].as_str(), Some(agent_path.as_str()));
+        assert_eq!(payload["env"]["AGENT_ONLY_VAR"].as_str(), Some("present"));
 
         let _ = fs::remove_dir_all(&dir);
     }
@@ -905,7 +1037,12 @@ mod tests {
     // or shell variant.
     // ------------------------------------------------------------------
 
-    fn payload_round_trips(command: &str, shell: &str, backend_commands: &[&str], backend_name: &str) {
+    fn payload_round_trips(
+        command: &str,
+        shell: &str,
+        backend_commands: &[&str],
+        backend_name: &str,
+    ) {
         let dir = temp_dir(&format!("compression_hook_rt_{backend_name}"));
         let script = write_script(
             &dir,

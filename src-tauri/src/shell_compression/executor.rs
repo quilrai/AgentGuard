@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::process::{Command, Stdio};
 use std::time::Instant;
 
@@ -8,20 +9,28 @@ pub struct CommandResult {
     pub duration_ms: u64,
 }
 
-pub fn run_command(command: &str, cwd: Option<&str>, shell_override: Option<&str>) -> CommandResult {
+pub fn run_command(
+    command: &str,
+    cwd: Option<&str>,
+    shell_override: Option<&str>,
+    env: Option<&HashMap<String, String>>,
+) -> CommandResult {
     let (shell, shell_flag) = shell_and_flag(shell_override);
     let start = Instant::now();
 
     let mut cmd = Command::new(&shell);
     cmd.arg(&shell_flag)
         .arg(command)
-        .env("LLMWATCHER_ACTIVE", "1")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
     if let Some(dir) = cwd {
         cmd.current_dir(dir);
     }
+    if let Some(env) = env {
+        cmd.envs(env);
+    }
+    cmd.env("LLMWATCHER_ACTIVE", "1");
 
     let child = match cmd.spawn() {
         Ok(c) => c,
@@ -128,16 +137,63 @@ fn find_real_shell() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
 
     #[cfg(unix)]
     #[test]
     fn run_command_honors_shell_override() {
-        let result = run_command("printf '%s' \"$0\"", None, Some("/bin/sh"));
+        let result = run_command("printf '%s' \"$0\"", None, Some("/bin/sh"), None);
         assert_eq!(result.exit_code, 0);
         assert!(
             result.stdout.contains("sh"),
             "expected shell override to be reflected in $0, got {:?}",
             result.stdout
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_command_uses_forwarded_path_env() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("llmwatcher_env_path_{nonce}"));
+        fs::create_dir_all(&dir).unwrap();
+        let tool = dir.join("agent-path-tool");
+        fs::write(&tool, "#!/bin/sh\nprintf forwarded-path\n").unwrap();
+
+        let mut perms = fs::metadata(&tool).unwrap().permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&tool, perms).unwrap();
+
+        let mut env = HashMap::new();
+        env.insert("PATH".to_string(), dir.to_string_lossy().to_string());
+
+        let result = run_command("agent-path-tool", None, Some("/bin/sh"), Some(&env));
+        assert_eq!(result.exit_code, 0);
+        assert_eq!(result.stdout, "forwarded-path");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_command_forces_active_marker_after_forwarded_env() {
+        let mut env = HashMap::new();
+        env.insert("LLMWATCHER_ACTIVE".to_string(), "0".to_string());
+
+        let result = run_command(
+            "printf '%s' \"$LLMWATCHER_ACTIVE\"",
+            None,
+            Some("/bin/sh"),
+            Some(&env),
+        );
+        assert_eq!(result.exit_code, 0);
+        assert_eq!(result.stdout, "1");
     }
 }

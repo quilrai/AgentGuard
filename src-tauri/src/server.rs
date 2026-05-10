@@ -33,6 +33,7 @@ use axum::{
     routing::{get, post},
     Router,
 };
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use tokio::net::TcpListener;
@@ -65,6 +66,48 @@ fn load_token_saving_settings(
         .unwrap_or_else(|| "{}".to_string());
     let settings: CustomBackendSettings = serde_json::from_str(&settings_json).unwrap_or_default();
     settings.token_saving
+}
+
+fn parse_command_env(parsed: &serde_json::Value) -> Option<HashMap<String, String>> {
+    let obj = parsed.get("env")?.as_object()?;
+    let env: HashMap<String, String> = obj
+        .iter()
+        .filter_map(|(key, value)| {
+            let value = value.as_str()?;
+            if key.is_empty() || key.contains('=') || key.contains('\0') || value.contains('\0') {
+                return None;
+            }
+            Some((key.clone(), value.to_string()))
+        })
+        .collect();
+
+    if env.is_empty() {
+        None
+    } else {
+        Some(env)
+    }
+}
+
+fn sanitized_cli_compression_body(
+    command: &str,
+    cwd: Option<&str>,
+    shell: Option<&str>,
+    backend_name: &str,
+    env: Option<&HashMap<String, String>>,
+) -> String {
+    let mut env_keys = env
+        .map(|vars| vars.keys().cloned().collect::<Vec<_>>())
+        .unwrap_or_default();
+    env_keys.sort();
+
+    serde_json::json!({
+        "command": command,
+        "cwd": cwd,
+        "backend": backend_name,
+        "shell": shell,
+        "env_keys": env_keys,
+    })
+    .to_string()
 }
 
 async fn health_handler() -> impl IntoResponse {
@@ -120,6 +163,7 @@ async fn cli_compression_handler(
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string();
+    let env = parse_command_env(&parsed);
 
     // Look up per-backend token saving settings (predefined backends only)
     let token_saving = load_token_saving_settings(&state.db, &backend_name);
@@ -127,12 +171,28 @@ async fn cli_compression_handler(
     let compression_enabled = token_saving.shell_compression;
     let flags = crate::compression::AdvancedCompressionFlags::from(&token_saving);
 
+    let command_for_exec = command.clone();
+    let cwd_for_exec = cwd.clone();
+    let shell_for_exec = shell.clone();
+    let env_for_exec = env.clone();
+
     // Run in blocking task since shell execution is synchronous
     let result = tokio::task::spawn_blocking(move || {
         if compression_enabled {
-            shell_compression::compress_command(&command, cwd.as_deref(), shell.as_deref(), &flags)
+            shell_compression::compress_command(
+                &command_for_exec,
+                cwd_for_exec.as_deref(),
+                shell_for_exec.as_deref(),
+                env_for_exec.as_ref(),
+                &flags,
+            )
         } else {
-            shell_compression::run_command_raw(&command, cwd.as_deref(), shell.as_deref())
+            shell_compression::run_command_raw(
+                &command_for_exec,
+                cwd_for_exec.as_deref(),
+                shell_for_exec.as_deref(),
+                env_for_exec.as_ref(),
+            )
         }
     })
     .await;
@@ -202,12 +262,19 @@ async fn cli_compression_handler(
     } else {
         &backend_name
     };
+    let logged_body = sanitized_cli_compression_body(
+        &command,
+        cwd.as_deref(),
+        shell.as_deref(),
+        &backend_name,
+        env.as_ref(),
+    );
     let _ = state.db.log_request(
         log_backend,
         "POST",
         "/cli_compression",
         "/cli_compression",
-        &body_str,
+        &logged_body,
         &output,
         200,
         false,

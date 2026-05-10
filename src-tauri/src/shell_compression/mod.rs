@@ -3,6 +3,8 @@ mod executor;
 pub mod patterns;
 pub mod tokens;
 
+use std::collections::HashMap;
+
 pub struct ShellCompressionResult {
     pub output: String,
     pub exit_code: i32,
@@ -20,9 +22,10 @@ pub fn compress_command(
     command: &str,
     cwd: Option<&str>,
     shell: Option<&str>,
+    env: Option<&HashMap<String, String>>,
     flags: &crate::compression::AdvancedCompressionFlags,
 ) -> ShellCompressionResult {
-    let cmd_result = executor::run_command(command, cwd, shell);
+    let cmd_result = executor::run_command(command, cwd, shell, env);
 
     let comp =
         compress::compress_and_measure(command, &cmd_result.stdout, &cmd_result.stderr, flags);
@@ -37,8 +40,13 @@ pub fn compress_command(
 }
 
 /// Execute a shell command without compression, return raw output.
-pub fn run_command_raw(command: &str, cwd: Option<&str>, shell: Option<&str>) -> ShellCompressionResult {
-    let cmd_result = executor::run_command(command, cwd, shell);
+pub fn run_command_raw(
+    command: &str,
+    cwd: Option<&str>,
+    shell: Option<&str>,
+    env: Option<&HashMap<String, String>>,
+) -> ShellCompressionResult {
+    let cmd_result = executor::run_command(command, cwd, shell, env);
 
     let mut output = cmd_result.stdout;
     if !cmd_result.stderr.is_empty() {
