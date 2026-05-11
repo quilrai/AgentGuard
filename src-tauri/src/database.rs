@@ -724,6 +724,34 @@ impl Database {
         }
     }
 
+    /// Attach token-saving accounting to an existing agent-hook row.
+    pub fn update_agent_hook_token_saving(
+        &self,
+        backend: &str,
+        correlation_id: &str,
+        tokens_saved: i32,
+        token_saving_meta: Option<&str>,
+    ) -> Result<bool, rusqlite::Error> {
+        let conn = self.conn.lock().unwrap();
+        let cutoff = (chrono::Utc::now() - chrono::Duration::minutes(30)).to_rfc3339();
+
+        let rows_affected = conn.execute(
+            "UPDATE requests SET tokens_saved = ?1, token_saving_meta = ?2
+             WHERE timestamp >= ?3
+               AND backend = ?4
+               AND json_extract(extra_metadata, '$.correlation_id') = ?5",
+            rusqlite::params![
+                tokens_saved,
+                token_saving_meta,
+                cutoff,
+                backend,
+                correlation_id
+            ],
+        )?;
+
+        Ok(rows_affected > 0)
+    }
+
     /// Find the most-recent agent-hook row for a given backend / session,
     /// matching on `endpoint_name` and the `session_id` field inside
     /// `extra_metadata`, and **overwrite** its token columns with `usage`.

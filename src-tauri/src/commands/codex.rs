@@ -5,17 +5,17 @@
 // `~/.codex/hooks/`. Each forwarder reads the JSON Codex writes to stdin and
 // POSTs it to the matching `/codex_hook/*` endpoint on the local Tauri server.
 //
-// Codex hooks are still gated behind a feature flag in `~/.codex/config.toml`
-// (`[features] codex_hooks = true`), so install_codex_hooks also writes that
-// flag in if it's missing. We do not remove it on uninstall — the user may want
-// to keep the flag on for hooks they configured themselves.
+// Codex hooks are controlled by a feature flag in `~/.codex/config.toml`
+// (`[features] hooks = true`). Older Codex builds used `codex_hooks`; the
+// installer writes the current key and the checker accepts the legacy key when
+// the current key is absent.
 //
 // We install one script per matcher group (separate scripts are easier to
 // debug than a single dispatcher) and fail open: if the local server is
 // unreachable, the script exits 0 with no output, allowing the action.
 //
-// The shell-output compression hook (managed in `commands/shell_compression.rs`)
-// is a separate concern and coexists with the entries we add here.
+// Codex shell-output compression is handled from PostToolUse in codex_hooks.rs
+// because Codex does not currently support PreToolUse updatedInput rewriting.
 
 use crate::SERVER_PORT;
 use std::fs;
@@ -78,16 +78,17 @@ fn write_codex_hooks_json(value: &serde_json::Value) -> Result<(), String> {
 //
 // We do this as a small line-based patcher rather than pulling in the `toml`
 // crate. The cases we need to handle are:
-//   1. config.toml does not exist           -> create with `[features]\ncodex_hooks = true\n`
+//   1. config.toml does not exist           -> create with `[features]\nhooks = true\n`
 //   2. config.toml has no [features] section -> append a new section
-//   3. [features] section exists but no codex_hooks key -> insert the key
-//   4. [features].codex_hooks = false        -> flip to true
-//   5. [features].codex_hooks = true         -> leave alone
+//   3. [features] section exists but no hooks key -> insert the key
+//   4. [features].hooks = false        -> flip to true
+//   5. [features].hooks = true         -> leave alone
 //
 // This is robust enough for an idempotent install and avoids reformatting the
 // rest of the user's TOML.
 
-const CODEX_HOOKS_FEATURE_KEY: &str = "codex_hooks";
+const CODEX_HOOKS_FEATURE_KEY: &str = "hooks";
+const LEGACY_CODEX_HOOKS_FEATURE_KEY: &str = "codex_hooks";
 const CODEX_FEATURES_HEADER: &str = "[features]";
 
 fn ensure_codex_hooks_feature_enabled() -> Result<(), String> {
@@ -153,7 +154,7 @@ fn ensure_codex_hooks_feature_enabled() -> Result<(), String> {
     };
     let end = features_end.unwrap_or(lines.len());
 
-    // Case B/C/D: scan inside the section for an existing codex_hooks key.
+    // Case B/C/D: scan inside the section for an existing hooks key.
     let mut updated_lines: Vec<String> = lines.iter().map(|s| s.to_string()).collect();
     let mut found_key = false;
     for (i, line) in lines
@@ -167,7 +168,7 @@ fn ensure_codex_hooks_feature_enabled() -> Result<(), String> {
         if trimmed.is_empty() || trimmed.starts_with('#') {
             continue;
         }
-        // Match `codex_hooks` with any whitespace around the `=`.
+        // Match `hooks` with any whitespace around the `=`.
         let key_part = trimmed.split('=').next().map(|s| s.trim()).unwrap_or("");
         if key_part == CODEX_HOOKS_FEATURE_KEY {
             // Force the value to true. Preserve any leading indentation.
@@ -194,10 +195,9 @@ fn ensure_codex_hooks_feature_enabled() -> Result<(), String> {
 
 /// Read-only counterpart to `ensure_codex_hooks_feature_enabled`. Returns
 /// `true` only if `~/.codex/config.toml` exists, contains a `[features]`
-/// section, and within that section has a `codex_hooks` key set to a truthy
-/// TOML literal (`true` / `1` / `"true"`). Used by `check_codex_hooks_installed`
-/// so the UI doesn't claim Codex hooks are wired up after the user disables
-/// the feature flag — Codex would silently stop loading hooks in that case.
+/// section, and within that section has a current `hooks` key set to a truthy
+/// TOML literal (`true` / `1` / `"true"`). For older Codex installs, a legacy
+/// `codex_hooks` key is accepted only when the current key is absent.
 fn is_codex_hooks_feature_enabled() -> bool {
     let Ok(path) = get_codex_config_toml_path() else {
         return false;
@@ -218,6 +218,7 @@ fn is_codex_hooks_feature_enabled() -> bool {
     };
 
     // Walk the [features] section body until the next section header / EOF.
+    let mut legacy_enabled = false;
     for line in lines.iter().skip(start + 1) {
         let trimmed = line.trim_start();
         if trimmed.starts_with('[') && trimmed.ends_with(']') {
@@ -228,7 +229,7 @@ fn is_codex_hooks_feature_enabled() -> bool {
         }
         let mut parts = trimmed.splitn(2, '=');
         let key = parts.next().map(|s| s.trim()).unwrap_or("");
-        if key != CODEX_HOOKS_FEATURE_KEY {
+        if key != CODEX_HOOKS_FEATURE_KEY && key != LEGACY_CODEX_HOOKS_FEATURE_KEY {
             continue;
         }
         let value = parts
@@ -239,10 +240,14 @@ fn is_codex_hooks_feature_enabled() -> bool {
                 v.to_string()
             })
             .unwrap_or_default();
-        return matches!(value.as_str(), "true" | "1" | "\"true\"");
+        let truthy = matches!(value.as_str(), "true" | "1" | "\"true\"");
+        if key == CODEX_HOOKS_FEATURE_KEY {
+            return truthy;
+        }
+        legacy_enabled = truthy;
     }
 
-    false
+    legacy_enabled
 }
 
 // ============================================================================
@@ -251,19 +256,22 @@ fn is_codex_hooks_feature_enabled() -> bool {
 
 /// Per-event forwarder script. Reads stdin once, POSTs to the local server.
 ///
-/// When `print_response` is true (PreToolUse, UserPromptSubmit) the script
-/// pipes the response body back to stdout so Codex can act on it (e.g. deny).
-/// When false (PostToolUse, Stop, SessionStart) the script is fire-and-forget —
-/// Codex does not accept structured output from these hooks and will error if
-/// anything is printed to stdout.
+/// When `print_response` is true (PreToolUse, PostToolUse, UserPromptSubmit)
+/// the script pipes the response body back to stdout so Codex can act on it
+/// (e.g. deny or replace the completed tool result).
+/// When false (Stop, SessionStart) the script is fire-and-forget because our
+/// current handlers do not return actionable hook output for those events.
 ///
 /// In both modes the script fail-opens: if curl can't reach the server, exit 0
 /// with no output so the agent isn't bricked when the Tauri app is closed.
+const CODEX_HOOK_VERSION_MARKER: &str = "LLMWATCHER_CODEX_HOOK_VERSION=2";
+
 fn generate_forwarder_script(port: u16, endpoint: &str, print_response: bool) -> String {
     if print_response {
         format!(
             r#"#!/usr/bin/env bash
 # LLMwatcher Codex CLI hook forwarder ({endpoint})
+# {version_marker}
 # Reads stdin JSON, POSTs to the local server, prints the response.
 set -u
 
@@ -285,11 +293,13 @@ printf '%s' "$RESPONSE"
 "#,
             port = port,
             endpoint = endpoint,
+            version_marker = CODEX_HOOK_VERSION_MARKER,
         )
     } else {
         format!(
             r#"#!/usr/bin/env bash
 # LLMwatcher Codex CLI hook forwarder ({endpoint})
+# {version_marker}
 # Fire-and-forget: Codex does not accept output from this hook type.
 set -u
 
@@ -304,6 +314,7 @@ exit 0
 "#,
             port = port,
             endpoint = endpoint,
+            version_marker = CODEX_HOOK_VERSION_MARKER,
         )
     }
 }
@@ -334,7 +345,7 @@ const SCRIPT_SPECS: &[ScriptSpec] = &[
     ScriptSpec {
         file_name: "llmwatcher-codex-post-tool.sh",
         endpoint: "post_tool",
-        print_response: false,
+        print_response: true,
     },
     ScriptSpec {
         file_name: "llmwatcher-codex-stop.sh",
@@ -372,6 +383,25 @@ fn write_script(spec: &ScriptSpec, port: u16) -> Result<String, String> {
         .ok_or_else(|| format!("Invalid path for {}", spec.file_name))
 }
 
+fn codex_scripts_are_current(port: u16) -> Result<bool, String> {
+    let dir = get_codex_hooks_dir()?;
+    for spec in SCRIPT_SPECS {
+        let path = dir.join(spec.file_name);
+        let Ok(content) = fs::read_to_string(&path) else {
+            return Ok(false);
+        };
+        if !content.contains(CODEX_HOOK_VERSION_MARKER)
+            || !content.contains(&format!(
+                "http://localhost:{port}/codex_hook/{}",
+                spec.endpoint
+            ))
+        {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
 // ============================================================================
 // hooks.json wiring
 // ============================================================================
@@ -396,9 +426,8 @@ const HOOK_INSTALLS: &[HookInstall] = &[
         matcher: None,
         script_name: "llmwatcher-codex-user-prompt-submit.sh",
     },
-    // Codex's PreToolUse / PostToolUse currently only fire for Bash; once Codex
-    // exposes Read/Write/MCP we'll add matchers here the same way claude_hooks
-    // does.
+    // Bash is the only pre-tool path we currently need for command DLP and
+    // dependency checks. PostToolUse also powers Codex shell-output compression.
     HookInstall {
         event: "PreToolUse",
         matcher: Some("Bash"),
@@ -518,7 +547,7 @@ fn remove_own_entries(hooks: &mut serde_json::Map<String, serde_json::Value>) {
 pub fn install_codex_hooks() -> Result<String, String> {
     let port = *SERVER_PORT.lock().unwrap();
 
-    // 1. Make sure the codex_hooks feature flag is on in config.toml.
+    // 1. Make sure the Codex hooks feature flag is on in config.toml.
     ensure_codex_hooks_feature_enabled()?;
 
     // 2. Write all forwarder scripts.
@@ -588,7 +617,7 @@ pub fn uninstall_codex_hooks() -> Result<String, String> {
         }
     }
 
-    // We intentionally do NOT touch the [features] codex_hooks flag in
+    // We intentionally do NOT touch the [features].hooks flag in
     // config.toml; the user may want it on for hooks they configured
     // themselves.
 
@@ -598,7 +627,7 @@ pub fn uninstall_codex_hooks() -> Result<String, String> {
 #[tauri::command]
 pub fn check_codex_hooks_installed() -> Result<bool, String> {
     // We consider hooks installed iff:
-    //   1. The [features].codex_hooks flag is enabled in ~/.codex/config.toml.
+    //   1. The [features].hooks flag is enabled in ~/.codex/config.toml.
     //      Without this, Codex silently won't load hooks even if hooks.json
     //      points at our scripts.
     //   2. At least one forwarder script exists on disk.
@@ -638,5 +667,12 @@ pub fn check_codex_hooks_installed() -> Result<bool, String> {
             })
         })
         .unwrap_or(false);
+    if installed {
+        let port = *SERVER_PORT.lock().unwrap();
+        if !codex_scripts_are_current(port)? {
+            install_codex_hooks()?;
+        }
+    }
+
     Ok(installed)
 }

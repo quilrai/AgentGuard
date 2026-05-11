@@ -464,6 +464,11 @@
   display: inline-block;
 }
 
+.ts-unavailable {
+  color: #666;
+  font-size: 0.9rem;
+}
+
 .btn-sm {
   padding: 5px 14px;
   font-size: 0.8rem;

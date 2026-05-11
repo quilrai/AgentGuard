@@ -4,12 +4,12 @@
 // Each route here is the receiver for a small bash forwarder script installed
 // in `~/.codex/hooks/` that POSTs the JSON payload Codex writes to stdin.
 //
-// Hook coverage (Codex's lifecycle hook surface is narrower than Claude Code's;
-// PreToolUse / PostToolUse currently only fire for the Bash tool, and there is
-// no SessionEnd event):
+// Hook coverage:
 //   /user_prompt_submit  -- DLP scan + token-limit, blocks the prompt
 //   /pre_bash            -- DLP scan command, blocks shell tool, logs tool call
-//   /post_tool           -- updates the row created at PreToolUse with tool_response
+//   /post_tool           -- updates the row created at PreToolUse with tool_response;
+//                          for Codex shell compression, returns feedback JSON
+//                          that replaces verbose Bash output after execution
 //   /stop                -- closes the prompt row; if a transcript is available
 //                          we try to extract real usage, otherwise we leave the
 //                          estimated tokens minted at UserPromptSubmit time
@@ -183,6 +183,24 @@ pub struct GenericResponse {
     pub status: String,
 }
 
+#[derive(Debug, Serialize)]
+pub struct PostToolUseReplacementResponse {
+    #[serde(rename = "continue")]
+    pub continue_: bool,
+    pub decision: &'static str,
+    pub reason: String,
+    #[serde(rename = "hookSpecificOutput")]
+    pub hook_specific_output: PostToolUseReplacementHookOutput,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PostToolUseReplacementHookOutput {
+    #[serde(rename = "hookEventName")]
+    pub hook_event_name: &'static str,
+    #[serde(rename = "additionalContext")]
+    pub additional_context: &'static str,
+}
+
 // ============================================================================
 // Extra Metadata for DB Storage
 // ============================================================================
@@ -299,6 +317,177 @@ fn json_str(v: &Value, key: &str) -> Option<String> {
 
 fn json_i64(v: &Value, key: &str) -> Option<i64> {
     v.get(key).and_then(|x| x.as_i64())
+}
+
+#[derive(Debug, Clone)]
+struct BashToolOutput {
+    stdout: String,
+    stderr: String,
+    exit_code: Option<i32>,
+}
+
+#[derive(Debug, Clone)]
+struct CodexPostToolCompression {
+    replacement_output: String,
+    original_tokens: usize,
+    sent_tokens: usize,
+    tokens_saved: usize,
+}
+
+fn json_text_value(value: &Value) -> Option<String> {
+    match value {
+        Value::String(s) => Some(s.clone()),
+        Value::Array(items) => {
+            let parts: Vec<String> = items.iter().filter_map(json_text_value).collect();
+            if parts.is_empty() {
+                None
+            } else {
+                Some(parts.join("\n"))
+            }
+        }
+        Value::Object(obj) => obj
+            .get("text")
+            .or_else(|| obj.get("content"))
+            .and_then(json_text_value),
+        _ => None,
+    }
+}
+
+fn json_text(v: &Value, key: &str) -> Option<String> {
+    v.get(key).and_then(json_text_value)
+}
+
+fn json_i32_any(v: &Value, keys: &[&str]) -> Option<i32> {
+    for key in keys {
+        if let Some(n) = v.get(*key).and_then(|x| x.as_i64()) {
+            return Some(n as i32);
+        }
+        if let Some(s) = v.get(*key).and_then(|x| x.as_str()) {
+            if let Ok(n) = s.parse::<i32>() {
+                return Some(n);
+            }
+        }
+    }
+    for container in ["metadata", "result"] {
+        if let Some(obj) = v.get(container) {
+            if let Some(n) = json_i32_any(obj, keys) {
+                return Some(n);
+            }
+        }
+    }
+    None
+}
+
+fn extract_bash_tool_output(tool_response: &Value) -> Option<BashToolOutput> {
+    match tool_response {
+        Value::String(s) => Some(BashToolOutput {
+            stdout: s.clone(),
+            stderr: String::new(),
+            exit_code: None,
+        }),
+        Value::Object(_) => {
+            let stdout = json_text(tool_response, "stdout")
+                .or_else(|| json_text(tool_response, "output"))
+                .or_else(|| json_text(tool_response, "text"))
+                .or_else(|| json_text(tool_response, "content"))
+                .unwrap_or_default();
+            let stderr = json_text(tool_response, "stderr")
+                .or_else(|| json_text(tool_response, "error"))
+                .unwrap_or_default();
+            if stdout.trim().is_empty() && stderr.trim().is_empty() {
+                return None;
+            }
+            Some(BashToolOutput {
+                stdout,
+                stderr,
+                exit_code: json_i32_any(
+                    tool_response,
+                    &[
+                        "exit_code",
+                        "exitCode",
+                        "exit_status",
+                        "status_code",
+                        "code",
+                    ],
+                ),
+            })
+        }
+        _ => None,
+    }
+}
+
+fn should_consider_codex_bash_compression(command: &str) -> bool {
+    !command.trim().is_empty() && !command.contains("cli_compression")
+}
+
+fn build_codex_post_tool_compression(
+    settings: &CustomBackendSettings,
+    input: &PostToolUseInput,
+) -> Option<CodexPostToolCompression> {
+    if input.tool_name != "Bash" || !settings.token_saving.shell_compression {
+        return None;
+    }
+
+    let command = json_str(&input.tool_input, "command")?;
+    if !should_consider_codex_bash_compression(&command) {
+        return None;
+    }
+
+    let output = extract_bash_tool_output(&input.tool_response)?;
+    let flags = crate::compression::AdvancedCompressionFlags::from(&settings.token_saving);
+    let compressed = crate::shell_compression::compress_captured_output(
+        &command,
+        &output.stdout,
+        &output.stderr,
+        &flags,
+    );
+
+    if compressed.output.trim().is_empty()
+        || compressed.compressed_tokens >= compressed.original_tokens
+    {
+        return None;
+    }
+
+    let exit_label = output
+        .exit_code
+        .map(|code| format!(", exit {code}"))
+        .unwrap_or_default();
+    let mut replacement_output = format!(
+        "[AgentGuard: compressed Bash output{exit_label}; {}->{} tokens]\n{}",
+        compressed.original_tokens,
+        compressed.compressed_tokens,
+        compressed.output.trim_end()
+    );
+    if let Some(code) = output.exit_code {
+        if code != 0 && !replacement_output.contains("[exit:") {
+            replacement_output.push_str(&format!("\n[exit: {code}]"));
+        }
+    }
+
+    let sent_tokens = crate::shell_compression::tokens::count_tokens(&replacement_output);
+    if sent_tokens >= compressed.original_tokens {
+        return None;
+    }
+
+    Some(CodexPostToolCompression {
+        replacement_output,
+        original_tokens: compressed.original_tokens,
+        sent_tokens,
+        tokens_saved: compressed.original_tokens - sent_tokens,
+    })
+}
+
+fn post_tool_replacement_response(output: String) -> PostToolUseReplacementResponse {
+    PostToolUseReplacementResponse {
+        continue_: false,
+        decision: "block",
+        reason: output,
+        hook_specific_output: PostToolUseReplacementHookOutput {
+            hook_event_name: "PostToolUse",
+            additional_context:
+                "AgentGuard replaced the completed Bash tool result with compressed output.",
+        },
+    }
 }
 
 fn parse_latest_turn_usage_from_text(content: &str) -> Option<RealUsage> {
@@ -714,17 +903,12 @@ async fn pre_bash_handler(
 async fn post_tool_handler(
     State(state): State<CodexHooksState>,
     Json(raw_json): Json<Value>,
-) -> impl IntoResponse {
+) -> axum::response::Response {
     let input: PostToolUseInput = match serde_json::from_value(raw_json) {
         Ok(v) => v,
         Err(e) => {
             println!("[CODEX_HOOK] post_tool parse error: {}", e);
-            return (
-                StatusCode::OK,
-                Json(GenericResponse {
-                    status: "ok".to_string(),
-                }),
-            );
+            return (StatusCode::OK, "").into_response();
         }
     };
     println!(
@@ -738,7 +922,15 @@ async fn post_tool_handler(
         .unwrap_or_else(|| format!("{}-{}", input.session_id, input.tool_name));
 
     let response_text = serde_json::to_string(&input.tool_response).unwrap_or_default();
-    let output_tokens = estimate_tokens(&response_text);
+    let compression = build_codex_post_tool_compression(&state.settings, &input);
+    let db_response_text = compression
+        .as_ref()
+        .map(|c| c.replacement_output.as_str())
+        .unwrap_or(response_text.as_str());
+    let output_tokens = compression
+        .as_ref()
+        .map(|c| c.sent_tokens as i32)
+        .unwrap_or_else(|| estimate_tokens(&response_text));
 
     let updated = state
         .db
@@ -746,7 +938,7 @@ async fn post_tool_handler(
             BACKEND,
             &correlation_id,
             output_tokens,
-            Some(&response_text),
+            Some(db_response_text),
             None,
         )
         .ok()
@@ -775,7 +967,7 @@ async fn post_tool_handler(
             0,
             output_tokens,
             &request_body_json,
-            &response_text,
+            db_response_text,
             200,
             metadata_json.as_deref(),
             None,
@@ -791,6 +983,19 @@ async fn post_tool_handler(
         }
     }
 
+    if let Some(compression) = compression.as_ref() {
+        let meta_json = format!(
+            "{{\"shell_compression\":{},\"original_tokens\":{},\"compressed_tokens\":{}}}",
+            compression.tokens_saved, compression.original_tokens, compression.sent_tokens
+        );
+        let _ = state.db.update_agent_hook_token_saving(
+            BACKEND,
+            &correlation_id,
+            compression.tokens_saved as i32,
+            Some(&meta_json),
+        );
+    }
+
     // ---- Symbol extraction (best-effort) ----
     extract_symbols_for_tool(
         &state.db,
@@ -799,12 +1004,17 @@ async fn post_tool_handler(
         input.cwd.as_deref(),
     );
 
-    (
-        StatusCode::OK,
-        Json(GenericResponse {
-            status: "ok".to_string(),
-        }),
-    )
+    if let Some(compression) = compression {
+        return (
+            StatusCode::OK,
+            Json(post_tool_replacement_response(
+                compression.replacement_output,
+            )),
+        )
+            .into_response();
+    }
+
+    (StatusCode::OK, "").into_response()
 }
 
 /// If the tool touched a file, extract symbols via tree-sitter (best-effort).
@@ -821,9 +1031,9 @@ fn extract_symbols_for_tool(
 
     // For Bash tool, try to extract file paths from the command.
     let file_paths: Vec<String> = if tool_name == "Bash" {
-        // Codex only has Bash — paths are extracted by the garden's
-        // extract_paths_from_bash, but here we do a simpler check: look for
-        // paths in the command that are supported extensions.
+        // Bash paths are extracted by the garden's extract_paths_from_bash,
+        // but here we do a simpler check: look for paths in the command that
+        // are supported extensions.
         let cmd = json_str(tool_input, "command").unwrap_or_default();
         let cwd_path = std::path::Path::new(cwd.unwrap_or("."));
         crate::symbols::paths_from_bash_for_symbols(&cmd, cwd_path)
@@ -1059,4 +1269,103 @@ pub fn create_codex_hooks_router(
         .route("/stop", post(stop_handler))
         .route("/session_start", post(session_start_handler))
         .with_state(state)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::predefined_backend_settings::TokenSavingSettings;
+    use serde_json::json;
+
+    fn post_tool_input(command: &str, stdout: String) -> PostToolUseInput {
+        PostToolUseInput {
+            session_id: "session".to_string(),
+            transcript_path: None,
+            cwd: Some("/tmp/project".to_string()),
+            hook_event_name: "PostToolUse".to_string(),
+            model: Some("gpt-test".to_string()),
+            turn_id: Some("turn".to_string()),
+            tool_name: "Bash".to_string(),
+            tool_input: json!({ "command": command }),
+            tool_response: json!({
+                "stdout": stdout,
+                "stderr": "",
+                "exit_code": 0
+            }),
+            tool_use_id: Some("tool".to_string()),
+        }
+    }
+
+    fn compression_settings(enabled: bool) -> CustomBackendSettings {
+        CustomBackendSettings {
+            token_saving: TokenSavingSettings {
+                shell_compression: enabled,
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn codex_post_tool_compresses_long_bash_output() {
+        let stdout = (0..80)
+            .map(|i| format!("line {i}: repeated build output with enough words to count"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let input = post_tool_input("npm test", stdout);
+
+        let compressed =
+            build_codex_post_tool_compression(&compression_settings(true), &input).unwrap();
+
+        assert!(compressed.replacement_output.contains("[AgentGuard:"));
+        assert!(compressed.tokens_saved > 0);
+        assert!(compressed.sent_tokens < compressed.original_tokens);
+    }
+
+    #[test]
+    fn codex_post_tool_compression_respects_backend_setting() {
+        let stdout = (0..80)
+            .map(|i| format!("line {i}: repeated build output with enough words to count"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let input = post_tool_input("npm test", stdout);
+
+        let compressed = build_codex_post_tool_compression(&compression_settings(false), &input);
+
+        assert!(compressed.is_none());
+    }
+
+    #[test]
+    fn codex_post_tool_compresses_content_array_response() {
+        let stdout = (0..80)
+            .map(|i| format!("line {i}: repeated build output with enough words to count"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let mut input = post_tool_input("npm test", String::new());
+        input.tool_response = json!({
+            "content": [{ "type": "text", "text": stdout }],
+            "metadata": { "exit_code": 1 }
+        });
+
+        let compressed =
+            build_codex_post_tool_compression(&compression_settings(true), &input).unwrap();
+
+        assert!(compressed.replacement_output.contains("exit 1"));
+        assert!(compressed.replacement_output.contains("[exit: 1]"));
+    }
+
+    #[test]
+    fn post_tool_replacement_uses_codex_feedback_shape() {
+        let value =
+            serde_json::to_value(post_tool_replacement_response("short".to_string())).unwrap();
+
+        assert_eq!(value["continue"], false);
+        assert_eq!(value["decision"], "block");
+        assert_eq!(value["reason"], "short");
+        assert_eq!(value["hookSpecificOutput"]["hookEventName"], "PostToolUse");
+        assert_eq!(
+            value["hookSpecificOutput"]["additionalContext"],
+            "AgentGuard replaced the completed Bash tool result with compressed output."
+        );
+    }
 }

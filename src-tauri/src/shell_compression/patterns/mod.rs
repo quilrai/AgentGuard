@@ -269,11 +269,12 @@ mod tests {
           ],
           "usage": {"prompt_tokens": 12, "completion_tokens": 3, "total_tokens": 15}
         }"#;
-        let result = shorter_than_original(
-            "curl -sS https://api.example.com/v1/chat/completions",
-            body,
+        let result =
+            shorter_than_original("curl -sS https://api.example.com/v1/chat/completions", body);
+        assert!(
+            result.starts_with("JSON "),
+            "expected schema header, got {result}"
         );
-        assert!(result.starts_with("JSON "), "expected schema header, got {result}");
         assert!(result.contains("model"));
         assert!(result.contains("choices"));
         assert!(result.contains("usage"));
@@ -287,7 +288,10 @@ mod tests {
         let body = format!("[\n{}\n]", items.join(",\n"));
         let result = shorter_than_original("curl -sS https://api.example.com/items", &body);
         assert!(result.starts_with("JSON "));
-        assert!(result.contains("; 30]"), "should describe array length: {result}");
+        assert!(
+            result.contains("; 30]"),
+            "should describe array length: {result}"
+        );
     }
 
     #[test]
@@ -334,8 +338,14 @@ src/db/pool.rs:22:    pool: tokio::sync::Mutex<Vec<Conn>>,
 src/db/pool.rs:89:        tokio::spawn(cleanup_task());
 src/db/pool.rs:104:        tokio::task::spawn_blocking(move || {\n";
         let result = shorter_than_original("grep -rn tokio src/", output);
-        assert!(result.contains("9 matches"), "should count matches: {result}");
-        assert!(result.contains("3F"), "should count distinct files: {result}");
+        assert!(
+            result.contains("9 matches"),
+            "should count matches: {result}"
+        );
+        assert!(
+            result.contains("3F"),
+            "should count distinct files: {result}"
+        );
         assert!(result.contains("src/db/pool.rs"));
     }
 
@@ -369,11 +379,13 @@ src/db/pool.rs:104:        tokio::task::spawn_blocking(move || {\n";
     #[test]
     fn grep_truncates_long_lines() {
         let long = "x".repeat(200);
-        let output = format!(
-            "file.txt:1:{long}\nfile.txt:2:{long}\nfile.txt:3:{long}\nfile.txt:4:{long}\n"
-        );
+        let output =
+            format!("file.txt:1:{long}\nfile.txt:2:{long}\nfile.txt:3:{long}\nfile.txt:4:{long}\n");
         let result = shorter_than_original("grep xxx file.txt", &output);
-        assert!(result.contains('…'), "should truncate with ellipsis: {result}");
+        assert!(
+            result.contains('…'),
+            "should truncate with ellipsis: {result}"
+        );
     }
 
     // ---------- find / ls ----------
@@ -394,10 +406,19 @@ src/db/pool.rs:104:        tokio::task::spawn_blocking(move || {\n";
 ./node_modules/foo/package.json
 ./target/debug/build.log\n";
         let result = shorter_than_original("find . -type f", output);
-        assert!(result.contains('F') && result.contains('D'), "summary header: {result}");
+        assert!(
+            result.contains('F') && result.contains('D'),
+            "summary header: {result}"
+        );
         assert!(!result.contains(".git/HEAD"), "should skip .git: {result}");
-        assert!(!result.contains("node_modules"), "should skip node_modules: {result}");
-        assert!(!result.contains("target/debug"), "should skip target/debug: {result}");
+        assert!(
+            !result.contains("node_modules"),
+            "should skip node_modules: {result}"
+        );
+        assert!(
+            !result.contains("target/debug"),
+            "should skip target/debug: {result}"
+        );
     }
 
     #[test]
@@ -460,7 +481,10 @@ no changes added to commit (use \"git add\" and/or \"git commit -a\")\n";
 
     #[test]
     fn unknown_command_returns_none() {
-        let result = compress_output("my-custom-tool --flag", "some arbitrary output\nwith lines\n");
+        let result = compress_output(
+            "my-custom-tool --flag",
+            "some arbitrary output\nwith lines\n",
+        );
         assert!(result.is_none());
     }
 
@@ -507,9 +531,13 @@ no changes added to commit (use \"git add\" and/or \"git commit -a\")\n";
             })
             .collect();
         let body = format!("[\n{}\n]", items.join(",\n"));
-        let result = shorter_than_original("curl -sS https://api.github.com/repos/x/y/commits", &body);
+        let result =
+            shorter_than_original("curl -sS https://api.github.com/repos/x/y/commits", &body);
         assert!(result.starts_with("JSON "));
-        assert!(result.contains("; 50]"), "should report array length: {result}");
+        assert!(
+            result.contains("; 50]"),
+            "should report array length: {result}"
+        );
     }
 
     #[test]
@@ -520,7 +548,10 @@ no changes added to commit (use \"git add\" and/or \"git commit -a\")\n";
         let result = compress("curl -sS https://api.example.com/deep", body);
         assert!(result.starts_with("JSON "));
         // Nested single-key objects inline as `{key}` — result stays compact.
-        assert!(result.contains("a:"), "should describe top-level keys: {result}");
+        assert!(
+            result.contains("a:"),
+            "should describe top-level keys: {result}"
+        );
         assert!(result.len() < body.len());
     }
 
@@ -533,7 +564,10 @@ no changes added to commit (use \"git add\" and/or \"git commit -a\")\n";
             "curl -sS https://example.com/health",
             "OK\nuptime=142500\nbuild=abc123\n",
         );
-        assert!(result.is_none(), "plaintext should not match curl patterns: {result:?}");
+        assert!(
+            result.is_none(),
+            "plaintext should not match curl patterns: {result:?}"
+        );
     }
 
     #[test]
@@ -542,7 +576,10 @@ no changes added to commit (use \"git add\" and/or \"git commit -a\")\n";
         // classifiers match, so we decline rather than corrupt the trace.
         let verbose = "*   Trying 93.184.216.34:443...\n* Connected to example.com\n> GET / HTTP/1.1\n> Host: example.com\n>\n< HTTP/1.1 200 OK\n< Content-Type: text/plain\n<\nhello world\n";
         let result = compress_output("curl -v https://example.com", verbose);
-        assert!(result.is_none(), "verbose trace shouldn't match: {result:?}");
+        assert!(
+            result.is_none(),
+            "verbose trace shouldn't match: {result:?}"
+        );
     }
 
     #[test]
@@ -551,7 +588,10 @@ no changes added to commit (use \"git add\" and/or \"git commit -a\")\n";
         // Whole pattern returns None and we fall through.
         let body = "{\n  \"ok\": true,\n  \"items\": [1, 2, 3, oops]\n}\n";
         let result = compress_output("curl -sS https://api.example.com/bad", body);
-        assert!(result.is_none(), "malformed JSON shouldn't match: {result:?}");
+        assert!(
+            result.is_none(),
+            "malformed JSON shouldn't match: {result:?}"
+        );
     }
 
     #[test]
@@ -579,7 +619,10 @@ no changes added to commit (use \"git add\" and/or \"git commit -a\")\n";
         // Our parser requires a `file:` prefix; output should pass through.
         let output = "match one here\nmatch two here\nmatch three here\n";
         let result = compress_output("grep foo single.txt", output);
-        assert!(result.is_none(), "no-prefix output should decline: {result:?}");
+        assert!(
+            result.is_none(),
+            "no-prefix output should decline: {result:?}"
+        );
     }
 
     #[test]
@@ -634,7 +677,10 @@ Date:   Mon Nov 11 11:00:00 2024 +0000
         assert!(result.contains("abc1234"));
         assert!(result.contains("def5678"));
         assert!(result.contains("feat: add new feature"));
-        assert!(!result.contains("Alice"), "authors should be dropped: {result}");
+        assert!(
+            !result.contains("Alice"),
+            "authors should be dropped: {result}"
+        );
     }
 
     #[test]
@@ -695,7 +741,10 @@ nginx               alpine    5555efab       1 month ago     23MB\n";
         let result = shorter_than_original("docker images", output);
         assert!(result.contains("postgres:16"));
         assert!(result.contains("redis:7.2"));
-        assert!(!result.contains("<none>"), "dangling images dropped: {result}");
+        assert!(
+            !result.contains("<none>"),
+            "dangling images dropped: {result}"
+        );
     }
 
     #[test]
@@ -776,10 +825,7 @@ ingress.networking.k8s.io/api created
     fn kubectl_logs_dedups_repeated_lines() {
         let mut lines = Vec::new();
         for _ in 0..20 {
-            lines.push(
-                "2024-11-12T10:22:00Z INFO  ready for connections"
-                    .to_string(),
-            );
+            lines.push("2024-11-12T10:22:00Z INFO  ready for connections".to_string());
         }
         for i in 0..5 {
             lines.push(format!(

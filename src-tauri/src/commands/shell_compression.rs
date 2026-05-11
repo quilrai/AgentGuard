@@ -11,7 +11,9 @@ use std::os::unix::fs::PermissionsExt;
 // ============================================================================
 
 /// Commands that the hooks will rewrite through shell compression.
-/// Claude Code gets the full list; Cursor and Codex get subsets.
+/// Claude Code gets the full list; Cursor gets a subset. Codex uses
+/// PostToolUse result replacement in `codex_hooks.rs` instead of this
+/// PreToolUse command-rewrite path.
 /// Full rewrite list covering all engine-supported command families.
 /// Claude Code gets the broadest list including cat/head/tail/pytest/mypy.
 /// Bump this when `generate_compression_hook_script` changes materially.

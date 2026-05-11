@@ -71,10 +71,12 @@ Dependency Protection
 
 Shell Compression (token saving)
   - Intercepts shell command output, compresses before agent sees it
-  - Endpoint: POST /cli_compression
+  - Claude/Cursor path: PreToolUse command rewrite through POST /cli_compression
+  - Codex path: PostToolUse result replacement from /codex_hook/post_tool
+    (the command has already run; the hook replaces what the model sees)
   - Files: shell_compression/ (mod.rs, compress.rs, executor.rs, patterns.rs)
   - Enabled per-backend via token_saving.shell_compression setting
-  - NOT applicable to Codex (different hook flow)
+  - Advanced search/diff/JSON compressor flags apply to both paths
 
 Context-Aware File Read Caching (token saving)
   - Session file cache with stable refs (F1, F2, ...)
@@ -191,9 +193,12 @@ Session start       —                   SessionStart        SessionStart
 Codex quirks:
   - PreToolUse allowed path = empty stdout (not JSON). Deny = JSON with
     permissionDecision:"deny". See codex_hooks.rs pre_tool_deny_response.
-  - PostToolUse, Stop, SessionStart are fire-and-forget (no stdout).
+  - PostToolUse may return feedback JSON (`decision:"block"`, `reason`,
+    `hookSpecificOutput.additionalContext`, `continue:false`) to replace
+    the completed tool result. This is how Codex shell compression works.
+  - Stop and SessionStart are fire-and-forget for our current handlers.
   - Hook scripts use silent:true in hooks.json to suppress TUI banners.
-  - Shell compression / ctx_read token saving NOT used for Codex.
+  - ctx_read token saving is not used for Codex.
 
 ================================================================================
 KEY FILES
@@ -228,6 +233,8 @@ KEY FILES
 Hook scripts live at:
   Claude:  ~/.claude/settings.json (hooks section)
   Codex:   ~/.codex/hooks.json + ~/.codex/hooks/*.sh
+           (`[features].hooks = true`; legacy `codex_hooks` accepted only
+           when the current key is absent)
   Cursor:  ~/.cursor/hooks/ (managed by Cursor IDE)
 
 Database: ~/.quilrdlpapp/proxy_requests.db  (resolved in dlp_pattern_config.rs::get_db_path)

@@ -3,8 +3,9 @@
 // Applies optional token-saving transformations to request bodies before forwarding.
 // Each feature is independently toggleable via per-backend TokenSavingSettings.
 //
-// Note: shell_compression is handled separately by the /cli_compression endpoint,
-// not through this module. This module handles request-body transformations only.
+// Note: shell_compression is handled separately: /cli_compression for
+// command-rewrite hooks and Codex PostToolUse replacement in codex_hooks.rs.
+// This module handles request-body transformations only.
 //
 // Currently dormant — the passthrough proxy that called into this module was
 // removed. Kept as a stub for future request-body transforms once hook
@@ -48,11 +49,11 @@ impl TokenSavingResult {
 /// Apply all enabled token-saving transformations to a request body.
 /// Returns the transformed body along with savings metadata.
 ///
-/// Note: shell_compression is not handled here — it uses a separate endpoint.
+/// Note: shell_compression is not handled here — it uses hook-specific paths.
 /// Future request-body features will be added here.
 pub fn apply_token_saving(body: &str, _settings: &TokenSavingSettings) -> TokenSavingResult {
     // Currently no request-body transformations are implemented.
-    // shell_compression is handled by the /cli_compression endpoint.
+    // shell_compression is handled by hook-specific output paths.
     // Future features (e.g., context trimming) would be applied here.
     TokenSavingResult::none(body.to_string())
 }

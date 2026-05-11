@@ -39,6 +39,28 @@ pub fn compress_command(
     }
 }
 
+/// Compress output that was already produced by an agent shell tool.
+///
+/// Unlike `compress_command`, this does not execute anything. It is used by
+/// post-tool hook surfaces such as Codex `PostToolUse`, where the command has
+/// already completed and the hook can only replace what the model sees next.
+pub fn compress_captured_output(
+    command: &str,
+    stdout: &str,
+    stderr: &str,
+    flags: &crate::compression::AdvancedCompressionFlags,
+) -> ShellCompressionResult {
+    let comp = compress::compress_and_measure(command, stdout, stderr, flags);
+
+    ShellCompressionResult {
+        output: comp.output,
+        exit_code: 0,
+        original_tokens: comp.original_tokens,
+        compressed_tokens: comp.compressed_tokens,
+        duration_ms: 0,
+    }
+}
+
 /// Execute a shell command without compression, return raw output.
 pub fn run_command_raw(
     command: &str,

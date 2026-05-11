@@ -5,8 +5,9 @@
 //   - /claude_hook/*    Claude Code hook receivers (claude_hooks.rs)
 //   - /codex_hook/*     Codex CLI hook receivers (codex_hooks.rs)
 //   - /cli_compression  Shell-output compression endpoint used by the
-//                       token-saver hook scripts installed for
-//                       Claude Code, Cursor, and Codex.
+//                       token-saver command-rewrite hooks installed for
+//                       Claude Code and Cursor. Codex compresses captured
+//                       PostToolUse output through codex_hooks.rs.
 //   - /                 Health check
 //
 // Earlier versions of this app also passthrough-proxied LLM API requests

@@ -132,7 +132,10 @@ fn format_backend_summary(backend: &commands::BackendStats) -> String {
     );
 
     if backend.output_tokens > 0 {
-        summary.push_str(&format!(" | {} out", format_compact_number(backend.output_tokens)));
+        summary.push_str(&format!(
+            " | {} out",
+            format_compact_number(backend.output_tokens)
+        ));
     }
 
     summary
@@ -243,10 +246,8 @@ pub fn run() {
                 return Ok(());
             };
 
-            let stats_header_item =
-                MenuItem::new(app, "Last 24 Hours", false, None::<&str>)?;
-            let stats_summary_item =
-                MenuItem::new(app, "Loading usage...", false, None::<&str>)?;
+            let stats_header_item = MenuItem::new(app, "Last 24 Hours", false, None::<&str>)?;
+            let stats_summary_item = MenuItem::new(app, "Loading usage...", false, None::<&str>)?;
             let backend_item_1 = MenuItem::new(app, " ", false, None::<&str>)?;
             let backend_item_2 = MenuItem::new(app, " ", false, None::<&str>)?;
             let backend_item_3 = MenuItem::new(app, " ", false, None::<&str>)?;
@@ -284,7 +285,9 @@ pub fn run() {
                 true,
                 None::<&str>,
             )?;
-            app.manage(UpdateTrayItem(std::sync::Mutex::new(Some(update_item.clone()))));
+            app.manage(UpdateTrayItem(std::sync::Mutex::new(Some(
+                update_item.clone(),
+            ))));
             let quit_item = MenuItem::with_id(app, TRAY_QUIT_ID, "Quit", true, None::<&str>)?;
 
             let tray_menu = Menu::with_items(
