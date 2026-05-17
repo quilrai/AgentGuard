@@ -17,7 +17,7 @@ use std::os::unix::fs::PermissionsExt;
 /// Full rewrite list covering all engine-supported command families.
 /// Claude Code gets the broadest list including cat/head/tail/pytest/mypy.
 /// Bump this when `generate_compression_hook_script` changes materially.
-const COMPRESSION_HOOK_VERSION_MARKER: &str = "LLMWATCHER_COMPRESS_HOOK_VERSION=2";
+const COMPRESSION_HOOK_VERSION_MARKER: &str = "LLMWATCHER_COMPRESS_HOOK_VERSION=3";
 
 const CLAUDE_REWRITE_COMMANDS: &[&str] = &[
     // VCS & collaboration
@@ -229,6 +229,11 @@ fn generate_compression_hook_script(port: u16, commands: &[&str], backend_name: 
         })
         .collect();
     let case_line = case_patterns.join("|");
+    let response_style = if backend_name == "cursor-hooks" {
+        "cursor"
+    } else {
+        "claude"
+    };
 
     format!(
         r#"#!/usr/bin/env bash
@@ -240,9 +245,10 @@ umask 077
 
 INPUT=$(cat)
 
-# PreToolUse is already matched to Bash|bash in Claude settings, so we only
-# need to parse the command payload robustly here. Using grep/cut breaks as
-# soon as the command itself contains quoted strings (for example curl -H "...").
+# The hook is installed on pre-tool shell hooks: Claude Code uses PreToolUse
+# and Cursor uses preToolUse. Parse the command payload robustly here. Using
+# grep/cut breaks as soon as the command itself contains quoted strings
+# (for example curl -H "...").
 if ! command -v perl >/dev/null 2>&1; then
   exit 0
 fi
@@ -276,6 +282,12 @@ json_get() {{
 }}
 
 CMD=$(json_get "tool_input.command")
+if [ -z "$CMD" ]; then
+  # Cursor's shell-specific beforeShellExecution shape puts the command at the
+  # root. We install modern Cursor compression on preToolUse, but this fallback
+  # keeps stale or manually-wired hooks fail-open-compatible.
+  CMD=$(json_get "command")
+fi
 if [ -z "$CMD" ]; then
   exit 0
 fi
@@ -367,7 +379,11 @@ case "$CMD" in
 
     # Escape the rewrite for JSON output (\ -> \\, " -> \")
     REWRITE_ESC=$(printf '%s' "$REWRITE" | sed 's/\\/\\\\/g; s/"/\\"/g')
-    printf '{{"hookSpecificOutput":{{"hookEventName":"PreToolUse","permissionDecision":"allow","updatedInput":{{"command":"%s"}}}}}}' "$REWRITE_ESC"
+    if [ "{response_style}" = "cursor" ]; then
+      printf '{{"permission":"allow","updated_input":{{"command":"%s"}}}}' "$REWRITE_ESC"
+    else
+      printf '{{"hookSpecificOutput":{{"hookEventName":"PreToolUse","permissionDecision":"allow","updatedInput":{{"command":"%s"}}}}}}' "$REWRITE_ESC"
+    fi
     ;;
   *)
     exit 0
@@ -375,6 +391,7 @@ case "$CMD" in
 esac
 "#,
         version_marker = COMPRESSION_HOOK_VERSION_MARKER,
+        response_style = response_style,
     )
 }
 
@@ -636,12 +653,7 @@ fn get_cursor_hooks_json_path() -> Result<PathBuf, String> {
 #[derive(Debug, serde::Serialize, serde::Deserialize, Default)]
 struct CursorHooksConfig {
     version: i32,
-    hooks: HashMap<String, Vec<CursorHookEntry>>,
-}
-
-#[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
-struct CursorHookEntry {
-    command: String,
+    hooks: HashMap<String, Vec<serde_json::Value>>,
 }
 
 #[tauri::command]
@@ -697,22 +709,22 @@ pub fn install_compression_hook_cursor() -> Result<String, String> {
         config.version = 1;
     }
 
-    // Add to beforeShellExecution hook
-    let hook_entry = CursorHookEntry {
-        command: script_path_str.clone(),
-    };
-
-    let hook_list = config
-        .hooks
-        .entry("beforeShellExecution".to_string())
-        .or_default();
-    let already_exists = hook_list
-        .iter()
-        .any(|entry| entry.command.contains("llmwatcher-compress"));
-
-    if !already_exists {
-        hook_list.push(hook_entry);
+    // Remove old Cursor compression entries from any hook event first. Earlier
+    // versions installed this on beforeShellExecution; current Cursor supports
+    // command mutation through preToolUse + updated_input.
+    for entries in config.hooks.values_mut() {
+        entries.retain(|entry| !cursor_hook_entry_has_command(entry, "llmwatcher-compress"));
     }
+    config.hooks.retain(|_, entries| !entries.is_empty());
+
+    // Add to preToolUse with Shell matcher.
+    let hook_entry = serde_json::json!({
+        "command": script_path_str,
+        "matcher": "Shell"
+    });
+
+    let hook_list = config.hooks.entry("preToolUse".to_string()).or_default();
+    hook_list.push(hook_entry);
 
     let json_content = serde_json::to_string_pretty(&config)
         .map_err(|e| format!("Failed to serialize hooks.json: {}", e))?;
@@ -737,7 +749,8 @@ pub fn uninstall_compression_hook_cursor() -> Result<String, String> {
             .map_err(|e| format!("Failed to read hooks.json: {}", e))?;
         if let Ok(mut config) = serde_json::from_str::<CursorHooksConfig>(&content) {
             for (_hook_name, entries) in config.hooks.iter_mut() {
-                entries.retain(|entry| !entry.command.contains("llmwatcher-compress"));
+                entries
+                    .retain(|entry| !cursor_hook_entry_has_command(entry, "llmwatcher-compress"));
             }
             // Remove empty hook arrays
             config.hooks.retain(|_, entries| !entries.is_empty());
@@ -758,7 +771,9 @@ pub fn check_compression_hook_cursor() -> Result<bool, String> {
     if installed {
         let port = *SERVER_PORT.lock().unwrap();
         let script_path = get_cursor_compression_script_path()?;
-        if !compression_script_is_current(&script_path, port) {
+        if !compression_script_is_current(&script_path, port)
+            || !cursor_compression_hook_wiring_current()?
+        {
             install_compression_hook_cursor()?;
         }
     }
@@ -784,10 +799,45 @@ fn cursor_compression_hook_installed() -> Result<bool, String> {
     let installed = config.hooks.values().any(|entries| {
         entries
             .iter()
-            .any(|entry| entry.command.contains("llmwatcher-compress"))
+            .any(|entry| cursor_hook_entry_has_command(entry, "llmwatcher-compress"))
     });
 
     Ok(installed)
+}
+
+fn cursor_hook_entry_has_command(entry: &serde_json::Value, needle: &str) -> bool {
+    entry
+        .get("command")
+        .and_then(|command| command.as_str())
+        .map(|command| command.contains(needle))
+        .unwrap_or(false)
+}
+
+fn cursor_compression_hook_wiring_current() -> Result<bool, String> {
+    let hooks_json_path = get_cursor_hooks_json_path()?;
+    if !hooks_json_path.exists() {
+        return Ok(false);
+    }
+
+    let content = fs::read_to_string(&hooks_json_path)
+        .map_err(|e| format!("Failed to read hooks.json: {}", e))?;
+    let config: CursorHooksConfig =
+        serde_json::from_str(&content).map_err(|e| format!("Failed to parse hooks.json: {}", e))?;
+
+    Ok(cursor_config_has_current_compression_wiring(&config))
+}
+
+fn cursor_config_has_current_compression_wiring(config: &CursorHooksConfig) -> bool {
+    config
+        .hooks
+        .get("preToolUse")
+        .map(|entries| {
+            entries.iter().any(|entry| {
+                cursor_hook_entry_has_command(entry, "llmwatcher-compress")
+                    && entry.get("matcher").and_then(|m| m.as_str()) == Some("Shell")
+            })
+        })
+        .unwrap_or(false)
 }
 
 pub fn migrate_installed_compression_hooks() -> Result<(), String> {
@@ -810,12 +860,17 @@ pub fn migrate_installed_compression_hooks() -> Result<(), String> {
 
     match cursor_compression_hook_installed() {
         Ok(true) => match get_cursor_compression_script_path() {
-            Ok(path) if !compression_script_is_current(&path, port) => {
-                if let Err(err) = install_compression_hook_cursor() {
-                    errors.push(format!("Cursor: {err}"));
+            Ok(path) => match cursor_compression_hook_wiring_current() {
+                Ok(wiring_current)
+                    if !compression_script_is_current(&path, port) || !wiring_current =>
+                {
+                    if let Err(err) = install_compression_hook_cursor() {
+                        errors.push(format!("Cursor: {err}"));
+                    }
                 }
-            }
-            Ok(_) => {}
+                Ok(_) => {}
+                Err(err) => errors.push(format!("Cursor: {err}")),
+            },
             Err(err) => errors.push(format!("Cursor: {err}")),
         },
         Ok(false) => {}
@@ -923,10 +978,23 @@ mod tests {
             String::from_utf8_lossy(&output.stderr)
         );
         let response: Value = serde_json::from_slice(&output.stdout).unwrap();
-        response["hookSpecificOutput"]["updatedInput"]["command"]
+        if let Some(command) = response["hookSpecificOutput"]["updatedInput"]["command"].as_str() {
+            return command.to_string();
+        }
+        response["updated_input"]["command"]
             .as_str()
-            .unwrap()
+            .unwrap_or_else(|| panic!("missing rewritten command in response: {response}"))
             .to_string()
+    }
+
+    fn response_from_output(output: &Output) -> Value {
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        serde_json::from_slice(&output.stdout).unwrap()
     }
 
     #[test]
@@ -1235,6 +1303,83 @@ mod tests {
   python:3.12-slim \
   python -c 'import json,sys; print(json.dumps({"ok": True}))'"#;
         payload_round_trips(command, "/bin/sh", CURSOR_REWRITE_COMMANDS, "cursor-hooks");
+    }
+
+    #[test]
+    fn cursor_script_uses_updated_input_shape() {
+        let dir = temp_dir("compression_hook_cursor_shape");
+        let script = write_script(
+            &dir,
+            &generate_compression_hook_script(8123, CURSOR_REWRITE_COMMANDS, "cursor-hooks"),
+        );
+
+        let input = json!({
+            "tool_name": "Shell",
+            "cwd": "/tmp/project",
+            "tool_input": { "command": "npm test" }
+        });
+
+        let output = run_script(&script, &input, &dir, "/bin/sh");
+        let response = response_from_output(&output);
+
+        assert_eq!(response["permission"].as_str(), Some("allow"));
+        assert!(response["updated_input"]["command"]
+            .as_str()
+            .unwrap()
+            .contains("http://localhost:8123/cli_compression"));
+        assert!(response.get("hookSpecificOutput").is_none());
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn cursor_wiring_requires_pre_tool_use_shell_matcher() {
+        let mut config = CursorHooksConfig {
+            version: 1,
+            hooks: HashMap::new(),
+        };
+        config.hooks.insert(
+            "beforeShellExecution".to_string(),
+            vec![serde_json::json!({
+                "command": "/tmp/llmwatcher-compress.sh"
+            })],
+        );
+        assert!(!cursor_config_has_current_compression_wiring(&config));
+
+        config.hooks.insert(
+            "preToolUse".to_string(),
+            vec![serde_json::json!({
+                "command": "/tmp/llmwatcher-compress.sh",
+                "matcher": "Shell"
+            })],
+        );
+        assert!(cursor_config_has_current_compression_wiring(&config));
+    }
+
+    #[test]
+    fn cursor_script_accepts_legacy_root_command_payload() {
+        let dir = temp_dir("compression_hook_cursor_root_command");
+        let script = write_script(
+            &dir,
+            &generate_compression_hook_script(8123, CURSOR_REWRITE_COMMANDS, "cursor-hooks"),
+        );
+
+        let input = json!({
+            "hook_event_name": "beforeShellExecution",
+            "cwd": "/tmp/project",
+            "command": "npm test"
+        });
+
+        let output = run_script(&script, &input, &dir, "/bin/sh");
+        let response = response_from_output(&output);
+
+        assert_eq!(response["permission"].as_str(), Some("allow"));
+        assert!(response["updated_input"]["command"]
+            .as_str()
+            .unwrap()
+            .contains("http://localhost:8123/cli_compression"));
+
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

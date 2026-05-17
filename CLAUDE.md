@@ -71,7 +71,9 @@ Dependency Protection
 
 Shell Compression (token saving)
   - Intercepts shell command output, compresses before agent sees it
-  - Claude/Cursor path: PreToolUse command rewrite through POST /cli_compression
+  - Claude path: PreToolUse command rewrite through POST /cli_compression
+  - Cursor path: preToolUse command rewrite via `updated_input.command`,
+    also through POST /cli_compression
   - Codex path: PostToolUse result replacement from /codex_hook/post_tool
     (the command has already run; the hook replaces what the model sees)
   - Files: shell_compression/ (mod.rs, compress.rs, executor.rs, patterns.rs)
@@ -183,8 +185,9 @@ HOOK LIFECYCLE PER AGENT
                     Cursor              Claude Code         Codex CLI
                     ------              -----------         ---------
 Prompt submit       beforeSubmitPrompt  UserPromptSubmit    UserPromptSubmit
-Pre tool use        beforeShell/Read/   PreToolUse          PreToolUse (Bash only)
-                    Tab/MCP             (Bash/Read/Write/
+Pre tool use        preToolUse +        PreToolUse          PreToolUse (Bash only)
+                    beforeShell/Read/   (Bash/Read/Write/
+                    Tab/MCP
                                         Edit/MCP/Notebook)
 Post tool use       afterAgent*         PostToolUse         PostToolUse
 Stop/End            —                   Stop + SessionEnd   Stop
