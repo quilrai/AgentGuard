@@ -1,11 +1,15 @@
 {
-  "version": "1.0.5",
-  "notes": "- memory leak fix\n- ubuntu build\n- agent behaviour tab",
-  "pub_date": "2026-04-20T16:44:01.589Z",
+  "version": "1.0.6",
+  "notes": "Signed-off-by: Praneeth Bedapudi <praneeth@bpraneeth.com>",
+  "pub_date": "2026-05-10T10:20:45.511Z",
   "platforms": {
     "darwin-aarch64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUdnJJbGlMd0NNOUFEUGNzZE1Sb1BEQThQYklTUFFMQS9DcGVZNnBpMW1yRlloTUQ4SUF4blBIN1E1U1JEcU91QlBkUUFUMkJpS2VwYzhXS0h1WW8wOUMyWjgwNTZuMFFzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc2NzAzNDM1CWZpbGU6QWdlbnRHdWFyZC5hcHAudGFyLmd6CmdNVnJZZld0cW4xSkZSdnZUYVZpaWt6KzZGdWwzQzZFOE9DLy9IV3pHYVlqeTdTL3hrNk1XeElkSm50QllGdFpyYnNVTlhuRVQ2Ym03TVR3ODkzNUFBPT0K",
-      "url": "https://github.com/quilrai/AgentGuard/releases/download/v1.0.5/AgentGuard_1.0.5_aarch64.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUdnJJbGlMd0NNOU1IRjU3U0traTZ0KzR1d2xwRnpEWjJ5SHp2Ukw0L2czMXg0N1hXOFhvQ0R2SExRdnUvaDZGRkJRc0Z5d1hJUVBpYzByTThzbTVoZEZQeXRzMTJVOFFJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc4NDA4NDM4CWZpbGU6QWdlbnRHdWFyZC5hcHAudGFyLmd6CjJRVHNXTWVXdnN1THByQVQ0ZGN4THhTOVIwUVhqNTk4RzVmVXdCZ3NnWVJNQzZwMWhIcFhlcFhVMnBkb2trUDRDQnBDNkVybVAwbWJEU1pWQXRFcUFBPT0K",
+      "url": "https://github.com/quilrai/AgentGuard/releases/download/v1.0.6/AgentGuard_1.0.6_aarch64.app.tar.gz"
+    },
+    "linux-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUdnJJbGlMd0NNOUNpa1ZNZXJjcnp6WldwY21MYmZGL2FTejJac2dJczhEbTAvMHdnOEhlLzVPTmV4cm9qSGRyOE02TFU4L3ZsTDNhTldmRWU1a0FFSXBDbzZEbWh5ZlFvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc4NDA5MDIxCWZpbGU6QWdlbnRHdWFyZF8xLjAuNl9hbWQ2NC5BcHBJbWFnZQpzMTB3bmpBRFJqZGZsSHdTS0doY0FJRVRmam1OY3VXU2xNelRHV09iYnZnV2g5dHJ1dlkxajlRVVdrd01jNVNqYVM0SGRqVUNkbFJZYnFDSFRNZzBCZz09Cg==",
+      "url": "https://github.com/quilrai/AgentGuard/releases/download/v1.0.6/AgentGuard_1.0.6_x86_64.AppImage"
     }
   }
 }
